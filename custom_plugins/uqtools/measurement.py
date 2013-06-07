@@ -1,8 +1,66 @@
-from data import Data
 import os
+import time
 from functools import wraps
 import numpy
 from . import Dimension, Coordinate, Value
+make_iterable = lambda obj: obj if numpy.iterable(obj) else [obj]
+
+from data import Data
+from lib.config import get_config
+config = get_config()
+
+class DateTimeGenerator:
+    '''
+    Class to generate filenames / directories based on the date and time.
+    (taken from qtlab.data)
+    '''
+    def __init__(self, basedir = config['datadir'], datesubdir = True, timesubdir = True):
+        '''
+        create a new filename generator
+        
+        Input:
+            basedir (string): base directory
+            datesubdir (bool): whether to create a subdirectory for the date
+            timesubdir (bool): whether to create a subdirectory for the time
+        '''
+        self._basedir = basedir
+        self._datesubdir = datesubdir
+        self._timesubdir = timesubdir
+
+    def generate_directory_name(self, name = None, basedir = None, ts = None):
+        '''
+        Create and return a new data directory.
+
+        Input:
+            name (string): optional name of measurement
+            basedir (string): base directory, use value specified in the constructor
+                if None
+            ts (time.localtime()): timestamp which will be used if timesubdir=True
+
+        Output:
+            The directory to place the new file in
+        '''
+        path = basedir if basedir is not None else self._basedir
+        if ts is None:
+            ts = time.localtime()
+        if self._datesubdir:
+            path = os.path.join(path, time.strftime('%Y%m%d', ts))
+        if self._timesubdir:
+            tsd = time.strftime('%H%M%S', ts)
+            if name is not None:
+                tsd += '_' + name
+            path = os.path.join(path, tsd)
+        return path
+    
+    def generate_file_name(self, name = None, ts = None):
+        '''Return a new filename, based on name and timestamp.'''
+
+        tstr = time.strftime('%H%M%S', time.localtime() if ts is None else ts)
+        if name:
+            return '%s_%s.dat'%(tstr, name)
+        else:
+            return '%s.dat'%(tstr)
+
 
 class Measurement(object):
     '''
@@ -11,30 +69,25 @@ class Measurement(object):
         allows sharing of code, particularly data file handling,
         between measurement routines
     '''
+    # generate qtlab style directory names
+    _file_name_generator = DateTimeGenerator()
     
-    def _data_file_name_generator(self, name):
-        '''
-            generate a sequence of file names by concatenating a counter value to name
-        '''
-        count = 0
-        while True:
-            yield '%s%d'%(name, count) if count else name
-            count = count + 1
-    
-    def __init__(self, name = None, data_path = None):
+    def __init__(self, name = None, data_directory = ''):
         '''
             set up measurement
             
             Input:
                 name - suffix for directory and file names to make them
                     more easily identifiable
-                data_path - directory the data is saved in.
-                    If None, let data.Data automatically generate one.
+                data_directory - (sub-)directory the data is saved in.
+                    data_directory is appended as-is to the parent data directory if set
+                    or the directory name returned by Measurement._file_name_generator.
         '''
         if(name is None):
             name = self.__class__.__name__
         self._name = name
-        self._data_path = data_path
+        self._parent_data_directory = ''
+        self._data_directory = data_directory
         self._children = []
         if not hasattr(self, '_coordinates'):
             self._coordinates = []
@@ -61,41 +114,49 @@ class Measurement(object):
         self._parent_coordinates = dimensions
         self._is_nested = True
     
-    def add_coordinate(self, dimension):
+    def set_parent_data_directory(self, directory):
+        self._parent_data_directory = directory
+    
+    def get_data_directory(self):
+        return os.path.join(self._parent_data_directory, self._data_directory)
+    
+    def set_coordinates(self, dimensions):
+        ''' empty coordinates list before calling add_coordinate '''
+        self._coordinates = []
+        self.add_coordinate(dimensions)
+    
+    def set_values(self, dimensions):
+        ''' empty values list before calling add_value'''
+        self._values = []
+        self.add_value(dimensions)
+    
+    def set_dimensions(self, dimensions):
+        ''' empty coordinates and values lists before calling add_dimension '''
+        self._coordinates = []
+        self._values = []
+        self.add_coordinate(dimensions)
+    
+    def add_coordinates(self, dimension):
+        ''' add one or more Dimension objects to the local dimensions list '''
+#         if not isinstance(dimension, Dimension):
+#             raise TypeError('parameter dimension must be an instance of Dimension.')
+        self._coordinates.extend(make_iterable(dimension))
+    
+    def add_values(self, dimension):
         ''' add a Dimension object to the local dimensions list '''
 #         if not isinstance(dimension, Dimension):
 #             raise TypeError('parameter dimension must be an instance of Dimension.')
-        self._coordinates.append(dimension)
-    
-    def add_coordinates(self, dimensions):
-        ''' add Dimension objects to the local dimensions list '''
-        for dimension in dimensions:
-            self.add_coordinate(dimension)
-    
-    def add_value(self, dimension):
-        ''' add a Dimension object to the local dimensions list '''
-#         if not isinstance(dimension, Dimension):
-#             raise TypeError('parameter dimension must be an instance of Dimension.')
-        self._values.append(dimension)
-    
-    def add_values(self, dimensions):
-        ''' add Dimension objects to the local dimensions list '''
-        for dimension in dimensions:
-            self.add_value(dimension)
-    
-    def add_dimension(self, dimension):
-        ''' add a Dimension object to the local dimensions list '''
-        if type(dimension).__name__ == 'Coordinate': #isinstance(dimension, Coordinate):
-            self.add_coordinate(dimension)
-        elif type(dimension).__name__ == 'Value': # isinstance(dimension, Value):
-            self.add_value(dimension)
-        else:
-            raise TypeError('dimension must be an instance of Coordinate or Value.')
+        self._values.extend(make_iterable(dimension))
     
     def add_dimensions(self, dimensions):
-        ''' add Dimension objects to the local dimensions list '''
-        for dimension in dimensions:
-            self.add_dimension(dimension)
+        ''' add a Dimension object to the local dimensions list '''
+        for dimension in make_iterable(dimensions):
+            if type(dimension).__name__ == 'Coordinate': #isinstance(dimension, Coordinate):
+                self.add_coordinate(dimension)
+            elif type(dimension).__name__ == 'Value': # isinstance(dimension, Value):
+                self.add_value(dimension)
+            else:
+                raise TypeError('dimension must be an instance of Coordinate or Value or a list thereof.')
     
     def get_dimensions(self, parent = False, local = True):
         ''' return a list of parent and/or local dimensions '''
@@ -111,7 +172,19 @@ class Measurement(object):
     def get_values(self):
         ''' return a list of (local) value dimensions '''
         return self._values
-
+    
+    def get_coordinate_values(self, parent = True, local = True):
+        ''' run get() on all coordinates '''
+        return [dimension.get() for dimension in self.get_coordinates(parent, local)]
+    
+    def get_value_values(self):
+        ''' run get() on all values '''
+        return [dimension.get() for dimension in self.get_values()]
+    
+    def get_dimension_values(self, parent = True, local = True):
+        ''' run get() on all dimensions '''
+        return [dimension.get() for dimension in self.get_dimensions(parent, local)]
+    
     def add_measurement(self, measurement):
         '''
             add a nested measurement to an internal list,
@@ -123,6 +196,9 @@ class Measurement(object):
             raise TypeError('parameter measurement must be an instance of Measurement.')
         self._children.append(measurement)
     
+    def get_measurements(self):
+        return self._children
+
 #     def _create_data_files(self):
 #         '''
 #             create data files
@@ -167,27 +243,37 @@ class Measurement(object):
                 a data.Data object or something with a similar interface
         '''
         # create empty data file object and add dimensions
-        df = Data()
-        for dim in self.get_coordinates(parent = True):
-            df.add_coordinate(dim.name, **dim.info)
-        for dim in self.get_values():
-            df.add_value(dim.name, **dim.info)
+        df = Data(name = self._name)
+        for add_dimension, dimensions in [ 
+            (df.add_coordinate, self.get_coordinates(parent = True)),
+            (df.add_value, self.get_values()) 
+        ]:
+            for dim in dimensions:
+                # create two columns for complex types
+                if(callable(dim.dtype) and numpy.iscomplexobj(dim.dtype())):
+                    add_dimension('real(%s)'%dim.name, **dim.info)
+                    add_dimension('imag(%s)'%dim.name, **dim.info)
+                else:
+                    add_dimension(dim.name, **dim.info)
         # calculate file name and create empty data file
         if(name is None):
             name = self._name
-        if(self._data_path is not None):
-            file_path = '%s/%s'%(self._data_path, name)
-            if os.path.exists(file_path):
-                raise EnvironmentError('data file %s already exists.'%file_path)
-            df.create_file(filepath = file_path)
-        else:
-            df.create_file(name = name)
-        # decorate add_data_point to add parent dimension without user interaction
-        if(len(self._parent_coordinates) != 0):
-            df.add_data_point = self._add_data_point_decorator(df.add_data_point)
+        file_path = os.path.join(self.get_data_directory(), self._file_name_generator.generate_file_name(name))
+        if os.path.exists(file_path):
+            raise EnvironmentError('data file %s already exists.'%file_path)
+        df.create_file(filepath = file_path)
+        # decorate add_data_point to convert complex arguments to two real arguments
+        complex_dims = numpy.nonzero(
+            [callable(dim.dtype) and numpy.iscomplexobj(dim.dtype()) for dim in self.get_dimensions(parent = True)]
+        )[0]
+        if len(complex_dims):
+            df.add_data_point = self._unpack_complex_decorator(df.add_data_point, complex_dims)
+        # decorate add_data_point to add parent dimensions without user interaction
+        if(len(self.get_coordinates(parent = True, local = False)) != 0):
+            df.add_data_point = self._prepend_coordinates_decorator(df.add_data_point)
         return df
     
-    def _add_data_point_decorator(self, function):
+    def _prepend_coordinates_decorator(self, function):
         '''
             decorate add_data_point function of data to add extra dimensions
             the only supported calling conventions are
@@ -195,7 +281,7 @@ class Measurement(object):
                 add_data_point(ndarray, ndarray, ...)
         '''
         @wraps(function)
-        def new_function(*args, **kwargs):
+        def decorated_function(*args, **kwargs):
             # fetch parent coordinate values
             coordinates = tuple([c.get() for c in self._parent_coordinates])
             # if inputs are arrays, provide coordinates as arrays as well
@@ -203,12 +289,29 @@ class Measurement(object):
                 coordinates = tuple([c*numpy.ones(args[0].shape) for c in coordinates])
             # execute add_data_point
             return function(*(coordinates+args), **kwargs)
-        return new_function
+        return decorated_function
+    
+    def _unpack_complex_decorator(self, function, indices):
+        '''
+            decorate a function to convert the argument at index into two arguments,
+            its real and imaginary parts, by calling argument.real and argument.imag
+        '''
+        @wraps(function)
+        def decorated_function(*args, **kwargs):
+            args = list(args)
+            for index in reversed(indices):
+                if index >= len(args):
+                    raise ValueError('number of arguments to add_data_point (%d) is lower than expected.'%len(args))
+                re = args[index].real
+                im = args[index].imag
+                args[index] = im
+                args.insert(index, re)
+            return function(*args, **kwargs)
+        return decorated_function
     
     def __call__(self, *args, **kwargs):
         '''
             perform a measurement.
-            
             perform setup, call self._measure, perform cleanup and return output of self._measure
         '''
         # _setup is only called once
@@ -226,12 +329,18 @@ class Measurement(object):
             setup measurements.
             called before the first measurement.
         '''
-        # pass coordinates to children
-        for child in self._children:
-            child.set_parent_coordinates(self.get_dimensions(parent = True))
-        # create own data files
+        # generate a new data directory name if this is a top-level measurement
+        if not self._is_nested:
+            self.set_parent_data_directory(
+                self._file_name_generator.generate_directory_name(self._name)
+            )
+        # create own data files if any value dimensions are present
         if len(self.get_values()):
             self._create_data_files()
+        # pass coordinates and paths to children
+        for child in self._children:
+            child.set_parent_coordinates(self.get_dimensions(parent = True))
+            child.set_parent_data_directory(self.get_data_directory())
         # make sure setup is not run again
         self._setup_done = True
     
