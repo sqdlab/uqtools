@@ -134,7 +134,7 @@ class Measurement(object):
         ''' empty coordinates and values lists before calling add_dimension '''
         self._coordinates = []
         self._values = []
-        self.add_coordinate(dimensions)
+        self.add_dimensions(dimensions)
     
     def add_coordinates(self, dimension):
         ''' add one or more Dimension objects to the local dimensions list '''
@@ -152,9 +152,9 @@ class Measurement(object):
         ''' add a Dimension object to the local dimensions list '''
         for dimension in make_iterable(dimensions):
             if type(dimension).__name__ == 'Coordinate': #isinstance(dimension, Coordinate):
-                self.add_coordinate(dimension)
+                self.add_coordinates(dimension)
             elif type(dimension).__name__ == 'Value': # isinstance(dimension, Value):
-                self.add_value(dimension)
+                self.add_values(dimension)
             else:
                 raise TypeError('dimension must be an instance of Coordinate or Value or a list thereof.')
     
@@ -192,7 +192,11 @@ class Measurement(object):
         '''
         if self._setup_done:
             raise EnvironmentError('unable to add nested measurements after the measurement has been setup.')
-        if not isinstance(measurement, Measurement):
+        if( 
+           not hasattr(measurement, 'set_parent_data_directory') or 
+           not hasattr(measurement, 'set_parent_coordinates') or
+           not hasattr(measurement, '_teardown')
+        ):
             raise TypeError('parameter measurement must be an instance of Measurement.')
         self._children.append(measurement)
     

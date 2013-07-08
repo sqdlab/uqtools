@@ -1,4 +1,4 @@
-class Dimension(dict):
+class Dimension(object):
     '''
         a dimension of a data object
         
