@@ -85,7 +85,10 @@ class Measurement(object):
         '''
         if(name is None):
             name = self.__class__.__name__
+            # remove trailing 'Measurement'
+            if name.endswith('Measurement'): name = name[:-11]
         self._name = name
+        self._parent_name = ''
         self._parent_data_directory = ''
         self._data_directory = data_directory
         self._children = []
@@ -97,9 +100,24 @@ class Measurement(object):
         self._setup_done = False
         self._is_nested = False
     
+    def set_parent_name(self, name):
+        '''
+            set parent name
+            
+            self._name is concatenated with the parent name when generating data file names
+            parent measurements are not required to propagate their name and should do so
+            only if it adds to the user experience (e.g. a sweep could add a coordinate name)
+            
+            Input:
+                name - parent name
+        '''
+        self._parent_name = name
+        for child in self._children:
+            child.set_parent_name(name + ('_' if name else '') + self._name)
+    
     def set_parent_coordinates(self, dimensions = []):
         '''
-            add *parent* coordinate(s)
+            set *parent* coordinate(s)
             
             Input:
                 dimensions - an iterable containing Dimension objects,
@@ -195,6 +213,7 @@ class Measurement(object):
         if( 
            not hasattr(measurement, 'set_parent_data_directory') or 
            not hasattr(measurement, 'set_parent_coordinates') or
+           not hasattr(measurement, 'set_parent_name') or
            not hasattr(measurement, '_teardown')
         ):
             raise TypeError('parameter measurement must be an instance of Measurement.')
@@ -242,7 +261,7 @@ class Measurement(object):
             Input:
                 dimensions - extra dimensions (on top of parent_dimensions
                     passed to the constructor)
-                name - suffix for file name, replaces self.name if set
+                name - suffix for file name, replaces self._name if set
             Return:
                 a data.Data object or something with a similar interface
         '''
@@ -262,6 +281,8 @@ class Measurement(object):
         # calculate file name and create empty data file
         if(name is None):
             name = self._name
+        if(self._parent_name):
+            name = self._parent_name + '_' + name
         file_path = os.path.join(self.get_data_directory(), self._file_name_generator.generate_file_name(name))
         if os.path.exists(file_path):
             raise EnvironmentError('data file %s already exists.'%file_path)
@@ -334,7 +355,8 @@ class Measurement(object):
             called before the first measurement.
         '''
         # generate a new data directory name if this is a top-level measurement
-        if not self._is_nested:
+        #if not self._is_nested:
+        if not self._parent_data_directory:
             self.set_parent_data_directory(
                 self._file_name_generator.generate_directory_name(self._name)
             )
