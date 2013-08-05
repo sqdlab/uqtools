@@ -343,10 +343,12 @@ class Measurement(object):
         if not self._setup_done:
             self._setup()
         # measure
-        result = self._measure(*args, **kwargs)
-        # close data files if this is a top-level measurement
-        if not self._is_nested:
-            self._teardown()
+        try:
+            result = self._measure(*args, **kwargs)
+        finally:
+            # close data files if this is a top-level measurement
+            if not self._is_nested:
+                self._teardown()
         return result
     
     def _setup(self):
