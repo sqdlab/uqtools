@@ -2,7 +2,9 @@ import os
 import time
 from functools import wraps
 import numpy
+import copy
 from . import Dimension, Coordinate, Value
+from . import NullContextManager
 make_iterable = lambda obj: obj if numpy.iterable(obj) else [obj]
 
 from data import Data
@@ -72,7 +74,7 @@ class Measurement(object):
     # generate qtlab style directory names
     _file_name_generator = DateTimeGenerator()
     
-    def __init__(self, name = None, data_directory = ''):
+    def __init__(self, name=None, data_directory='', data_save=True, context=None):
         '''
             set up measurement
             
@@ -82,15 +84,22 @@ class Measurement(object):
                 data_directory - (sub-)directory the data is saved in.
                     data_directory is appended as-is to the parent data directory if set
                     or the directory name returned by Measurement._file_name_generator.
+                data_save - if False, do not save measured data to file
+                context - context manager wrapped around _measure
         '''
         if(name is None):
             name = self.__class__.__name__
             # remove trailing 'Measurement'
             if name.endswith('Measurement'): name = name[:-11]
+        if(context is None):
+            self._context = NullContextManager()
+        else:
+            self._context = context
         self._name = name
         self._parent_name = ''
         self._parent_data_directory = ''
         self._data_directory = data_directory
+        self._data_save = data_save
         self._children = []
         if not hasattr(self, '_coordinates'):
             self._coordinates = []
@@ -128,8 +137,8 @@ class Measurement(object):
 #         for dimension in dimensions:
 #             if not isinstance(dimension, Dimension):
 #                 raise TypeError('all elements of dimensions must be an instance of Dimension.')
-#        self._parent_coordinates = [dim for dim in dimensions if isinstance(dim, Coordinate)]
-        self._parent_coordinates = dimensions
+        self._parent_coordinates = [dim for dim in dimensions if type(dim).__name__ == 'Coordinate']
+#        self._parent_coordinates = dimensions
         self._is_nested = True
     
     def set_parent_data_directory(self, directory):
@@ -207,6 +216,7 @@ class Measurement(object):
         '''
             add a nested measurement to an internal list,
             so setup and cleanup can be automated
+            #copies the measurement object so it can be embedded in several measurements
         '''
         if self._setup_done:
             raise EnvironmentError('unable to add nested measurements after the measurement has been setup.')
@@ -217,7 +227,9 @@ class Measurement(object):
            not hasattr(measurement, '_teardown')
         ):
             raise TypeError('parameter measurement must be an instance of Measurement.')
+        #measurement = copy.copy(measurement)
         self._children.append(measurement)
+        return measurement
     
     def get_measurements(self):
         return self._children
@@ -257,6 +269,7 @@ class Measurement(object):
     def _create_data_file(self, dimensions, name = None):
         '''
             create an empty data file
+            if self._data_save is False, it returns a dummy object
             
             Input:
                 dimensions - extra dimensions (on top of parent_dimensions
@@ -265,6 +278,14 @@ class Measurement(object):
             Return:
                 a data.Data object or something with a similar interface
         '''
+        # create dummy data object if self._data_save is not set
+        if not self._data_save:
+            class DummyData:
+                def add_data_point(self, *args, **kwargs):
+                    ''' does nothing '''
+                    pass
+            return DummyData()
+        
         # create empty data file object and add dimensions
         df = Data(name = self._name)
         for add_dimension, dimensions in [ 
@@ -339,16 +360,18 @@ class Measurement(object):
             perform a measurement.
             perform setup, call self._measure, perform cleanup and return output of self._measure
         '''
-        # _setup is only called once
-        if not self._setup_done:
-            self._setup()
-        # measure
-        try:
-            result = self._measure(*args, **kwargs)
-        finally:
-            # close data files if this is a top-level measurement
-            if not self._is_nested:
-                self._teardown()
+        # let external context manager initialize devices before the start of the measurement
+        with self._context: 
+            # _setup is only called once
+            if not self._setup_done:
+                self._setup()
+            # measure
+            try:
+                result = self._measure(*args, **kwargs)
+            finally:
+                # close data files if this is a top-level measurement
+                if not self._is_nested:
+                    self._teardown()
         return result
     
     def _setup(self):
@@ -367,7 +390,7 @@ class Measurement(object):
             self._create_data_files()
         # pass coordinates and paths to children
         for child in self._children:
-            child.set_parent_coordinates(self.get_dimensions(parent = True))
+            child.set_parent_coordinates(self.get_dimensions(parent = True, local=False))
             child.set_parent_data_directory(self.get_data_directory())
         # make sure setup is not run again
         self._setup_done = True
@@ -377,10 +400,15 @@ class Measurement(object):
             perform a measurement.
             this function must be overloaded by subclasses.
             
-            if the class or instance variable _dimensions is set, a data file object
-            with _dimensions and add_data_point decorated to add the parent coordinates
+            if the class or instance variable _values is set, a data file object
+            with _dimensions, _values and add_data_point decorated to add the parent coordinates
             will be available in _data. otherwise, data files must be created manually
             inside this function by calling _create_data_file.
+            
+            Return:
+                c - an iterable containing values of all local coordinates of all data points
+                    each item must have the same shape as d (it may have one dimension less)
+                d - the measured data (array)
         '''
         raise NotImplementedError()
     

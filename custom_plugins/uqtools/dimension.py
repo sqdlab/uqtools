@@ -42,6 +42,11 @@ class Dimension(object):
         if(self.get_func):
             return self.get_func()
         return self._value
+    
+    def __repr__(self):
+        r = super(Dimension, self).__repr__()
+        # <object Dimension "name" at 0x...>
+        return ' '.join(r.split(' ').insert(2, '"'+self.name+'"'))
 
 class Coordinate(Dimension):
     ''' a coordinate dimension '''
