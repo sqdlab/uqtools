@@ -1,6 +1,7 @@
 import numpy
 import logging
 from . import Measurement
+import contextlib
 
 class CorrelatorMeasurement(Measurement):
     '''
@@ -71,7 +72,7 @@ class TvModeMeasurement(Measurement):
         super(TvModeMeasurement, self).__init__(**kwargs)
         self._fpga = fpga
         self._check_fpga_mode()
-        with self._context:
+        with contextlib.nested(*self._context):
             self.set_dimensions(self._fpga.get_data_dimensions())
     
     def _check_fpga_mode(self):
@@ -88,7 +89,8 @@ class TvModeMeasurement(Measurement):
         if(self._fpga.get_tv_segments() == 524288):
             logging.warning('auto segments may not be properly supported.')
         # retrieve coordinate and data matrices
-        coordinates = self.get_coordinate_values(parent = False)
+        #coordinates = self.get_coordinate_values(parent = False)
+        coordinates = [c.get() for c in self._fpga.get_data_dimensions()[:-1]]
         indices = numpy.mgrid[[slice(len(c)) for c in coordinates]]
         coordinate_matrices = [numpy.array(c)[i] for c, i in zip(coordinates, indices)]
         data = self._fpga.get_data_blocking()#[0,0,...]
@@ -110,9 +112,10 @@ class AveragedTvModeMeasurement(Measurement):
         super(AveragedTvModeMeasurement, self).__init__(**kwargs)
         self._fpga = fpga
         self._check_fpga_mode()
-        dimensions = list(self._fpga.get_data_dimensions())
-        dimensions.pop(2)
-        self.set_dimensions(dimensions)
+        with contextlib.nested(*self._context):
+            dimensions = list(self._fpga.get_data_dimensions())
+            dimensions.pop(2)
+            self.set_dimensions(dimensions)
     
     def _check_fpga_mode(self):
         if not self._fpga.get_app().startswith('TVMODE'):
@@ -129,11 +132,12 @@ class AveragedTvModeMeasurement(Measurement):
         if(self._fpga.get_tv_segments() == 524288):
             logging.warning('auto segments may not be properly supported.')
         # retrieve coordinate and data matrices
-        coordinates = self.get_coordinate_values(parent = False)
+        #coordinates = self.get_coordinate_values(parent = False)
+        coordinates = [c.get() for c in self._fpga.get_data_dimensions()[:-2]]
         indices = numpy.mgrid[[slice(len(c)) for c in coordinates]]
         coordinate_matrices = [numpy.array(c)[i] for c, i in zip(coordinates, indices)]
         data = self._fpga.get_data_blocking()#[0,0,...]
         data = data.mean(axis=2)
         points = [numpy.ravel(m) for m in coordinate_matrices+[data]]
         self._data.add_data_point(*points, newblock = True)
-        return data
+        return coordinate_matrices, data

@@ -5,8 +5,10 @@ import numpy
 import copy
 from . import Dimension, Coordinate, Value
 from . import NullContextManager
-make_iterable = lambda obj: obj if numpy.iterable(obj) else [obj]
+#make_iterable = lambda obj: obj if numpy.iterable(obj) else [obj]
+make_iterable = lambda obj: obj if isinstance(obj, list) or isinstance(obj, tuple) else (obj,)
 
+import qt
 from data import Data
 from lib.config import get_config
 config = get_config()
@@ -85,16 +87,16 @@ class Measurement(object):
                     data_directory is appended as-is to the parent data directory if set
                     or the directory name returned by Measurement._file_name_generator.
                 data_save - if False, do not save measured data to file
-                context - context manager wrapped around _measure
+                context - context manager(s) wrapped around _measure
         '''
         if(name is None):
             name = self.__class__.__name__
             # remove trailing 'Measurement'
             if name.endswith('Measurement'): name = name[:-11]
         if(context is None):
-            self._context = NullContextManager()
+            self._context = [NullContextManager()]
         else:
-            self._context = context
+            self._context = make_iterable(context)
         self._name = name
         self._parent_name = ''
         self._parent_data_directory = ''
@@ -141,7 +143,7 @@ class Measurement(object):
 #        self._parent_coordinates = dimensions
         self._is_nested = True
     
-    def set_parent_data_directory(self, directory):
+    def set_parent_data_directory(self, directory=''):
         self._parent_data_directory = directory
     
     def get_data_directory(self):
@@ -234,31 +236,6 @@ class Measurement(object):
     def get_measurements(self):
         return self._children
 
-#     def _create_data_files(self):
-#         '''
-#             create data files
-#             
-#             Input:
-#                self._dimensions - a list, dictionary containing lists, or None
-#             Output:
-#                 if self._dimensions is a list, a single Data object in self._data
-#                 if self._dimensions is a dictionary, a dictionary of Data objects in self._data 
-#                     with keys taken from self._dimensions
-#         '''
-#         if (not hasattr(self, '_dimensions')) or (self._dimensions is None):
-#             # no automatically created data file
-#             self._data = None
-#         elif isinstance(self._dimensions, dict):
-#             # create one file per key
-#             self._data = dict()
-#             for key, dimensions in self._dimensions.iteritems():
-#                 self._data[key] = self._create_data_file(dimensions)
-#         elif isinstance(self._dimensions, list):
-#             # create one file only
-#             self._data = self._create_data_file(self._dimensions)
-#         else:
-#             raise TypeError('_dimensions must be a dict, list or None.')
-    
     def _create_data_files(self):
         '''
             create required data files.
@@ -355,23 +332,42 @@ class Measurement(object):
             return function(*args, **kwargs)
         return decorated_function
     
+    def _nested_context_decorator(function):
+        '''
+            decorate a function call with an arbitrary number of context managers
+        '''
+        @wraps(function)
+        def decorated_function(self, *args, **kwargs):
+            contexts = kwargs.pop('contexts', self._context)
+            contexts, context = contexts[1:], contexts[0]
+            with context:
+                if len(contexts):
+                    return decorated_function(self, *args, contexts=contexts, **kwargs)
+                else:
+                    return function(self, *args, **kwargs)
+        return decorated_function
+    
+    @_nested_context_decorator
     def __call__(self, *args, **kwargs):
         '''
             perform a measurement.
             perform setup, call self._measure, perform cleanup and return output of self._measure
         '''
         # let external context manager initialize devices before the start of the measurement
-        with self._context: 
-            # _setup is only called once
-            if not self._setup_done:
-                self._setup()
-            # measure
-            try:
-                result = self._measure(*args, **kwargs)
-            finally:
-                # close data files if this is a top-level measurement
-                if not self._is_nested:
-                    self._teardown()
+        #with self._context: 
+        # _setup is only called once
+        if not self._setup_done:
+            self._setup()
+        # tell qtlab to stop background tasks etc.
+        qt.mstart()
+        # measure
+        try:
+            result = self._measure(*args, **kwargs)
+        finally:
+            # close data files if this is a top-level measurement
+            if not self._is_nested:
+                self._teardown()
+            qt.mend()
         return result
     
     def _setup(self):
@@ -420,12 +416,19 @@ class Measurement(object):
         # clean up all nested measurements
         for child in self._children:
             child._teardown()
+        print 'teardown %s.'%self._name
         # close own data file(s)
         if hasattr(self, '_data'):
-            for df in (self._data if numpy.iterable(self._data) else [self._data]):
+            print '-- has data'
+            for df in make_iterable(self._data):
+                print df
                 if hasattr(df, 'close_file'):
+                    print '-- closing file'
                     df.close_file()
             del self._data
+        # make sure a new data directory is created when executed again
+        if not self._is_nested:
+            self.set_parent_data_directory()
         # allow setup to run for the next measurement
         self._setup_done = False
         # forget inherited dimensions

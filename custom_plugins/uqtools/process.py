@@ -92,14 +92,14 @@ class Integrate(Measurement):
     '''
     Integrate measurement data
     '''
-    def __init__(self, m, coordinate, range, **kwargs):
+    def __init__(self, m, coordinate, range=None, **kwargs):
         '''
         create an integrator
     
         Input:
+            m - nested measurement generating the data
             coordinate - coordinate over which to integrate
             range - (min, max) tuple of coordinate values to include
-            m - nested measurement generating the data
         '''
         super(Integrate, self).__init__(**kwargs)
         
@@ -116,10 +116,14 @@ class Integrate(Measurement):
     def _measure(self, **kwargs):
         # retrieve data
         cs, d = self.get_measurements()[0](**kwargs) # output_data=True
-        # select values to be integrated
-        c_mask = numpy.all((cs[self._axis]>=self.range[0], cs[self._axis]<self.range[1]), axis=0)
-        # integrate masked array over selected axis
-        d_int = numpy.where(c_mask, d, 0.).sum(self._axis)
+        if self.range is not None:
+            # select values to be integrated
+            c_mask = numpy.all((cs[self._axis]>=self.range[0], cs[self._axis]<self.range[1]), axis=0)
+            # integrate masked array over selected axis
+            d_int = numpy.where(c_mask, d, 0.).sum(self._axis)
+        else:
+            # integrate over all values
+            d_int = d.sum(self._axis)
         # remove integration coordinate from returned coordinates
         cs.pop(self._axis)
         cs = [numpy.rollaxis(c, self._axis)[0,...] for c in cs]

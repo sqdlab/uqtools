@@ -30,7 +30,7 @@ class CalibrateResonator(Measurement):
         response = self.get_measurements()[0](output_data=True)[0]
         #print response
         #print numpy.array(response).shape
-        response = [r[0,0] for r in response]
+        response = [r[1][0,0] for r in response]
         success, p_opt, p_std = self.fit_resonator(self._range, response)
         self._data.add_data_point(*(list(p_opt)+list(p_std)+[1 if success else 0]))
         if success:

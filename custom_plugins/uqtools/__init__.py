@@ -12,8 +12,8 @@
 #reload(fpga)
 #import process
 #reload(process)
-import awg
-reload(awg)
+#import awg
+#reload(awg)
 
 from dimension import Dimension, Coordinate, Value
 from context import NullContextManager, SimpleContextManager

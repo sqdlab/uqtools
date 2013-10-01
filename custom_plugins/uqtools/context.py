@@ -37,6 +37,10 @@ class SimpleContextManager(object):
                     raise ValueError('parameter tuple must have a set() function.')
                 self._parameters.append((p[0], p[1:]))
         self._restore = kwargs.get('restore', True)
+    
+    def __call__(self):
+        ''' Enable context manager to be used like a function '''
+        self.__enter__()
         
     def __enter__(self):
         self._values = [None]*len(self._parameters)
