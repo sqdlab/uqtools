@@ -17,18 +17,25 @@ class ProgramAWG(Measurement):
         self._sequence = sequence
         self._awgs = awgs
     
+    def _setup(self):
+        '''
+        generate sequence (once)
+        '''
+        super(ProgramAWG, self)._setup()
+
+        self._host_dir = self.get_data_directory()
+        self._host_file = self._name
+
+        self._sequence.sample()
+        self._sequence.export(self._host_dir, self._host_file)
+        
     def _measure(self, wait=True):
         '''
         upload sequence to the AWGs
         '''
-        host_dir = self.get_data_directory()
-        host_file = self._name
-        
-        self._sequence.sample()
-        self._sequence.export(host_dir, host_file)
         for idx, awg in enumerate(self._awgs):
             #awg.clear_waveforms()
-            host_fullpath = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx), host_file+'.seq')
+            host_fullpath = os.path.join(self._host_dir, 'AWG_{0:0=2d}'.format(idx), self._host_file+'.seq')
             if os.path.exists(host_fullpath):
                 awg.load_host_sequence(host_fullpath)
             else:
