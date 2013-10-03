@@ -13,7 +13,8 @@ class ProgramAWG(Measurement):
             sequence - populated sequence object
             awgs - list of AWG instruments the sequence is distributed to
         '''
-        super(ProgramAWG, self).__init__(data_directory='patterns', **kwargs)
+        data_directory = kwargs.pop('data_directory', 'patterns')
+        super(ProgramAWG, self).__init__(data_directory=data_directory, **kwargs)
         self._sequence = sequence
         self._awgs = awgs
     
