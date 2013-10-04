@@ -22,4 +22,4 @@ from basics import NullMeasurement, DimensionQuery, MeasurementArray, Sweep, Con
 from calibrate import CalibrateResonator
 from fpga import CorrelatorMeasurement, AveragedCorrelatorMeasurement, TvModeMeasurement, AveragedTvModeMeasurement
 from process import Buffer, Add, Integrate
-from awg import ProgramAWG
+from awg import ProgramAWG, ProgramAWGParametric

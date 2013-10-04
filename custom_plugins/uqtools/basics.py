@@ -11,7 +11,7 @@ class NullMeasurement(Measurement):
         self._delay = delay
         super(NullMeasurement, self).__init__(**kwargs)
     
-    def _measure(self):
+    def _measure(self, **kwargs):
         if self._delay is not None:
             time.sleep(self._delay)
     
@@ -34,7 +34,7 @@ class DimensionQuery(Measurement):
         super(DimensionQuery, self).__init__(**kwargs)
         self.add_values(values)
     
-    def _measure(self):
+    def _measure(self, **kwargs):
         data = self.get_dimension_values()
         self._data.add_data_point(*data)
         return data
