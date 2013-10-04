@@ -202,6 +202,14 @@ class Measurement(object):
         ''' return a list of (local) value dimensions '''
         return self._values
     
+    @property
+    def values(self, key):
+        ''' emulate dictionary access to self._values '''
+        for value in self._values:
+            if value.name == key:
+                return value
+        raise KeyError(key)
+    
     def get_coordinate_values(self, parent = True, local = True):
         ''' run get() on all coordinates '''
         return [dimension.get() for dimension in self.get_coordinates(parent, local)]
@@ -416,14 +424,10 @@ class Measurement(object):
         # clean up all nested measurements
         for child in self._children:
             child._teardown()
-        print 'teardown %s.'%self._name
         # close own data file(s)
         if hasattr(self, '_data'):
-            print '-- has data'
             for df in make_iterable(self._data):
-                print df
                 if hasattr(df, 'close_file'):
-                    print '-- closing file'
                     df.close_file()
             del self._data
         # make sure a new data directory is created when executed again
