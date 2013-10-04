@@ -51,4 +51,4 @@ class ProgramAWG(Measurement):
     def plot(self):
         self._sequence.sample()
         from custom_lib.pulsegen import ptplot_gui
-        ptplot_gui.plot(self._seqence, [0,1,2,3], [0,1], 0)
+        ptplot_gui.plot(self._sequence, [0,1,2,3], [0,1], 0)
