@@ -1,4 +1,5 @@
 import numpy
+import types
 import scipy.stats
 import scipy.optimize
 from . import Value, Measurement
@@ -18,7 +19,10 @@ class CalibrateResonator(Measurement):
         '''
         super(CalibrateResonator, self).__init__(**kwargs)
         self._coordinate = c_freq
-        self._range = freq_range
+        if type(freq_range)==types.FunctionType:
+            self._range = freq_range
+        else:
+            self._range = lambda:freq_range
         self.add_measurement(Sweep(c_freq, freq_range, m))
         self.add_values((
             Value('f0'), Value('Gamma'), Value('amplitude'), Value('baseline'),
@@ -31,7 +35,7 @@ class CalibrateResonator(Measurement):
         #print response
         #print numpy.array(response).shape
         response = [r[1][0,0] for r in response]
-        success, p_opt, p_std = self.fit_resonator(self._range, response)
+        success, p_opt, p_std = self.fit_resonator(self._range(), response)
         self._data.add_data_point(*(list(p_opt)+list(p_std)+[1 if success else 0]))
         if success:
             self._coordinate.set(p_opt[0])
