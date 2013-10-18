@@ -198,17 +198,16 @@ class Measurement(object):
             (self._coordinates if local else [])
         )
         
-    def get_values(self):
+    def get_values(self, key=None):
         ''' return a list of (local) value dimensions '''
-        return self._values
-    
-    @property
-    def values(self, key):
-        ''' emulate dictionary access to self._values '''
-        for value in self._values:
-            if value.name == key:
-                return value
-        raise KeyError(key)
+        if key is None:
+            return self._values
+        else:
+            ''' emulate dictionary access to self._values '''
+            for value in self._values:
+                if value.name == key:
+                    return value
+            raise KeyError(key)
     
     def get_coordinate_values(self, parent = True, local = True):
         ''' run get() on all coordinates '''
