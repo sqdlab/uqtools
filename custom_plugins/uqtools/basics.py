@@ -1,4 +1,5 @@
 import time
+import types
 import numpy
 import qt
 from . import Measurement
@@ -123,7 +124,10 @@ class Sweep(Measurement):
             kwargs['name'] = coordinate.name
         super(Sweep, self).__init__(**kwargs)
         self.coordinate = coordinate
-        self.range = range
+        if type(range)==types.FunctionType:
+            self.range = range
+        else:
+            self.range = lambda:range
         # if measurements is iterable 
         for measurement in measurements if numpy.iterable(measurements) else [measurements]:
             measurement = self.add_measurement(measurement)
@@ -148,14 +152,15 @@ class Sweep(Measurement):
                 all args and kwargs are passed to the nested measurements
         '''
         # 
+        _range = self.range()
         output_data = kwargs.get('output_data', False)
         if output_data:
             # we are handling references to python objects, 
             # so using lists should not give a huge performance penalty
             results = [[]]*len(self._children)
         # sweep coordinate
-        timer = SweepTimer(nitems=len(self.range))
-        for idx, x in enumerate(self.range):
+        timer = SweepTimer(nitems=len(_range))
+        for idx, x in enumerate(_range):
             timer.next()
             if(self.reporting == 0):
                 print 'sweep %s: setting %s to %d. %s'%(self._name, self.coordinate.name, x, timer.report())
