@@ -75,6 +75,7 @@ class ProgramAWGParametric(Measurement):
         self._sequence_kwargs = sequence_kwargs
         self._prev_sequence_args = []
         self._prev_sequence_kwargs = []
+        self._prev_sequence_length = []
         self._host_dir = None
         super(ProgramAWGParametric, self).__init__(**kwargs)
 
@@ -106,11 +107,10 @@ class ProgramAWGParametric(Measurement):
                 (sequence_args == self._prev_sequence_args[idx]) and
                 (sequence_kwargs == self._prev_sequence_kwargs[idx])
             ):
-                self._program(host_dir, host_file(idx), wait)
+                self._program(host_dir, host_file(idx), wait, self._prev_sequence_length[idx])
                 return
         
         # generate and export new sequence
-        print sequence_args, sequence_kwargs
         idx = len(self._prev_sequence_args)
         sequence = self._sequence_func(*sequence_args, **sequence_kwargs)
         sequence.sample()
@@ -119,21 +119,22 @@ class ProgramAWGParametric(Measurement):
         # add evaluated args to lists
         self._prev_sequence_args.append(sequence_args)
         self._prev_sequence_kwargs.append(sequence_kwargs)
+        self._prev_sequence_length.append(len(sequence))
         
         # save evaluated args to file
         self._data.add_data_point(*self.get_dimension_values())
         
         # program awg
-        self._program(host_dir, host_file(idx), wait)        
+        self._program(host_dir, host_file(idx), wait, length=len(sequence))
 
-    def _program(self, host_dir, host_file, wait=True):
+    def _program(self, host_dir, host_file, wait, length):
         '''
         upload sequence to the AWGs
         '''
         logging.info(__name__ + ': programming {0}.'.format(host_file))
         for idx, awg in enumerate(self._awgs):
             #awg.clear_waveforms()
-            host_fullpath = os.path.join(self._host_dir, 'AWG_{0:0=2d}'.format(idx), self._host_file+'.seq')
+            host_fullpath = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx), host_file+'.seq')
             if os.path.exists(host_fullpath):
                 awg.load_host_sequence(host_fullpath)
             else:
@@ -142,5 +143,5 @@ class ProgramAWGParametric(Measurement):
             # wait for all AWGs to finish loading
             for idx, awg in enumerate(self._awgs):
                 awg.wait()
-                if awg.get_seq_length() != len(self._sequence):
+                if awg.get_seq_length() != length:
                     logging.error(__name__ + ': sequence length reported by AWG #{0} differs from the expected value {1}.'.format(idx, len(self._sequence)))
