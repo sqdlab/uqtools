@@ -36,7 +36,7 @@ class DimensionQuery(Measurement):
         self.add_values(values)
     
     def _measure(self, **kwargs):
-        data = self.get_dimension_values()
+        data = self.get_dimension_values(parent=False)
         self._data.add_data_point(*data)
         return data
 
