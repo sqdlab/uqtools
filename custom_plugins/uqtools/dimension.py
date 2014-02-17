@@ -1,3 +1,5 @@
+import numpy
+
 class Dimension(object):
     '''
         a dimension of a data object
@@ -43,6 +45,10 @@ class Dimension(object):
             return self.get_func()
         return self._value
     
+    def iscomplex(self):
+        ''' check if self.dtype is a complex type '''
+        return callable(self.dtype) and numpy.iscomplexobj(self.dtype())
+        
     def __repr__(self):
         r = super(Dimension, self).__repr__()
         # <object Dimension "name" at 0x...>
