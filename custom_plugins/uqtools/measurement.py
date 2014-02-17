@@ -111,6 +111,9 @@ class Measurement(object):
         self._setup_done = False
         self._is_nested = False
     
+    def get_name(self):
+        return self._name
+    
     def set_parent_name(self, name):
         '''
             set parent name
@@ -201,7 +204,7 @@ class Measurement(object):
     def get_values(self, key=None):
         ''' return a list of (local) value dimensions '''
         if key is None:
-            return self._values
+            return list(self._values)
         else:
             ''' emulate dictionary access to self._values '''
             for value in self._values:
@@ -411,7 +414,8 @@ class Measurement(object):
             Return:
                 c - an iterable containing values of all local coordinates of all data points
                     each item must have the same shape as d (it may have one dimension less)
-                d - the measured data (array)
+                d - an array containing the measured data. The last index runs over all Values
+                    measured. (Thus, the output can never be scalar.)
         '''
         raise NotImplementedError()
     
@@ -430,8 +434,8 @@ class Measurement(object):
                     df.close_file()
             del self._data
         # make sure a new data directory is created when executed again
-        if not self._is_nested:
-            self.set_parent_data_directory()
+        #if not self._is_nested:
+        self.set_parent_data_directory()
         # allow setup to run for the next measurement
         self._setup_done = False
         # forget inherited dimensions
