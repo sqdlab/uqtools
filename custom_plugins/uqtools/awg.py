@@ -25,7 +25,7 @@ class ProgramAWG(Measurement):
         super(ProgramAWG, self)._setup()
 
         self._host_dir = self.get_data_directory()
-        self._host_file = self._name
+        self._host_file = self.get_name()
 
         self._sequence.sample()
         self._sequence.export(self._host_dir, self._host_file)

@@ -123,7 +123,7 @@ class Sweep(ProgressReporting, Measurement):
         # add nested measurements 
         for measurement in measurements:
             measurement = self.add_measurement(measurement)
-            measurement.set_parent_name(self._name)
+            measurement.set_parent_name(self.get_name())
         #self.reporting = reporting
     
     def _measure(self, *args, **kwargs):
@@ -144,7 +144,7 @@ class Sweep(ProgressReporting, Measurement):
         if output_data:
             # we are handling references to python objects, 
             # so using (growing) lists should not cause a huge performance penalty
-            results = [[]]*len(self._children)
+            results = [[]]*len(self.get_measurements())
         # sweep coordinate
         for idx, x in enumerate(_range):
             # reset child progress bars
@@ -154,7 +154,7 @@ class Sweep(ProgressReporting, Measurement):
             # if a ContinueIteration exception is raised, continue filling the output buffer
             # but do not execute any more measurements in this iteration
             continueIteration = False
-            for idx, measurement in enumerate(self._children):
+            for idx, measurement in enumerate(self.get_measurements()):
                 # run background tasks (e.g. progress reporter)
                 qt.msleep()
                 # measure

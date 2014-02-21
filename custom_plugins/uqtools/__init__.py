@@ -4,12 +4,10 @@
 #reload(context)
 #import measurement
 #reload(measurement)
-
 #import progress
 #reload(progress)
-import basics
-reload(basics)
-
+#import basics
+#reload(basics)
 #import calibrate
 #reload(calibrate)
 #import fpga

@@ -12,7 +12,7 @@ class Buffer(Measurement):
         self._cs = None
         self._d = None
         # add m
-        m.set_parent_name(self._name)
+        m.set_parent_name(self.get_name())
         self.add_measurement(m)
         self.add_coordinates(m.get_coordinates())
         self.add_values(m.get_values())
