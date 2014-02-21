@@ -19,7 +19,7 @@ class Buffer(Measurement):
     
     def _measure(self, **kwargs):
         ''' perform measurement, storing the returned coordinate and data arrays '''
-        self._cs, self._d = self.get_measurements()[0](**kwargs)
+        self._cs, self._d = self.get_measurements()[0](nested=True, **kwargs)
         # write data to disk & return
         points = [numpy.ravel(m) for m in self._cs+[self._d]]
         self._data.add_data_point(*points, newblock=True)
@@ -66,7 +66,7 @@ class Add(Measurement):
 
     def _measure(self, **kwargs):
         # retrieve first summand: measured data
-        cs, d = self.get_measurements()[0](**kwargs) # output_data=True
+        cs, d = self.get_measurements()[0](nested=True, **kwargs) # output_data=True
         # retrieve second summand: calibration data
         if hasattr(self._summand, 'get_data'):
             _, s1 = self._summand.get_data()
@@ -115,7 +115,7 @@ class Integrate(Measurement):
     
     def _measure(self, **kwargs):
         # retrieve data
-        cs, d = self.get_measurements()[0](**kwargs) # output_data=True
+        cs, d = self.get_measurements()[0](nested=True, **kwargs) # output_data=True
         if self.range is not None:
             # select values to be integrated
             c_mask = numpy.all((cs[self._axis]>=self.range[0], cs[self._axis]<self.range[1]), axis=0)

@@ -31,7 +31,7 @@ class CalibrateResonator(Measurement):
         ))
 
     def _measure(self, *args, **kwargs):
-        response = self.get_measurements()[0](output_data=True)[0]
+        response = self.get_measurements()[0](nested=True, output_data=True)[0]
         #print response
         #print numpy.array(response).shape
         response = [r[1][0,0] for r in response]

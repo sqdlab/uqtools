@@ -109,7 +109,6 @@ class Measurement(object):
             self._values = []
         self._parent_coordinates = []
         self._setup_done = False
-        self._is_nested = False
     
     def get_name(self):
         return self._name
@@ -128,7 +127,7 @@ class Measurement(object):
         self._parent_name = name
         for child in self._children:
             child.set_parent_name(name + ('_' if name else '') + self._name)
-    
+        
     def set_parent_coordinates(self, dimensions = []):
         '''
             set *parent* coordinate(s)
@@ -142,9 +141,12 @@ class Measurement(object):
 #         for dimension in dimensions:
 #             if not isinstance(dimension, Dimension):
 #                 raise TypeError('all elements of dimensions must be an instance of Dimension.')
-        self._parent_coordinates = [dim for dim in dimensions if type(dim).__name__ == 'Coordinate']
+        self._parent_coordinates = [
+            dim 
+            for dim in dimensions 
+            if (type(dim).__name__ == 'Coordinate') and dim.inheritable
+        ]
 #        self._parent_coordinates = dimensions
-        self._is_nested = True
     
     def set_parent_data_directory(self, directory=''):
         self._parent_data_directory = directory
@@ -358,15 +360,18 @@ class Measurement(object):
         return decorated_function
     
     @_nested_context_decorator
-    def __call__(self, *args, **kwargs):
+    def __call__(self, nested=False, *args, **kwargs):
         '''
             perform a measurement.
             perform setup, call self._measure, perform cleanup and return output of self._measure
         '''
         # let external context manager initialize devices before the start of the measurement
         #with self._context: 
-        # _setup is only called once
-        if not self._setup_done:
+        # (globally) create data files is handled by the top-level measurement
+        if not nested:
+            # top-level measurements must never be set up at this point
+            if self._setup_done:
+                self._teardown()
             self._setup()
         # tell qtlab to stop background tasks etc.
         qt.mstart()
@@ -374,8 +379,8 @@ class Measurement(object):
         try:
             result = self._measure(*args, **kwargs)
         finally:
-            # close data files if this is a top-level measurement
-            if not self._is_nested:
+            # close data files etc if this is a top-level measurement
+            if not nested:
                 self._teardown()
             qt.mend()
         return result
@@ -385,19 +390,17 @@ class Measurement(object):
             setup measurements.
             called before the first measurement.
         '''
-        # generate a new data directory name if this is a top-level measurement
-        #if not self._is_nested:
-        if not self._parent_data_directory:
-            self.set_parent_data_directory(
-                self._file_name_generator.generate_directory_name(self._name)
-            )
+        # generate a new data directory name
+        if self._parent_data_directory:
+            self.set_parent_data_directory(self._file_name_generator.generate_directory_name(self._name))
         # create own data files if any value dimensions are present
         if len(self.get_values()):
             self._create_data_files()
         # pass coordinates and paths to children
         for child in self._children:
-            child.set_parent_coordinates(self.get_dimensions(parent = True, local=False))
             child.set_parent_data_directory(self.get_data_directory())
+            child.set_parent_coordinates(self.get_dimensions(parent = True, local=False))
+            child._setup()
         # make sure setup is not run again
         self._setup_done = True
     
@@ -424,20 +427,17 @@ class Measurement(object):
             clean-up measurements.
             called when the top-level measurement has finished. 
         '''
-        # clean up all nested measurements
+        # clean-up of all nested measurements is handled by the top-level measurement
         for child in self._children:
             child._teardown()
+        # allow setup to run for the next measurement
+        self._setup_done = False
         # close own data file(s)
         if hasattr(self, '_data'):
             for df in make_iterable(self._data):
                 if hasattr(df, 'close_file'):
                     df.close_file()
             del self._data
-        # make sure a new data directory is created when executed again
-        #if not self._is_nested:
+        # forget data directory and inherited coordinates
         self.set_parent_data_directory()
-        # allow setup to run for the next measurement
-        self._setup_done = False
-        # forget inherited dimensions
-        if self._is_nested:
-            self.set_parent_coordinates()
+        self.set_parent_coordinates()

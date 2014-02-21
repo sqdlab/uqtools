@@ -1,4 +1,5 @@
 import numpy
+import functools
 
 class Dimension(object):
     '''
@@ -58,7 +59,10 @@ class Dimension(object):
 
 class Coordinate(Dimension):
     ''' a coordinate dimension '''
-    pass
+    @functools.wraps(Dimension.__init__)
+    def __init__(self, name, set_func = None, get_func = None, value = None, dtype = None, inheritable=True, **info):
+        super(Coordinate, self).__init__(name, set_func, get_func, value, dtype, **info)
+        self.inheritable = inheritable
 
 class Value(Dimension):
     ''' a value dimension '''
