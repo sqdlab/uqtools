@@ -4,8 +4,9 @@ import scipy.stats
 import scipy.optimize
 from . import Value, Measurement
 from . import Sweep, ContinueIteration
+from . import ProgressReporting
 
-class CalibrateResonator(Measurement):
+class CalibrateResonator(ProgressReporting, Measurement):
     '''
     calibrate resonator probe frequency by sweeping and fitting
     '''

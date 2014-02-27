@@ -126,6 +126,9 @@ class Sweep(ProgressReporting, Measurement):
             measurement.set_parent_name(self.get_name())
         #self.reporting = reporting
     
+    def get_dimensions(self, parent=False, local=True):
+        return super(Sweep, self).get_dimensions(parent=parent, local=local or parent)
+        
     def _measure(self, *args, **kwargs):
         ''' 
             perform a swept measurement.
@@ -134,7 +137,6 @@ class Sweep(ProgressReporting, Measurement):
                 output_data - if True, return lists containing the measured data
                 all args and kwargs are passed to the nested measurements
         '''
-        self._reporting_start()
         # measured range may change on each call; also notify progress reporter
         _range = self.range()
         if hasattr(_range, '__len__'):
@@ -168,6 +170,5 @@ class Sweep(ProgressReporting, Measurement):
                     results[idx].append(None if continueIteration else result)
             # indicate that the current data point is complete
             self._reporting_next()
-        self._reporting_finish()
         if output_data:
             return results

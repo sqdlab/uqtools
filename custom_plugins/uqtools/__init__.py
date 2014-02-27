@@ -25,6 +25,6 @@ from basics import Delay, ValueMeasurement, MeasurementArray, ReportingMeasureme
 from basics import Delay as NullMeasurement
 from basics import ValueMeasurement as DimensionQuery
 from calibrate import CalibrateResonator
-from fpga import CorrelatorMeasurement, AveragedCorrelatorMeasurement, TvModeMeasurement, AveragedTvModeMeasurement
+from fpga import CorrelatorMeasurement, AveragedCorrelatorMeasurement, TvModeMeasurement, AveragedTvModeMeasurement, HistogramMeasurement
 from process import Buffer, Add, Integrate
 from awg import ProgramAWG, ProgramAWGParametric

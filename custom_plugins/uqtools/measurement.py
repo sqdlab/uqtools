@@ -248,6 +248,15 @@ class Measurement(object):
     def get_measurements(self):
         return self._children
 
+    def get_data_file_paths(self):
+        '''
+            return the full paths of all data files contained in this measurement
+        '''
+        if hasattr(self, '_data') and hasattr(self._data, 'get_filepath'):
+            return [self._data.get_filepath()]
+        else:
+            return []
+
     def _create_data_files(self):
         '''
             create required data files.
@@ -365,15 +374,13 @@ class Measurement(object):
             perform a measurement.
             perform setup, call self._measure, perform cleanup and return output of self._measure
         '''
-        # let external context manager initialize devices before the start of the measurement
-        #with self._context: 
-        # (globally) create data files is handled by the top-level measurement
-        if not nested:
+        # initialize measurement, create data files etc.
+        if self._setup_done and not nested:
             # top-level measurements must never be set up at this point
-            if self._setup_done:
-                self._teardown()
+            self._teardown()
+        if not self._setup_done:
             self._setup()
-        # tell qtlab to stop background tasks etc.
+        # tell qtlab to stop background tasks and enable stop button
         qt.mstart()
         # measure
         try:
@@ -391,7 +398,7 @@ class Measurement(object):
             called before the first measurement.
         '''
         # generate a new data directory name
-        if self._parent_data_directory:
+        if not self._parent_data_directory:
             self.set_parent_data_directory(self._file_name_generator.generate_directory_name(self._name))
         # create own data files if any value dimensions are present
         if len(self.get_values()):
@@ -399,8 +406,8 @@ class Measurement(object):
         # pass coordinates and paths to children
         for child in self._children:
             child.set_parent_data_directory(self.get_data_directory())
-            child.set_parent_coordinates(self.get_dimensions(parent = True, local=False))
-            child._setup()
+            child.set_parent_coordinates(self.get_dimensions(parent=True, local=False))
+            #child._setup()
         # make sure setup is not run again
         self._setup_done = True
     

@@ -100,7 +100,7 @@ class SweepState(object):
             if len(self.point_timing) and (self.iterations is not None):
                 # point timing data is the best guess if the time taken per point changes during the measurement
                 return numpy.mean(self.point_timing)*max(0, self.iterations-self.iteration)
-            elif self.progress() != 1.:
+            elif (self.progress() != 1.) and (self.iterations is not None):
                 # this will overestimate the remaining time because it includes the setup time
                 return self.time_elapsed()/(1.-self.progress())
             else:
@@ -132,7 +132,7 @@ class MultiProgressBar(object):
     '''
     A graphical progress bar for multi-dimensional sweeps
     '''
-    def _format_text_bar(self, level, state, width=40):
+    def _format_text_bar(self, level, obj, state, width=40):
         ''' 
         wget-style progress bar
         xxx% |==========..........| ETC xxxxxxxxx | Label
@@ -152,11 +152,15 @@ class MultiProgressBar(object):
         }
         return '{indent}{progress: >3d}% |{bar1}{running}{bar2}| {etc} {remaining: >9s}{label}'.format(**format_dict)
 
-    def _format_html_bar(self, level, state, width=400):
+    def _format_html_bar(self, level, obj, state, width=400):
         time_remaining = state.time_remaining()
+        if hasattr(obj, '_data'):
+            url = 'file://'+obj._data.get_filepath().replace('\\','/')
+        else:
+            url = ''
         format_dict = {
             'indent': 20*level,
-            'label': state.label,
+            'label': '<a href="{0}" target="_new">{1}</a>'.format(url, state.label) if url else state.label,
             'width': width,
             'width-unit': 'px' if isinstance(width, int) or isinstance(width, float) else '',
             'progress': int(100*state.progress()),
@@ -183,9 +187,9 @@ class MultiProgressBar(object):
         return text/plain representation of a multi-level progress bar
         
         Input:
-            state_list - list of (level, state) tuples in depth-first order
+            state_list - list of (level, obj, state) tuples in depth-first order
         '''
-        bars = [self._format_text_bar(level, state) for level, state in state_list]
+        bars = [self._format_text_bar(level, obj, state) for level, obj, state in state_list]
         return '\r\n'.join(bars)
         
     def format_html(self, state_list):
@@ -193,9 +197,9 @@ class MultiProgressBar(object):
         return text/html representation of a multi-level progress bar
 
         Input:
-            state_list - list of (level, state) tuples in depth-first order
+            state_list - list of (level, obj, state) tuples in depth-first order
         '''
-        bars = [self._format_html_bar(level, state) for level, state in state_list]
+        bars = [self._format_html_bar(level, obj, state) for level, obj, state in state_list]
         return '<table style="border:none;">\r\n{0}</table>'.format('\r\n'.join(bars))
 
     
@@ -206,21 +210,29 @@ class ProgressReporting(object):
     def __call__(self, nested=False, *args, **kwargs):
         # if this is a top-level measurement, it is responsible for generating the progress indicator
         if not nested:
+            self._reporting_dfs(ProgressReporting._reporting_setup)
             self._reporting_bar = MultiProgressBar()
             self._reporting_timer = gobject.timeout_add(250, self._reporting_timer_cb)
+            #self._reporting_state = SweepState(label=self.get_name())
         try:
-            super(ProgressReporting, self).__call__(*args, **kwargs)
+            self._reporting_start()
+            result = super(ProgressReporting, self).__call__(nested=nested, *args, **kwargs)
+            self._reporting_finish()
         finally:
             if not nested:
                 gobject.source_remove(self._reporting_timer)
         if not nested:
             self._reporting_timer_cb()
-
-    def _setup(self):
-        super(ProgressReporting, self)._setup()
+        return result
+    
+    def _reporting_setup(self):
+        ''' attach SweepState object to self '''
+        #super(ProgressReporting, self)._setup()
+        #if not hasattr(self, '_reporting_state'):
         self._reporting_state = SweepState(label=self.get_name())
     
     def _reporting_timer_cb(self):
+        ''' output progress bars '''
         IPython.display.clear_output()
         state_list = self._reporting_dfs(lambda obj: obj._reporting_state)
         IPython.display.publish_display_data('ProgressReporting', {
@@ -234,12 +246,12 @@ class ProgressReporting(object):
         ''' 
         do a depth-first search through the subtree of ProgressReporting Measurements
         function(self) is executed on each Measurement
-        return values are returned as a flat list of tuples (level, value),
+        return values are returned as a flat list of tuples (level, self, value),
             where level is the nesting level
         '''
         results = []
         if do_self:
-            results.append((level, function(self)))
+            results.append((level, self, function(self)))
         for child in self._children:
             if isinstance(child, ProgressReporting):
                 results.extend(child._reporting_dfs(function, level+1))
