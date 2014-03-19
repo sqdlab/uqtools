@@ -1,23 +1,22 @@
 import numpy
-import functools
 
-class Dimension(object):
+class Parameter(object):
     '''
-        a dimension of a data object
+        a parameter of a data object
         
-        by making dimensions objects it becomes possible to store them inside nested measurement
+        by making parameter objects it becomes possible to store them inside nested measurement
         functions/objects. when a nested measurement is run, it can retrieve the current point
-        on the coordinate axes by accessing its stored dimension objects.
+        on the coordinate axes by accessing its stored parameter objects.
         
-        additional properties like the dimension name can be automatically added to new data files
+        additional properties like the parameter name can be automatically added to new data files
         created by nested measurements. 
     '''
-    def __init__(self, name, set_func = None, get_func = None, value = None, dtype = None, **info):
+    def __init__(self, name, set_func=None, get_func=None, value=None, dtype=None, inheritable=True, **info):
         '''
-            initialize dimension.
+            initialize parameter.
             
             Input:
-                name - frieldy name of the dimension
+                name - frieldy name of the parameter
                 set_func - function called when set(value) is called
                 get_func - function called when get() is called, returns stored value if not given
                 value - stored value. not necessarily scalar.
@@ -33,6 +32,7 @@ class Dimension(object):
             self._value = None
         self.dtype = dtype
         self.info = info
+        self.inheritable = inheritable
     
     def set(self, value):
         ''' store value and call set_func if defined '''
@@ -51,19 +51,8 @@ class Dimension(object):
         return callable(self.dtype) and numpy.iscomplexobj(self.dtype())
         
     def __repr__(self):
-        r = super(Dimension, self).__repr__()
-        # <object Dimension "name" at 0x...>
+        r = super(Parameter, self).__repr__()
+        # <object Parameter "name" at 0x...>
         r_parts = r.split(' ')
         r_parts.insert(2, '"{0}"'.format(self.name))
         return ' '.join(r_parts)
-
-class Coordinate(Dimension):
-    ''' a coordinate dimension '''
-    @functools.wraps(Dimension.__init__)
-    def __init__(self, name, set_func = None, get_func = None, value = None, dtype = None, inheritable=True, **info):
-        super(Coordinate, self).__init__(name, set_func, get_func, value, dtype, **info)
-        self.inheritable = inheritable
-
-class Value(Dimension):
-    ''' a value dimension '''
-    pass

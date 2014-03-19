@@ -1,6 +1,6 @@
 import logging
 import os
-from . import Measurement, Value
+from . import Measurement, Parameter
 
 class ProgramAWG(Measurement):
     '''
@@ -80,13 +80,9 @@ class ProgramAWGParametric(Measurement):
         super(ProgramAWGParametric, self).__init__(**kwargs)
 
         # add function arguments as parameters
-        self.add_dimensions( Value('index', get_func=(lambda: len(self._prev_sequence_args)-1)) )
+        self.add_dimensions(Parameter('index', get_func=(lambda: len(self._prev_sequence_args)-1)) )
         for dim in sequence_args+sequence_kwargs.values():
-            get_func = lambda dim: (lambda: dim.get()) 
-            if type(dim).__name__ == 'Coordinate':
-                self.add_dimensions( Value(dim.name, get_func=get_func(dim)) )
-            if type(dim).__name__ == 'Value':
-                self.add_dimensions(dim)
+            self.add_value(dim)
 
     def _measure(self, wait=True):
         # evaluate arguments and compare to previous values
@@ -122,7 +118,7 @@ class ProgramAWGParametric(Measurement):
         self._prev_sequence_length.append(len(sequence))
         
         # save evaluated args to file
-        self._data.add_data_point(*self.get_dimension_values())
+        self._data.add_data_point(*[self.get_coordinate_values()+self.get_value_values()])
         
         # program awg
         self._program(host_dir, host_file(idx), wait, length=len(sequence))

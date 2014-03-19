@@ -3,7 +3,7 @@ import types
 import numpy
 import qt
 import collections
-from . import Measurement, Coordinate, ProgressReporting
+from . import Measurement, Parameter, ProgressReporting
 
 class Delay(Measurement):
     '''
@@ -26,7 +26,7 @@ class ValueMeasurement(Measurement):
     def __init__(self, *values, **kwargs):
         '''
             Input:
-                *values - one or more Dimension objects to query for values
+                *values - one or more Parameter objects to query for values
         '''
         if not kwargs.has_key('name'):
             if len(values) == 1:
@@ -38,9 +38,9 @@ class ValueMeasurement(Measurement):
         self.add_values(values)
     
     def _measure(self, **kwargs):
-        data = self.get_dimension_values(parent=False)
+        data = self.get_value_values()
         self._data.add_data_point(*data)
-        return data
+        return (), data
   
     
 class MeasurementArray(Measurement):
@@ -50,7 +50,7 @@ class MeasurementArray(Measurement):
     '''
     def __init__(self, *measurements, **kwargs):
         super(MeasurementArray, self).__init__(**kwargs)
-        self.add_coordinates(Coordinate(name='nestedId', type=int, values=range(len(measurements)), inheritable=False))
+        self.add_coordinates(Parameter(name='nestedId', type=int, values=range(len(measurements)), inheritable=False))
         for measurement in measurements:
             self.add_measurement(measurement)
 
@@ -112,7 +112,7 @@ class Sweep(ProgressReporting, Measurement):
         # measurements argument provided by the user need not be iterable
         if not numpy.iterable(measurements):
             measurements = (measurements,)
-        self.add_coordinates(Coordinate(name='nestedId', type=int, values=[i for i in xrange(len(measurements))], inheritable=False))
+        self.add_coordinates(Parameter(name='nestedId', type=int, values=[i for i in xrange(len(measurements))], inheritable=False))
         self.add_coordinates(coordinate)
         self.coordinate = coordinate
         # range may be an iterable or a function
@@ -125,10 +125,10 @@ class Sweep(ProgressReporting, Measurement):
             measurement = self.add_measurement(measurement)
             measurement.set_parent_name(self.get_name())
         #self.reporting = reporting
-    
-    def get_dimensions(self, parent=False, local=True):
-        return super(Sweep, self).get_dimensions(parent=parent, local=local or parent)
         
+    def get_coordinates(self, parent=False, local=True):
+        return super(Sweep, self).get_coordinates(parent=parent, local=local or parent)
+
     def _measure(self, *args, **kwargs):
         ''' 
             perform a swept measurement.

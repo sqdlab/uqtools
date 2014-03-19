@@ -1,5 +1,6 @@
 import numpy
 from . import Measurement
+import logging
 
 class Buffer(Measurement):
     '''
@@ -72,17 +73,20 @@ class Add(Measurement):
             _, s1 = self._summand.get_data()
         else:
             s1 = self._summand()
-        # broadcast summand to fit measured data
-        s1 = s1.view()
-        s1.shape = (1,)*(len(self._transpose)-len(s1.shape))+s1.shape
-        s1.transpose(self._transpose)
-        # perform summation
-        # inherited coordinates will prepend singleton dimensions to data, 
-        # which is handled by numpy's broadcasting rules
-        if self.subtract:
-            d -= s1
+        if s1 is None:
+            logging.error(__name__ + ': one summand is None, not performing addition.')
         else:
-            d += s1
+            # broadcast summand to fit measured data
+            s1 = s1.view()
+            s1.shape = (1,)*(len(self._transpose)-len(s1.shape))+s1.shape
+            s1.transpose(self._transpose)
+            # perform summation
+            # inherited coordinates will prepend singleton dimensions to data, 
+            # which is handled by numpy's broadcasting rules
+            if self.subtract:
+                d -= s1
+            else:
+                d += s1
         # write data to disk & return
         points = [numpy.ravel(m) for m in cs+[d]]
         self._data.add_data_point(*points, newblock=True)
@@ -92,19 +96,21 @@ class Integrate(Measurement):
     '''
     Integrate measurement data
     '''
-    def __init__(self, m, coordinate, range=None, **kwargs):
+    def __init__(self, m, coordinate, range=None, average=False, **kwargs):
         '''
         create an integrator
-    
+        
         Input:
             m - nested measurement generating the data
             coordinate - coordinate over which to integrate
             range - (min, max) tuple of coordinate values to include
+            average - if True, devide by number of integration points
         '''
         super(Integrate, self).__init__(**kwargs)
         
         self._coordinate = coordinate
         self.range = range
+        self.average=average
         m = self.add_measurement(m)
         # add child coordinates to self, ignoring the coordinate integrated over
         cs = m.get_coordinates()
@@ -121,9 +127,13 @@ class Integrate(Measurement):
             c_mask = numpy.all((cs[self._axis]>=self.range[0], cs[self._axis]<self.range[1]), axis=0)
             # integrate masked array over selected axis
             d_int = numpy.where(c_mask, d, 0.).sum(self._axis)
+            if self.average:
+                d_int /= numpy.sum(c_mask)
         else:
             # integrate over all values
             d_int = d.sum(self._axis)
+            if self.average:
+                d_int /= d.shape[self._axis]
         # remove integration coordinate from returned coordinates
         cs.pop(self._axis)
         cs = [numpy.rollaxis(c, self._axis)[0,...] for c in cs]

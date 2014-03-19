@@ -3,7 +3,6 @@ import time
 from functools import wraps
 import numpy
 import copy
-from . import Dimension, Coordinate, Value
 from . import NullContextManager
 #make_iterable = lambda obj: obj if numpy.iterable(obj) else [obj]
 make_iterable = lambda obj: obj if isinstance(obj, list) or isinstance(obj, tuple) else (obj,)
@@ -133,20 +132,11 @@ class Measurement(object):
             set *parent* coordinate(s)
             
             Input:
-                dimensions - an iterable containing Dimension objects,
-                    only items that are also Coordinate objects are retained
+                dimensions - an iterable containing Parameter objects
         '''
         if self._setup_done:
             raise EnvironmentError('unable to add coordinates after the measurement has been setup.')
-#         for dimension in dimensions:
-#             if not isinstance(dimension, Dimension):
-#                 raise TypeError('all elements of dimensions must be an instance of Dimension.')
-        self._parent_coordinates = [
-            dim 
-            for dim in dimensions 
-            if (type(dim).__name__ == 'Coordinate') and dim.inheritable
-        ]
-#        self._parent_coordinates = dimensions
+        self._parent_coordinates = [dim for dim in dimensions if dim.inheritable]
     
     def set_parent_data_directory(self, directory=''):
         self._parent_data_directory = directory
@@ -157,44 +147,24 @@ class Measurement(object):
     def set_coordinates(self, dimensions):
         ''' empty coordinates list before calling add_coordinate '''
         self._coordinates = []
-        self.add_coordinate(dimensions)
+        self.add_coordinates(dimensions)
     
     def set_values(self, dimensions):
         ''' empty values list before calling add_value'''
         self._values = []
-        self.add_value(dimensions)
-    
-    def set_dimensions(self, dimensions):
-        ''' empty coordinates and values lists before calling add_dimension '''
-        self._coordinates = []
-        self._values = []
-        self.add_dimensions(dimensions)
+        self.add_values(dimensions)
     
     def add_coordinates(self, dimension):
-        ''' add one or more Dimension objects to the local dimensions list '''
+        ''' add one or more Parameter objects to the local coordinates list '''
 #         if not isinstance(dimension, Dimension):
 #             raise TypeError('parameter dimension must be an instance of Dimension.')
         self._coordinates.extend(make_iterable(dimension))
     
     def add_values(self, dimension):
-        ''' add a Dimension object to the local dimensions list '''
+        ''' add one or more Parameter objects to the values list '''
 #         if not isinstance(dimension, Dimension):
 #             raise TypeError('parameter dimension must be an instance of Dimension.')
         self._values.extend(make_iterable(dimension))
-    
-    def add_dimensions(self, dimensions):
-        ''' add a Dimension object to the local dimensions list '''
-        for dimension in make_iterable(dimensions):
-            if type(dimension).__name__ == 'Coordinate': #isinstance(dimension, Coordinate):
-                self.add_coordinates(dimension)
-            elif type(dimension).__name__ == 'Value': # isinstance(dimension, Value):
-                self.add_values(dimension)
-            else:
-                raise TypeError('dimension must be an instance of Coordinate or Value or a list thereof.')
-    
-    def get_dimensions(self, parent = False, local = True):
-        ''' return a list of parent and/or local dimensions '''
-        return self.get_coordinates(parent, local) + self.get_values()
     
     def get_coordinates(self, parent = False, local = True):
         ''' return a list of parent and/or local coordinates '''
@@ -221,10 +191,6 @@ class Measurement(object):
     def get_value_values(self):
         ''' run get() on all values '''
         return [dimension.get() for dimension in self.get_values()]
-    
-    def get_dimension_values(self, parent = True, local = True):
-        ''' run get() on all dimensions '''
-        return [dimension.get() for dimension in self.get_dimensions(parent, local)]
     
     def add_measurement(self, measurement):
         '''
@@ -262,16 +228,15 @@ class Measurement(object):
             create required data files.
             may be replaced in subclasses if a more complex file handling is desired.
         '''
-        self._data = self._create_data_file(self.get_dimensions())
+        self._data = self._create_data_file()
     
-    def _create_data_file(self, dimensions, name = None):
+    def _create_data_file(self, name = None):
         '''
             create an empty data file
             if self._data_save is False, it returns a dummy object
             
             Input:
-                dimensions - extra dimensions (on top of parent_dimensions
-                    passed to the constructor)
+
                 name - suffix for file name, replaces self._name if set
             Return:
                 a data.Data object or something with a similar interface
@@ -287,7 +252,7 @@ class Measurement(object):
         # create empty data file object and add dimensions
         df = Data(name = self._name)
         for add_dimension, dimensions in [ 
-            (df.add_coordinate, self.get_coordinates(parent = True)),
+            (df.add_coordinate, self.get_coordinates(parent=True)),
             (df.add_value, self.get_values()) 
         ]:
             for dim in dimensions:
@@ -308,7 +273,7 @@ class Measurement(object):
         df.create_file(filepath = file_path)
         # decorate add_data_point to convert complex arguments to two real arguments
         complex_dims = numpy.nonzero(
-            [callable(dim.dtype) and numpy.iscomplexobj(dim.dtype()) for dim in self.get_dimensions(parent = True)]
+            [callable(dim.dtype) and numpy.iscomplexobj(dim.dtype()) for dim in self.get_coordinates(parent=True)+self.get_values()]
         )[0]
         if len(complex_dims):
             df.add_data_point = self._unpack_complex_decorator(df.add_data_point, complex_dims)
@@ -406,7 +371,7 @@ class Measurement(object):
         # pass coordinates and paths to children
         for child in self._children:
             child.set_parent_data_directory(self.get_data_directory())
-            child.set_parent_coordinates(self.get_dimensions(parent=True, local=False))
+            child.set_parent_coordinates(self.get_coordinates(parent=True, local=False))
             #child._setup()
         # make sure setup is not run again
         self._setup_done = True

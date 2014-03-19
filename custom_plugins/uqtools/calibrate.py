@@ -2,7 +2,7 @@ import numpy
 import types
 import scipy.stats
 import scipy.optimize
-from . import Value, Measurement
+from . import Parameter, Measurement
 from . import Sweep, ContinueIteration
 from . import ProgressReporting
 
@@ -26,9 +26,9 @@ class CalibrateResonator(ProgressReporting, Measurement):
             self._range = lambda:freq_range
         self.add_measurement(Sweep(c_freq, freq_range, m))
         self.add_values((
-            Value('f0'), Value('Gamma'), Value('amplitude'), Value('baseline'),
-            Value('f0_std'), Value('Gamma_std'), Value('amplitude_std'), Value('baseline_std'),
-            Value('fit_ok') 
+            Parameter('f0'), Parameter('Gamma'), Parameter('amplitude'), Parameter('baseline'),
+            Parameter('f0_std'), Parameter('Gamma_std'), Parameter('amplitude_std'), Parameter('baseline_std'),
+            Parameter('fit_ok') 
         ))
 
     def _measure(self, *args, **kwargs):
