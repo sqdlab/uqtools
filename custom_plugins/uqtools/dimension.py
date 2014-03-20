@@ -21,6 +21,7 @@ class Parameter(object):
                 get_func - function called when get() is called, returns stored value if not given
                 value - stored value. not necessarily scalar.
                 dtype - data type
+                inheritable - (deprecataed) if False, Parameter is not passed to nested measurements if used as a coordinate
                 **info - extra keyword arguments are descriptive information and may be stored in data files
         '''
         self.name = name

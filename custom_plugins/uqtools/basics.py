@@ -18,7 +18,7 @@ class Delay(Measurement):
             time.sleep(self._delay)
     
     
-class ValueMeasurement(Measurement):
+class ParameterMeasurement(Measurement):
     '''
         0d measurement
         Retrieve values of all elements of values and save them to a single file.
@@ -34,7 +34,7 @@ class ValueMeasurement(Measurement):
             else:
                 kwargs['name'] = '(%s)'%(','.join([value.name for value in values]))
                 
-        super(ValueMeasurement, self).__init__(**kwargs)
+        super(ParameterMeasurement, self).__init__(**kwargs)
         self.add_values(values)
     
     def _measure(self, **kwargs):

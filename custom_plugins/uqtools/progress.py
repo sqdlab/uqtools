@@ -183,6 +183,31 @@ class MultiProgressBar(object):
         '''.format(**format_dict)
 
     def format_text(self, state_list):
+        rlevel=0
+        parts = ['\r']
+        for level, _, state in state_list:
+            # calculate placeholder values
+            time_remaining = state.time_remaining()
+            format_dict = {
+                'label': state.label, 
+                'progress': int(100*state.progress()),
+                'etc': 'ETC' if state.running else 'CT',
+                'remaining': 'unknown' if time_remaining is None else '{0:d}m:{1:02d}s'.format(int(time_remaining/60), int(time_remaining%60))
+            }
+            # handle concatenation
+            if level<rlevel:
+                parts.append(')'*(rlevel-level))
+            elif level==rlevel:
+                parts.append(', ')
+            elif level>rlevel:
+                parts.append('('*(level-rlevel))
+            rlevel=level
+            # add parts
+            parts.append('{label} {progress: >3d}%'.format(**format_dict))
+        parts.append(' {etc} {remaining}'.format(**format_dict))
+        return ''.join(parts)
+
+    def format_text_multiline(self, state_list):
         '''
         return text/plain representation of a multi-level progress bar
         
@@ -236,8 +261,8 @@ class ProgressReporting(object):
         IPython.display.clear_output()
         state_list = self._reporting_dfs(lambda obj: obj._reporting_state)
         IPython.display.publish_display_data('ProgressReporting', {
+            'text/html': self._reporting_bar.format_html(state_list),
             'text/plain': self._reporting_bar.format_text(state_list),
-            'text/html': self._reporting_bar.format_html(state_list)
         })
         return True
 
