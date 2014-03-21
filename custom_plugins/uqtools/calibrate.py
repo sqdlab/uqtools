@@ -1,10 +1,10 @@
 import numpy
-import types
 import scipy.stats
 import scipy.optimize
 from . import Parameter, Measurement
 from . import Sweep, ContinueIteration
 from . import ProgressReporting
+import logging
 
 class CalibrateResonator(ProgressReporting, Measurement):
     '''
@@ -20,10 +20,6 @@ class CalibrateResonator(ProgressReporting, Measurement):
         '''
         super(CalibrateResonator, self).__init__(**kwargs)
         self._coordinate = c_freq
-        if type(freq_range)==types.FunctionType:
-            self._range = freq_range
-        else:
-            self._range = lambda:freq_range
         self.add_measurement(Sweep(c_freq, freq_range, m))
         self.add_values((
             Parameter('f0'), Parameter('Gamma'), Parameter('amplitude'), Parameter('baseline'),
@@ -32,18 +28,38 @@ class CalibrateResonator(ProgressReporting, Measurement):
         ))
 
     def _measure(self, *args, **kwargs):
-        response = self.get_measurements()[0](nested=True, output_data=True)[0]
-        #print response
-        #print numpy.array(response).shape
-        response = [r[1][0,0] for r in response]
-        success, p_opt, p_std = self.fit_resonator(self._range(), response)
-        self._data.add_data_point(*(list(p_opt)+list(p_std)+[1 if success else 0]))
+        # run nested sweep
+        m = self.get_measurements()[0]
+        _range, responses = m(nested=True, output_data=True)
+        # remove failed measurements
+        if None in responses:
+            _range = [x for x,y in zip(range, responses) if y is not None]
+            responses = [x for x,y in zip(range, responses) if y is not None]
+        if not len(responses):
+            raise ContinueIteration('swept frequency range was empty or all measurements failed.')
+        # check shape of the measured data
+        if len(responses[0][0]):
+            cs = numpy.array(responses[0][1])
+            if numpy.prod(cs.shape)>1:
+                logging.warning(__name__ + 'data measured has at least one non-singleton dimension. using the mean of all points.')
+            data = [numpy.mean(d) for _, d in responses]
+        else:
+            data = [d for _, d in responses]
+        # fit & save the fit result
+        success, p_opt, p_std = self.fit_resonator(_range, data)
+        result = list(p_opt) + list(p_std) + [1 if success else 0]
+        self._data.add_data_point(*result)
+        for p, v in zip(self.get_values(), result):
+            p.set(v)
+        # set source on resonance
         if success:
             self._coordinate.set(p_opt[0])
         else:
-            raise ContinueIteration()
-        return success
+            raise ContinueIteration('fit failed.')
+        # return fit result
+        return (), result
 
+    #TODO: use new fitting library instead
     def fit_resonator(self, fs, response):
         '''
             fit a Lorentzian to measured resonator response data
