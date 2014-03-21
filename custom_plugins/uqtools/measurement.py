@@ -390,7 +390,7 @@ class Measurement(object):
                 c - an iterable containing values of all local coordinates of all data points
                     each item must have the same shape as d (it may have one dimension less)
                 d - an array containing the measured data. The last index runs over all Values
-                    measured. (Thus, the output can never be scalar.)
+                    measured. If only one value is measured, the value dimension must be suppressed.
         '''
         raise NotImplementedError()
     

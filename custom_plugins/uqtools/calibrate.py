@@ -20,6 +20,8 @@ class CalibrateResonator(ProgressReporting, Measurement):
         '''
         super(CalibrateResonator, self).__init__(**kwargs)
         self._coordinate = c_freq
+        if len(m.get_values()) != 1:
+            raise ValueError('nested measurement must measure exactly one value.')
         self.add_measurement(Sweep(c_freq, freq_range, m))
         self.add_values((
             Parameter('f0'), Parameter('Gamma'), Parameter('amplitude'), Parameter('baseline'),

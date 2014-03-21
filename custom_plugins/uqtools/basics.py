@@ -31,19 +31,24 @@ class ParameterMeasurement(Measurement):
             Input:
                 *values - one or more Parameter objects to query for values
         '''
+        if not len(values):
+            raise ValueError('At least one Parameter object must be specified.')
         if not kwargs.has_key('name'):
             if len(values) == 1:
                 kwargs['name'] = values[0].name
             else:
                 kwargs['name'] = '(%s)'%(','.join([value.name for value in values]))
-                
         super(ParameterMeasurement, self).__init__(**kwargs)
         self.add_values(values)
     
     def _measure(self, **kwargs):
         data = self.get_value_values()
         self._data.add_data_point(*data)
-        return (), data
+        # suppress singleton dimension, as specified in Measurement 
+        if len(data) == 1:
+            return (), data[0]
+        else:
+            return (), data
   
     
 class MeasurementArray(Measurement):
