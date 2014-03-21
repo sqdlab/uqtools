@@ -40,7 +40,7 @@ class FPGAMeasurement(Measurement):
         #self.set_values(dims[-1])
         super(FPGAMeasurement, self)._setup()
         
-    def _measure(self):
+    def _measure(self, *args, **kwargs):
         # check if fpga is in the correct mode
         self._check_mode()
         # build coordinate matrices
