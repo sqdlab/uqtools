@@ -15,7 +15,10 @@ class Delay(Measurement):
     
     def _measure(self, **kwargs):
         if self._delay is not None:
-            time.sleep(self._delay)
+            if self._delay >= 50e-3:
+                qt.msleep(self._delay)
+            else:
+                time.sleep(self._delay)
     
     
 class ParameterMeasurement(Measurement):
@@ -58,8 +61,15 @@ class MeasurementArray(Measurement):
         output_data = kwargs.get('output_data', False)
         results = collections.deque(maxlen=None if output_data else 0)
         # ...
+        continueIteration = False
         for measurement in self.get_measurements():
-            results.append(measurement(nested=True, *args, **kwargs))
+            result = None
+            if not continueIteration:
+                try:
+                    result = measurement(nested=True, *args, **kwargs)
+                except ContinueIteration:
+                    continueIteration = True
+            results.append(result)
         if output_data:
             return range(len(results)), results
 
@@ -73,8 +83,15 @@ class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
         # ...
         self._reporting_start()
         self._reporting_state.iterations = len(self.get_measurements())
+        continueIteration = False
         for measurement in self.get_measurements():
-            results.append(measurement(nested=True, *args, **kwargs))
+            result = None
+            if not continueIteration:
+                try:
+                    result = measurement(nested=True, *args, **kwargs)
+                except ContinueIteration:
+                    continueIteration = True
+            results.append(result)
             self._reporting_next()
         self._reporting_finish()
         if output_data:
@@ -91,28 +108,24 @@ class Sweep(ProgressReporting, Measurement):
         do a one-dimensional sweep of one or more nested measurements
     '''
     
-    def __init__(self, coordinate, range, measurements, reporting=-1, **kwargs):
+    def __init__(self, coordinate, range, measurements, **kwargs):
         '''
             Input:
                 coordinate - swept coordinate
                 range - sweep range
                     If range is a function, it is called with zero arguments at the start of the/each sweep.
-                measurements - nested measurements. each measurement is executed once per value in range.
+                measurements - nested measurement or measurements. each measurement is executed once per value in range.
                     A measurement may raise a ContinueIteration exception to indicate that the remaining
                     measurements should be skipped in the current iteration.
-                reporting - (obsolete) status reporting.
-                    None - no reporting
-                    0 - report every coordinate set operation 
-                    n (positive integer) - estimate time required on every nth iteration
-                    -1 - print total time when finished
+                    If measurements is an iterable, the measured data will be two-dimensional with the measurement index
+                    as the first dimension, otherwise it will be one-dimensional.
         '''
         if('name' not in kwargs):
             kwargs['name'] = coordinate.name
         super(Sweep, self).__init__(**kwargs)
-        # measurements argument provided by the user need not be iterable
-        if not numpy.iterable(measurements):
-            measurements = (measurements,)
-        self.add_coordinates(Parameter(name='nestedId', type=int, values=[i for i in xrange(len(measurements))], inheritable=False))
+        if numpy.iterable(measurements):
+            # if measurements is an iterable, return a 2d result
+            self.add_coordinates(Parameter(name='nestedId', type=int, values=[i for i in xrange(len(measurements))], inheritable=False))
         self.add_coordinates(coordinate)
         self.coordinate = coordinate
         # range may be an iterable or a function
@@ -121,10 +134,9 @@ class Sweep(ProgressReporting, Measurement):
         else:
             self.range = lambda:range
         # add nested measurements 
-        for measurement in measurements:
+        for measurement in measurements if numpy.iterable(measurements) else (measurements,):
             measurement = self.add_measurement(measurement)
             measurement.set_parent_name(self.get_name())
-        #self.reporting = reporting
         
     def get_coordinates(self, parent=False, local=True):
         return super(Sweep, self).get_coordinates(parent=parent, local=local or parent)
@@ -171,4 +183,10 @@ class Sweep(ProgressReporting, Measurement):
             # indicate that the current data point is complete
             self._reporting_next()
         if output_data:
-            return results
+            # return a list of lists if the  measurements argument passed to the constructor
+            # was an iterable or a simple list otherwise
+            if len(self.get_coordinates()) == 2:
+                cs = numpy.meshgrid(numpy.arange(len(self.get_measurements())), _range)
+                return cs, results
+            else:
+                return _range, results[0]
