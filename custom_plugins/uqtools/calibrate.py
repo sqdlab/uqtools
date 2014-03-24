@@ -6,29 +6,31 @@ from . import Sweep, ContinueIteration
 from . import ProgressReporting
 import logging
 
-class CalibrateResonator(ProgressReporting, Measurement):
-    '''
-    calibrate resonator probe frequency by sweeping and fitting
-    '''
+class FittingMeasurement(ProgressReporting, Measurement):
     
-    def __init__(self, c_freq, freq_range, m, **kwargs):
+    def __init__(self, measurement, fitter, test=None, **kwargs):
         '''
+        measure something, try to fit the data returned
+        
         Input:
-            c_freq - frequency coordinate
-            freq_range - frequency range to measure
-            m - response measurement object 
+            measurement (instance of Measurement) - data source
+                only tested with Sweep as an input
+            fitter (instance of fitting.FitBase) - data fitter
+            test (callable) - if test(xs, ys, p_opt, p_std, p_est) returns  
+                False, a ContinueIteration exception is raised
+            **kwargs are passed to superclasses
+            
+            does not currently support fitting.PeakFind
         '''
-        super(CalibrateResonator, self).__init__(**kwargs)
-        self._coordinate = c_freq
-        if len(m.get_values()) != 1:
-            raise ValueError('nested measurement must measure exactly one value.')
-        self.add_measurement(Sweep(c_freq, freq_range, m))
-        self.add_values((
-            Parameter('f0'), Parameter('Gamma'), Parameter('amplitude'), Parameter('baseline'),
-            Parameter('f0_std'), Parameter('Gamma_std'), Parameter('amplitude_std'), Parameter('baseline_std'),
-            Parameter('fit_ok') 
-        ))
-
+        super(FittingMeasurement, self).__init__(**kwargs)
+        self.add_measurement(measurement)
+        # add parameters returned by the fitter
+        for pname in fitter.PARAMETERS:
+            self.add_values(Parameter(pname))
+        for pname in fitter.PARAMETERS:
+            self.add_values(Parameter(pname)+'_std')
+        self._fitter = fitter
+    
     def _measure(self, *args, **kwargs):
         # run nested sweep
         m = self.get_measurements()[0]
@@ -43,13 +45,17 @@ class CalibrateResonator(ProgressReporting, Measurement):
         if len(responses[0][0]):
             cs = numpy.array(responses[0][1])
             if numpy.prod(cs.shape)>1:
-                logging.warning(__name__ + 'data measured has at least one non-singleton dimension. using the mean of all points.')
+                logging.warning(__name__ + ': data measured has at least one non-singleton dimension. using the mean of all points.')
             data = [numpy.mean(d) for _, d in responses]
         else:
             data = [d for _, d in responses]
         # fit & save the fit result
-        success, p_opt, p_std = self.fit_resonator(_range, data)
-        result = list(p_opt) + list(p_std) + [1 if success else 0]
+        p_opt, p_cov = self._fitter.fit(_range, data)
+        if p_cov is None:
+            p_std = [numpy.NaN]*len(p_opt)
+        else:
+            p_std = numpy.sqrt(numpy.diag(p_cov)) 
+        result = list(p_opt) + list(p_std)
         self._data.add_data_point(*result)
         for p, v in zip(self.get_values(), result):
             p.set(v)
@@ -60,6 +66,83 @@ class CalibrateResonator(ProgressReporting, Measurement):
             raise ContinueIteration('fit failed.')
         # return fit result
         return (), result
+
+try:
+    import fitting
+    
+    def test_resonator(xs, ys, p_opt, p_std, p_est):
+            f0_opt, df_opt, offset_opt, amplitude_opt = p_opt 
+            f0_std, df_std, offset_std, amplitude_std = p_std
+            f0_est, df_est, offset_est, amplitude_est = p_est 
+            tests = (
+                not numpy.isfinite((f0_std, df_std, offset_std, amplitude_std)),
+                (f0_opt<xs[0]) or (f0_opt>xs[-1]),
+                (numpy.abs(f0_opt-f0_est) > df_opt),
+                (amplitude_opt < amplitude_est/2.),
+                (amplitude_opt < 2*numpy.std(ys-fitting.Lorentzian.f(xs, *p_opt)))
+            )
+            return not numpy.any(tests)
+except ImportError:
+    logging.warning(__name__+': fitting library is not available.')
+
+
+class CalibrateResonator(ProgressReporting, Measurement):
+    '''
+    calibrate resonator probe frequency by sweeping and fitting
+    '''
+    
+    def __init__(self, c_freq, freq_range, m, **kwargs):
+        '''
+        Input:
+            c_freq - frequency coordinate
+            freq_range - frequency range to measure
+            m - response measurement object 
+        '''
+        super(CalibrateResonator, self).__init__(**kwargs)
+        self.coordinate = c_freq
+        if len(m.get_values()) != 1:
+            raise ValueError('nested measurement must measure exactly one value.')
+        self.add_measurement(Sweep(c_freq, freq_range, m))
+        self.add_values((
+            Parameter('f0'), Parameter('Gamma'), Parameter('amplitude'), Parameter('baseline'),
+            Parameter('f0_std'), Parameter('Gamma_std'), Parameter('amplitude_std'), Parameter('baseline_std'),
+            Parameter('fit_ok') 
+        ))
+
+    def _measure(self, *args, **kwargs):
+        # run nested sweep
+        m = self.get_measurements()[0]
+        cs, d = m(nested=True, output_data=True)
+        # remove failed measurements
+        #if None in d:
+        #    mask = numpy.nonzero()
+        #    _range = [x for x,y in zip(_range, responses) if y is not None]
+        #    responses = [y for y in responses if y is not None]
+        #if not len(responses):
+        #    raise ContinueIteration('swept frequency range was empty or all measurements failed.')
+        # check shape of the measured data
+        if not isinstance(d, numpy.ndarray):
+            d = numpy.array(d)
+        if numpy.prod(d.shape[1:])>1:
+            logging.warning(__name__ + ': data measured has at least one non-singleton dimension. using the mean of all points.')
+            _range = cs[self.coordinate][tuple([slice(None)]+[0]*(d.ndim-1))]
+            data = [numpy.mean(x) for x in d]
+        else:
+            data = numpy.ravel(d)
+            _range = numpy.ravel(_range)
+        # fit & save the fit result
+        success, p_opt, p_std = self.fit_resonator(cs.values()[0], data)
+        result = list(p_opt) + list(p_std) + [1 if success else 0]
+        self._data.add_data_point(*result)
+        for p, v in zip(self.get_values(), result):
+            p.set(v)
+        # set source on resonance
+        if success:
+            self.coordinate.set(p_opt[0])
+        else:
+            raise ContinueIteration('fit failed.')
+        # return fit result
+        return {}, result
 
     #TODO: use new fitting library instead
     def fit_resonator(self, fs, response):

@@ -22,7 +22,7 @@ class Buffer(Measurement):
         ''' perform measurement, storing the returned coordinate and data arrays '''
         self._cs, self._d = self.get_measurements()[0](nested=True, **kwargs)
         # write data to disk & return
-        points = [numpy.ravel(m) for m in self._cs+[self._d]]
+        points = [numpy.ravel(m) for m in self._cs.values()+[self._d]]
         self._data.add_data_point(*points, newblock=True)
         return self._cs, self._d
     
@@ -45,6 +45,9 @@ class Add(Measurement):
                 if summand is a ndarray, an iterable of Coordinate instances 
                 describing the axes of summand
             subtract - if True, subtract summand instead of adding it
+            
+        TODO: Add requires all coordinates to be present in m, therefore
+            it does not work with nested Sweeps.
         '''
         #if (coordinates is not None) and hasattr(summand, 'get_data'):
         #    raise ValueError('coordinates can only be specified if summand is a ndarray.')
@@ -88,7 +91,7 @@ class Add(Measurement):
             else:
                 d += s1
         # write data to disk & return
-        points = [numpy.ravel(m) for m in cs+[d]]
+        points = [numpy.ravel(m) for m in cs.values()+[d]]
         self._data.add_data_point(*points, newblock=True)
         return cs, d
 
@@ -105,6 +108,9 @@ class Integrate(Measurement):
             coordinate - coordinate over which to integrate
             range - (min, max) tuple of coordinate values to include
             average - if True, devide by number of integration points
+            
+        TODO: Integrate requires coordinate to be present in m, therefore
+            it does not work with nested Sweeps.
         '''
         super(Integrate, self).__init__(**kwargs)
         
@@ -124,7 +130,7 @@ class Integrate(Measurement):
         cs, d = self.get_measurements()[0](nested=True, **kwargs) # output_data=True
         if self.range is not None:
             # select values to be integrated
-            c_mask = numpy.all((cs[self._axis]>=self.range[0], cs[self._axis]<self.range[1]), axis=0)
+            c_mask = numpy.all((cs[self._coordinate]>=self.range[0], cs[self._coordinate]<self.range[1]), axis=0)
             # integrate masked array over selected axis
             d_int = numpy.where(c_mask, d, 0.).sum(self._axis)
             if self.average:
@@ -135,10 +141,11 @@ class Integrate(Measurement):
             if self.average:
                 d_int /= d.shape[self._axis]
         # remove integration coordinate from returned coordinates
-        cs.pop(self._axis)
-        cs = [numpy.rollaxis(c, self._axis)[0,...] for c in cs]
+        cs.pop(self._coordinate)
+        for k in cs.keys():
+            cs[k] = numpy.rollaxis(cs[k], self._axis)[0,...]
         # write data to disk
-        points = [numpy.ravel(m) for m in cs+[d_int]]
+        points = [numpy.ravel(m) for m in cs.values()+[d_int]]
         self._data.add_data_point(*points, newblock=True)
         # return data
         return cs, d_int

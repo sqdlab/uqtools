@@ -30,7 +30,7 @@ class ProgramAWG(Measurement):
         self._sequence.sample()
         self._sequence.export(self._host_dir, self._host_file)
         
-    def _measure(self, wait=True):
+    def _measure(self, wait=True, **kwargs):
         '''
         upload sequence to the AWGs
         '''
@@ -84,7 +84,7 @@ class ProgramAWGParametric(Measurement):
         for dim in sequence_args+sequence_kwargs.values():
             self.add_value(dim)
 
-    def _measure(self, wait=True):
+    def _measure(self, wait=True, **kwargs):
         # evaluate arguments and compare to previous values
         sequence_args = [arg.get() if hasattr(arg, 'get') else arg for arg in self._sequence_args]
         sequence_kwargs = dict(zip(self._sequence_kwargs.keys(), [arg.get() if hasattr(arg, 'get') else arg for arg in self._sequence_kwargs.values()]))

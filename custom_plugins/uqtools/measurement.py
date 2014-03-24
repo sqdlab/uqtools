@@ -376,7 +376,7 @@ class Measurement(object):
         # make sure setup is not run again
         self._setup_done = True
     
-    def _measure(self, *args, **kwargs):
+    def _measure(self, **kwargs):
         '''
             perform a measurement.
             this function must be overloaded by subclasses.
@@ -385,10 +385,12 @@ class Measurement(object):
             with _dimensions, _values and add_data_point decorated to add the parent coordinates
             will be available in _data. otherwise, data files must be created manually
             inside this function by calling _create_data_file.
+            may have *args.
+            **kwargs must be passed on to nested measurements.
             
             Return:
-                c - an iterable containing values of all local coordinates of all data points
-                    each item must have the same shape as d (it may have one dimension less)
+                c - an OrderedDict containing Parameter objects and values of all local coordinates of 
+                    all data points. Each item must have the same shape as d (it may have one dimension less)
                 d - an array containing the measured data. The last index runs over all Values
                     measured. If only one value is measured, the value dimension must be suppressed.
         '''

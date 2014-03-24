@@ -1,6 +1,7 @@
 import numpy
 import logging
 from . import Measurement, Integrate
+from collections import OrderedDict
 import contextlib
 
 class FPGAMeasurement(Measurement):
@@ -40,24 +41,25 @@ class FPGAMeasurement(Measurement):
         #self.set_values(dims[-1])
         super(FPGAMeasurement, self)._setup()
         
-    def _measure(self, *args, **kwargs):
+    def _measure(self, **kwargs):
         # check if fpga is in the correct mode
         self._check_mode()
         # build coordinate matrices
         # retrieve list of values taken by each independent variable
-        coordinates = [c.get() for c in self._fpga.get_data_dimensions()[:-1]]
+        coordinates = self._fpga.get_data_dimensions()[:-1]
+        points = [c.get() for c in coordinates]
         # create index arrays that will return the proper value of 
         # each independent variable for each point in data
-        indices = numpy.mgrid[[slice(len(c)) for c in coordinates]]
+        indices = numpy.mgrid[[slice(len(c)) for c in points]]
         # and index into the coordinate lists
-        coordinate_matrices = [numpy.array(c)[i] for c, i in zip(coordinates, indices)]
+        coordinate_matrices = [numpy.array(c)[i] for c, i in zip(points, indices)]
         # retrieve measured data
         data = self._fpga.get_data_blocking()
         # concatenate coordinate and data matrices and make them into a 2d table
-        points = [numpy.ravel(m) for m in coordinate_matrices+[data]]
+        table = [numpy.ravel(m) for m in coordinate_matrices+[data]]
         # save to file & return
-        self._data.add_data_point(*points, newblock = True)
-        return coordinate_matrices, data
+        self._data.add_data_point(*table, newblock = True)
+        return OrderedDict(zip(coordinates, coordinate_matrices)), data
 
 
 class TvModeMeasurement(FPGAMeasurement):
@@ -112,23 +114,24 @@ class AveragedTvModeMeasurementMonolithic(FPGAMeasurement):
         if(self._fpga.get_tv_segments() == 524288):
             logging.warning('auto segments may not be properly supported.')
         
-    def _measure(self, *args, **kwargs):
+    def _measure(self, **kwargs):
         # check if fpga is in the correct mode
         self._check_mode()
         # build coordinate matrices
         # retrieve list of values taken by each independent variable
-        coordinates = [c.get() for c in self._fpga.get_data_dimensions()[:-2]] # note the -2
+        coordinates = self._fpga.get_data_dimensions()[:-2]  # note the -2
+        points = [c.get() for c in coordinates]
         # create index arrays that will return the proper value of 
         # each independent variable for each point in data
-        indices = numpy.mgrid[[slice(len(c)) for c in coordinates]]
+        indices = numpy.mgrid[[slice(len(c)) for c in points]]
         # and index into the coordinate lists
-        coordinate_matrices = [numpy.array(c)[i] for c, i in zip(coordinates, indices)]
+        coordinate_matrices = [numpy.array(c)[i] for c, i in zip(points, indices)]
         # retrieve measured data
         data = self._fpga.get_data_blocking()
         # average data
         data = data.mean(axis=2)
         # concatenate coordinate and data matrices and make them into a 2d table
-        points = [numpy.ravel(m) for m in coordinate_matrices+[data]]
+        table = [numpy.ravel(m) for m in coordinate_matrices+[data]]
         # save to file & return
-        self._data.add_data_point(*points, newblock=True)
-        return coordinate_matrices, data
+        self._data.add_data_point(*table, newblock=True)
+        return OrderedDict(zip(coordinates, coordinate_matrices)), data

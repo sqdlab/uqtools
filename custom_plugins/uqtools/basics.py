@@ -2,7 +2,7 @@ import time
 import types
 import numpy
 import qt
-import collections
+from collections import deque, OrderedDict
 from . import Measurement, Parameter, ProgressReporting
 
 class Delay(Measurement):
@@ -46,9 +46,9 @@ class ParameterMeasurement(Measurement):
         self._data.add_data_point(*data)
         # suppress singleton dimension, as specified in Measurement 
         if len(data) == 1:
-            return (), data[0]
+            return {}, data[0]
         else:
-            return (), data
+            return {}, data
   
     
 class MeasurementArray(Measurement):
@@ -62,29 +62,30 @@ class MeasurementArray(Measurement):
         for measurement in measurements:
             self.add_measurement(measurement)
 
-    def _measure(self, *args, **kwargs):
+    def _measure(self, **kwargs):
         output_data = kwargs.get('output_data', False)
-        results = collections.deque(maxlen=None if output_data else 0)
+        results = deque(maxlen=None if output_data else 0)
         # ...
         continueIteration = False
         for measurement in self.get_measurements():
             result = None
             if not continueIteration:
                 try:
-                    result = measurement(nested=True, *args, **kwargs)
+                    result = measurement(nested=True, **kwargs)
                 except ContinueIteration:
                     continueIteration = True
             results.append(result)
         if output_data:
-            return range(len(results)), results
+            cs = OrderedDict(zip(self.get_coordinates(), range(len(results))))
+            return cs, results
 
 class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
     '''
         MeasurementArray with progress reporting
     '''
-    def _measure(self, *args, **kwargs):
+    def _measure(self, **kwargs):
         output_data = kwargs.get('output_data', False)
-        results = collections.deque(maxlen=None if output_data else 0)
+        results = deque(maxlen=None if output_data else 0)
         # ...
         self._reporting_start()
         self._reporting_state.iterations = len(self.get_measurements())
@@ -93,14 +94,15 @@ class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
             result = None
             if not continueIteration:
                 try:
-                    result = measurement(nested=True, *args, **kwargs)
+                    result = measurement(nested=True, **kwargs)
                 except ContinueIteration:
                     continueIteration = True
             results.append(result)
             self._reporting_next()
         self._reporting_finish()
         if output_data:
-            return range(len(results)), results
+            cs = OrderedDict(zip(self.get_coordinates(), range(len(results))))
+            return cs, results
 
 
 class ContinueIteration(Exception):
@@ -118,12 +120,15 @@ class Sweep(ProgressReporting, Measurement):
             Input:
                 coordinate - swept coordinate
                 range - sweep range
-                    If range is a function, it is called with zero arguments at the start of the/each sweep.
-                measurements - nested measurement or measurements. each measurement is executed once per value in range.
-                    A measurement may raise a ContinueIteration exception to indicate that the remaining
+                    If range is a function, it is called with zero arguments at 
+                    the start of the/each sweep.
+            measurements - nested measurement or measurements. each measurement
+                    is executed once per value in range. A measurement may raise 
+                    a ContinueIteration exception to indicate that the remaining
                     measurements should be skipped in the current iteration.
-                    If measurements is an iterable, the measured data will be two-dimensional with the measurement index
-                    as the first dimension, otherwise it will be one-dimensional.
+                    If measurements is an iterable, the measured data will be 
+                    two-dimensional with the measurement index as the first dimension, 
+                    otherwise it will be one-dimensional.
         '''
         if('name' not in kwargs):
             kwargs['name'] = coordinate.name
@@ -146,14 +151,23 @@ class Sweep(ProgressReporting, Measurement):
     def get_coordinates(self, parent=False, local=True):
         return super(Sweep, self).get_coordinates(parent=parent, local=local or parent)
 
-    def _measure(self, *args, **kwargs):
+    def _measure(self, **kwargs):
         ''' 
             perform a swept measurement.
             
             Input:
-                output_data - if True, return lists containing the measured data
+                output_data - if True, return the measured data.
+                    If the sweep contains only a single nested measurement
+                    (and the constructor was called with a scalar measurements
+                    argument), the sweep range is prepended to the coordinate 
+                    matrix and the data matrices are concatenated. 
+                    If it contains multiple measurements, it will return 2d
+                    coordinate and data arrays, with each item of the data array
+                    containing the (coordinate, data) tuples returned by the 
+                    corresponding measurement. 
                 all args and kwargs are passed to the nested measurements
         '''
+        measurements = self.get_measurements()
         # measured range may change on each call; also notify progress reporter
         _range = self.range()
         if hasattr(_range, '__len__'):
@@ -161,37 +175,87 @@ class Sweep(ProgressReporting, Measurement):
         # create output buffer if output is requested
         output_data = kwargs.get('output_data', False)
         if output_data:
-            # we are handling references to python objects, 
-            # so using (growing) lists should not cause a huge performance penalty
-            results = [[]]*len(self.get_measurements())
+            results = numpy.zeros((len(measurements), len(_range)), numpy.object)
+            results.fill(None) 
         # sweep coordinate
-        for idx, x in enumerate(_range):
+        for ridx, x in enumerate(_range):
             # reset child progress bars
             self._reporting_start_iteration()
             # set coordinate value
             self.coordinate.set(x)
-            # if a ContinueIteration exception is raised, continue filling the output buffer
-            # but do not execute any more measurements in this iteration
-            continueIteration = False
-            for idx, measurement in enumerate(self.get_measurements()):
+            for midx, measurement in enumerate(measurements):
                 # run background tasks (e.g. progress reporter)
                 qt.msleep()
                 # measure
-                if not continueIteration:
-                    try:
-                        result = measurement(nested=True, *args, **kwargs)
-                    except ContinueIteration:
-                        continueIteration = True
-                # buffer output data
-                if output_data:
-                    results[idx].append(None if continueIteration else result)
+                try:
+                    result = measurement(nested=True, **kwargs)
+                    if output_data:
+                        results[midx, ridx] = result
+                except ContinueIteration:
+                    # if a ContinueIteration exception is raised, 
+                    # do not execute any more measurements in this iteration
+                    break
             # indicate that the current data point is complete
             self._reporting_next()
         if output_data:
-            # return a list of lists if the  measurements argument passed to the constructor
-            # was an iterable or a simple list otherwise
-            if len(self.get_coordinates()) == 2:
-                cs = numpy.meshgrid(numpy.arange(len(self.get_measurements())), _range)
+            coordinates = self.get_coordinates()
+            if len(coordinates) == 2:
+                # the simple case: multiple measurements, no mangling of data
+                cs = coordinate_concat(
+                    {coordinates[0]: numpy.arange(len(measurements))},
+                    {coordinates[1]: _range}
+                )
                 return cs, results
             else:
-                return _range, results[0]
+                # the complex case: concatenate coordinate and data matrices
+                if not len(_range):
+                    return OrderedDict([(self.coordinate,_range)]), None
+                cs = OrderedDict()
+                # expand _range array
+                cs = coordinate_concat(
+                    {self.coordinate: _range},
+                    results[0,0][0]
+                )
+                # concatenate other coordinate arrays
+                for k in results[0,0][0].keys():
+                    cs[k] = numpy.concatenate([x[k] for x, _ in results[0,:]])
+                # concatenate data arrays
+                d = numpy.concatenate([x for _, x in results[0,:]])
+                return cs, d
+
+def coordinate_concat(*css):
+    '''
+    Concatenate coordinate matrices in a memory-efficient way.
+    
+    Input:
+        *css - any number of OrderedDicts with coordinate matrices
+    Output:
+        a single OrderedDict of coordinate matrices
+    '''
+    # check inputs
+    for cs in css:
+        for k, c in cs.iteritems():
+            if not isinstance(c, numpy.ndarray):
+                c = numpy.array(c)
+                cs[k] = c
+            if not c.ndim == len(cs):
+                raise ValueError('the number dimensions of each coordinate matrix must be equal to the number of elements in the dictionary that contains it.')
+    # calculate total number of dimensions
+    ndim = sum(len(cs) for cs in css)
+    # make all arrays ndim dimensional with their non-singleton indices in the right place
+    reshaped_cs = []
+    pdim = 0
+    for cs in css:
+        for k, c in cs.iteritems():
+            newshape = numpy.ones(ndim)
+            newshape[pdim:(pdim+c.ndim)] = c.shape
+            reshaped_c = numpy.reshape(c, newshape)
+            reshaped_cs.append(reshaped_c)
+        pdim = pdim + len(cs)
+    # broadcast arrays using numpy.lib.stride_tricks
+    reshaped_cs = numpy.broadcast_arrays(*reshaped_cs)
+    # build output dict
+    ks = []
+    for cs in css:
+        ks.extend(cs.keys())
+    return OrderedDict(zip(ks, reshaped_cs))
