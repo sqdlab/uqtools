@@ -1,6 +1,7 @@
 import numpy
 import scipy.stats
 import scipy.optimize
+from collections import OrderedDict
 from . import Parameter, Measurement
 from . import Sweep, ContinueIteration
 from . import ProgressReporting
@@ -91,15 +92,17 @@ class CalibrateResonator(ProgressReporting, Measurement):
     calibrate resonator probe frequency by sweeping and fitting
     '''
     
-    def __init__(self, c_freq, freq_range, m, **kwargs):
+    def __init__(self, c_freq, freq_range, m, value=None, **kwargs):
         '''
         Input:
             c_freq - frequency coordinate
             freq_range - frequency range to measure
             m - response measurement object 
+            value - which value to fit, defaults to first
         '''
         super(CalibrateResonator, self).__init__(**kwargs)
         self.coordinate = c_freq
+        self.value = value
         if len(m.get_values()) != 1:
             raise ValueError('nested measurement must measure exactly one value.')
         self.add_measurement(Sweep(c_freq, freq_range, m))
@@ -120,6 +123,11 @@ class CalibrateResonator(ProgressReporting, Measurement):
         #    responses = [y for y in responses if y is not None]
         #if not len(responses):
         #    raise ContinueIteration('swept frequency range was empty or all measurements failed.')
+        # use first value by default
+        if self.value is not None:
+            d = d[self.value]
+        else:
+            d = d.values()[0]
         # check shape of the measured data
         if not isinstance(d, numpy.ndarray):
             d = numpy.array(d)
@@ -128,10 +136,10 @@ class CalibrateResonator(ProgressReporting, Measurement):
             _range = cs[self.coordinate][tuple([slice(None)]+[0]*(d.ndim-1))]
             data = [numpy.mean(x) for x in d]
         else:
+            _range = numpy.ravel(cs[self.coordinate])
             data = numpy.ravel(d)
-            _range = numpy.ravel(_range)
         # fit & save the fit result
-        success, p_opt, p_std = self.fit_resonator(cs.values()[0], data)
+        success, p_opt, p_std = self.fit_resonator(_range, data)
         result = list(p_opt) + list(p_std) + [1 if success else 0]
         self._data.add_data_point(*result)
         for p, v in zip(self.get_values(), result):
@@ -142,7 +150,7 @@ class CalibrateResonator(ProgressReporting, Measurement):
         else:
             raise ContinueIteration('fit failed.')
         # return fit result
-        return {}, result
+        return {}, OrderedDict(zip(self.get_values(), result))
 
     #TODO: use new fitting library instead
     def fit_resonator(self, fs, response):

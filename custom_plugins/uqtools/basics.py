@@ -20,7 +20,6 @@ class Delay(Measurement):
             else:
                 time.sleep(self._delay)
     
-    
 class ParameterMeasurement(Measurement):
     '''
         0d measurement
@@ -44,11 +43,7 @@ class ParameterMeasurement(Measurement):
     def _measure(self, **kwargs):
         data = self.get_value_values()
         self._data.add_data_point(*data)
-        # suppress singleton dimension, as specified in Measurement 
-        if len(data) == 1:
-            return {}, data[0]
-        else:
-            return {}, data
+        return {}, OrderedDict(zip(self.get_values(), data))
   
     
 class MeasurementArray(Measurement):
@@ -77,7 +72,7 @@ class MeasurementArray(Measurement):
             results.append(result)
         if output_data:
             cs = OrderedDict(zip(self.get_coordinates(), range(len(results))))
-            return cs, results
+            return cs, {None: results}
 
 class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
     '''
@@ -102,7 +97,7 @@ class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
         self._reporting_finish()
         if output_data:
             cs = OrderedDict(zip(self.get_coordinates(), range(len(results))))
-            return cs, results
+            return cs, {None: results}
 
 
 class ContinueIteration(Exception):
@@ -205,13 +200,17 @@ class Sweep(ProgressReporting, Measurement):
                     {coordinates[0]: numpy.arange(len(measurements))},
                     {coordinates[1]: _range}
                 )
-                return cs, results
+                return cs, {None: results}
             else:
                 # the complex case: concatenate coordinate and data matrices
-                if not len(_range):
-                    return OrderedDict([(self.coordinate,_range)]), None
-                cs = OrderedDict()
+                # skip points that where not measured
+                mask = results[0,:].nonzero()
+                if not len(mask[0]):
+                    return OrderedDict([(self.coordinate,[])]), {}
+                _range = numpy.array(_range)[mask]
+                results = results[0,mask]
                 # expand _range array
+                cs = OrderedDict()
                 cs = coordinate_concat(
                     {self.coordinate: _range},
                     results[0,0][0]
@@ -220,7 +219,9 @@ class Sweep(ProgressReporting, Measurement):
                 for k in results[0,0][0].keys():
                     cs[k] = numpy.concatenate([x[k] for x, _ in results[0,:]])
                 # concatenate data arrays
-                d = numpy.concatenate([x for _, x in results[0,:]])
+                d = OrderedDict()
+                for k in results[0,0][1].keys():
+                    d[k] = numpy.array([x[k] for _, x in results[0,:]])
                 return cs, d
 
 def coordinate_concat(*css):

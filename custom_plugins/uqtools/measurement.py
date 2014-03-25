@@ -389,10 +389,11 @@ class Measurement(object):
             **kwargs must be passed on to nested measurements.
             
             Return:
-                c - an OrderedDict containing Parameter objects and values of all local coordinates of 
-                    all data points. Each item must have the same shape as d (it may have one dimension less)
-                d - an array containing the measured data. The last index runs over all Values
-                    measured. If only one value is measured, the value dimension must be suppressed.
+                c - an OrderedDict containing a map of Parameter objects to
+                    the values of all local coordinates for all data points. 
+                    Each item must have the same shape as the items in d.
+                d - an OrderedDict containing a map of Parameter objects to
+                    the measured data for all value dimensions.
         '''
         raise NotImplementedError()
     

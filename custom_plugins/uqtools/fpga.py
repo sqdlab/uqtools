@@ -46,8 +46,7 @@ class FPGAMeasurement(Measurement):
         self._check_mode()
         # build coordinate matrices
         # retrieve list of values taken by each independent variable
-        coordinates = self._fpga.get_data_dimensions()[:-1]
-        points = [c.get() for c in coordinates]
+        points = [c.get() for c in self._fpga.get_data_dimensions()[:-1]]
         # create index arrays that will return the proper value of 
         # each independent variable for each point in data
         indices = numpy.mgrid[[slice(len(c)) for c in points]]
@@ -59,7 +58,10 @@ class FPGAMeasurement(Measurement):
         table = [numpy.ravel(m) for m in coordinate_matrices+[data]]
         # save to file & return
         self._data.add_data_point(*table, newblock = True)
-        return OrderedDict(zip(coordinates, coordinate_matrices)), data
+        return (
+            OrderedDict(zip(self.get_coordinates(), coordinate_matrices)), 
+            OrderedDict(zip(self.get_values(), (data,)))
+        )
 
 
 class TvModeMeasurement(FPGAMeasurement):
@@ -134,4 +136,7 @@ class AveragedTvModeMeasurementMonolithic(FPGAMeasurement):
         table = [numpy.ravel(m) for m in coordinate_matrices+[data]]
         # save to file & return
         self._data.add_data_point(*table, newblock=True)
-        return OrderedDict(zip(coordinates, coordinate_matrices)), data
+        return (
+            OrderedDict(zip(self.get_coordinates(), coordinate_matrices)), 
+            OrderedDict(zip(self.get_values(), data))
+        )
