@@ -1,7 +1,6 @@
 import numpy
 import logging
-from . import Measurement, Integrate
-from collections import OrderedDict
+from . import Measurement, ResultDict, Integrate
 import contextlib
 
 class FPGAMeasurement(Measurement):
@@ -59,8 +58,8 @@ class FPGAMeasurement(Measurement):
         # save to file & return
         self._data.add_data_point(*table, newblock = True)
         return (
-            OrderedDict(zip(self.get_coordinates(), coordinate_matrices)), 
-            OrderedDict(zip(self.get_values(), (data,)))
+            ResultDict(zip(self.get_coordinates(), coordinate_matrices)), 
+            ResultDict(zip(self.get_values(), (data,)))
         )
 
 
@@ -137,6 +136,6 @@ class AveragedTvModeMeasurementMonolithic(FPGAMeasurement):
         # save to file & return
         self._data.add_data_point(*table, newblock=True)
         return (
-            OrderedDict(zip(self.get_coordinates(), coordinate_matrices)), 
-            OrderedDict(zip(self.get_values(), data))
+            ResultDict(zip(self.get_coordinates(), coordinate_matrices)), 
+            ResultDict(zip(self.get_values(), data))
         )

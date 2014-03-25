@@ -1,6 +1,6 @@
 import numpy
-from . import Measurement
-from collections import OrderedDict, defaultdict
+from . import Measurement, ResultDict
+from collections import defaultdict
 import logging
 
 class Buffer(Measurement):
@@ -145,7 +145,7 @@ class Integrate(Measurement):
     def _measure(self, **kwargs):
         # retrieve data
         cs, d = self.get_measurements()[0](nested=True, **kwargs) # output_data=True
-        d_int = OrderedDict()
+        d_int = ResultDict()
         if self.range is not None:
             # select values to be integrated
             c_mask = numpy.all((cs[self._coordinate]>=self.range[0], cs[self._coordinate]<self.range[1]), axis=0)

@@ -1,8 +1,7 @@
 import numpy
 import scipy.stats
 import scipy.optimize
-from collections import OrderedDict
-from . import Parameter, Measurement
+from . import Parameter, Measurement, ResultDict
 from . import Sweep, ContinueIteration
 from . import ProgressReporting
 import logging
@@ -150,7 +149,7 @@ class CalibrateResonator(ProgressReporting, Measurement):
         else:
             raise ContinueIteration('fit failed.')
         # return fit result
-        return {}, OrderedDict(zip(self.get_values(), result))
+        return {}, ResultDict(zip(self.get_values(), result))
 
     #TODO: use new fitting library instead
     def fit_resonator(self, fs, response):

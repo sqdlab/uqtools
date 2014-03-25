@@ -57,3 +57,16 @@ class Parameter(object):
         r_parts = r.split(' ')
         r_parts.insert(2, '"{0}"'.format(self.name))
         return ' '.join(r_parts)
+    
+    
+class ParameterList(list):
+    '''
+    A list of parameters that implements element access by name and index.
+    '''
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return list.__getitem__(self, key)
+        for item in self:
+            if item.name == key:
+                return item
+        raise IndexError(key)

@@ -2,8 +2,8 @@ import time
 import types
 import numpy
 import qt
-from collections import deque, OrderedDict
-from . import Measurement, Parameter, ProgressReporting
+from collections import deque
+from . import Measurement, Parameter, ResultDict, ProgressReporting
 
 class Delay(Measurement):
     '''
@@ -43,7 +43,7 @@ class ParameterMeasurement(Measurement):
     def _measure(self, **kwargs):
         data = self.get_value_values()
         self._data.add_data_point(*data)
-        return {}, OrderedDict(zip(self.get_values(), data))
+        return {}, ResultDict(zip(self.get_values(), data))
   
     
 class MeasurementArray(Measurement):
@@ -71,7 +71,7 @@ class MeasurementArray(Measurement):
                     continueIteration = True
             results.append(result)
         if output_data:
-            cs = OrderedDict(zip(self.get_coordinates(), range(len(results))))
+            cs = ResultDict(zip(self.get_coordinates(), range(len(results))))
             return cs, {None: results}
 
 class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
@@ -96,7 +96,7 @@ class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
             self._reporting_next()
         self._reporting_finish()
         if output_data:
-            cs = OrderedDict(zip(self.get_coordinates(), range(len(results))))
+            cs = ResultDict(zip(self.get_coordinates(), range(len(results))))
             return cs, {None: results}
 
 
@@ -206,11 +206,11 @@ class Sweep(ProgressReporting, Measurement):
                 # skip points that where not measured
                 mask = results[0,:].nonzero()
                 if not len(mask[0]):
-                    return OrderedDict([(self.coordinate,[])]), {}
+                    return ResultDict([(self.coordinate,[])]), {}
                 _range = numpy.array(_range)[mask]
                 results = results[0,mask]
                 # expand _range array
-                cs = OrderedDict()
+                cs = ResultDict()
                 cs = coordinate_concat(
                     {self.coordinate: _range},
                     results[0,0][0]
@@ -219,7 +219,7 @@ class Sweep(ProgressReporting, Measurement):
                 for k in results[0,0][0].keys():
                     cs[k] = numpy.concatenate([x[k] for x, _ in results[0,:]])
                 # concatenate data arrays
-                d = OrderedDict()
+                d = ResultDict()
                 for k in results[0,0][1].keys():
                     d[k] = numpy.array([x[k] for _, x in results[0,:]])
                 return cs, d
@@ -229,9 +229,9 @@ def coordinate_concat(*css):
     Concatenate coordinate matrices in a memory-efficient way.
     
     Input:
-        *css - any number of OrderedDicts with coordinate matrices
+        *css - any number of ResultDicts with coordinate matrices
     Output:
-        a single OrderedDict of coordinate matrices
+        a single ResultDict of coordinate matrices
     '''
     # check inputs
     for cs in css:
@@ -259,4 +259,4 @@ def coordinate_concat(*css):
     ks = []
     for cs in css:
         ks.extend(cs.keys())
-    return OrderedDict(zip(ks, reshaped_cs))
+    return ResultDict(zip(ks, reshaped_cs))

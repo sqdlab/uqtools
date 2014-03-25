@@ -4,6 +4,8 @@ from functools import wraps
 import numpy
 import copy
 from . import NullContextManager
+from dimension import ParameterList
+from collections import OrderedDict
 #make_iterable = lambda obj: obj if numpy.iterable(obj) else [obj]
 make_iterable = lambda obj: obj if isinstance(obj, list) or isinstance(obj, tuple) else (obj,)
 
@@ -11,6 +13,26 @@ import qt
 from data import Data
 from lib.config import get_config
 config = get_config()
+
+class ResultDict(OrderedDict):
+    '''
+    An OrderedDict that accepts string keys as well as Parameter keys 
+    for read access.
+    '''
+    def __getitem__(self, key):
+        try:
+            # try key directly
+            return OrderedDict.__getitem__(self, key)
+        except KeyError as err:
+            # compare key to .name property of items
+            for parameter in self.keys():
+                if parameter.name == key:
+                    return OrderedDict.__getitem__(self, parameter)
+            raise err
+
+    def __repr__(self):
+        items = ['"{0}":{1}'.format(k.name, v) for k, v in self.iteritems()]
+        return 'ResultDict(' + ', '.join(items) + ')'
 
 class DateTimeGenerator:
     '''
@@ -103,9 +125,9 @@ class Measurement(object):
         self._data_save = data_save
         self._children = []
         if not hasattr(self, '_coordinates'):
-            self._coordinates = []
+            self.coordinates = ParameterList()
         if not hasattr(self, '_values'):
-            self._values = []
+            self.values = ParameterList()
         self._parent_coordinates = []
         self._setup_done = False
     
@@ -146,40 +168,40 @@ class Measurement(object):
     
     def set_coordinates(self, dimensions):
         ''' empty coordinates list before calling add_coordinate '''
-        self._coordinates = []
+        self.coordinates = ParameterList()
         self.add_coordinates(dimensions)
     
     def set_values(self, dimensions):
         ''' empty values list before calling add_value'''
-        self._values = []
+        self.values = ParameterList()
         self.add_values(dimensions)
     
     def add_coordinates(self, dimension):
         ''' add one or more Parameter objects to the local coordinates list '''
 #         if not isinstance(dimension, Dimension):
 #             raise TypeError('parameter dimension must be an instance of Dimension.')
-        self._coordinates.extend(make_iterable(dimension))
+        self.coordinates.extend(make_iterable(dimension))
     
     def add_values(self, dimension):
         ''' add one or more Parameter objects to the values list '''
 #         if not isinstance(dimension, Dimension):
 #             raise TypeError('parameter dimension must be an instance of Dimension.')
-        self._values.extend(make_iterable(dimension))
+        self.values.extend(make_iterable(dimension))
     
     def get_coordinates(self, parent = False, local = True):
         ''' return a list of parent and/or local coordinates '''
         return (
             (self._parent_coordinates if parent else []) + 
-            (self._coordinates if local else [])
+            (self.coordinates if local else [])
         )
         
     def get_values(self, key=None):
         ''' return a list of (local) value dimensions '''
         if key is None:
-            return list(self._values)
+            return list(self.values)
         else:
-            ''' emulate dictionary access to self._values '''
-            for value in self._values:
+            ''' emulate dictionary access to self.values '''
+            for value in self.values:
                 if value.name == key:
                     return value
             raise KeyError(key)
@@ -389,10 +411,10 @@ class Measurement(object):
             **kwargs must be passed on to nested measurements.
             
             Return:
-                c - an OrderedDict containing a map of Parameter objects to
+                c - a ResultDict containing a map of Parameter objects to
                     the values of all local coordinates for all data points. 
                     Each item must have the same shape as the items in d.
-                d - an OrderedDict containing a map of Parameter objects to
+                d - a ResultDict containing a map of Parameter objects to
                     the measured data for all value dimensions.
         '''
         raise NotImplementedError()

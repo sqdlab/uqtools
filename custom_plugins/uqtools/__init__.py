@@ -25,9 +25,8 @@ elif stage==4:
     reload(calibrate)
 
 from dimension import Parameter
-
 from context import NullContextManager, SimpleContextManager
-from measurement import Measurement
+from measurement import Measurement, ResultDict
 from progress import ProgressReporting
 from basics import Delay, ParameterMeasurement, MeasurementArray, ReportingMeasurementArray, Sweep, ContinueIteration
 from basics import Delay as NullMeasurement
