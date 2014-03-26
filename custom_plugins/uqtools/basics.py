@@ -53,9 +53,9 @@ class MeasurementArray(Measurement):
     '''
     def __init__(self, *measurements, **kwargs):
         super(MeasurementArray, self).__init__(**kwargs)
-        self.add_coordinates(Parameter(name='nestedId', type=int, values=range(len(measurements)), inheritable=False))
+        self.add_coordinates(Parameter(name='nestedId', type=int, values=range(len(measurements))))
         for measurement in measurements:
-            self.add_measurement(measurement)
+            self.add_measurement(measurement, inherit_local_coords=False)
 
     def _measure(self, **kwargs):
         output_data = kwargs.get('output_data', False)
@@ -143,9 +143,6 @@ class Sweep(ProgressReporting, Measurement):
             measurement = self.add_measurement(measurement)
             measurement.set_parent_name(self.get_name())
         
-    def get_coordinates(self, parent=False, local=True):
-        return super(Sweep, self).get_coordinates(parent=parent, local=local or parent)
-
     def _measure(self, **kwargs):
         ''' 
             perform a swept measurement.

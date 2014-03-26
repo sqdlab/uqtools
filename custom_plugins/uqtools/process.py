@@ -15,7 +15,7 @@ class Buffer(Measurement):
         self._d = None
         # add m
         m.set_parent_name(self.get_name())
-        self.add_measurement(m)
+        self.add_measurement(m, inherit_local_coords=False)
         self.add_coordinates(m.get_coordinates())
         self.add_values(m.get_values())
     
@@ -53,7 +53,7 @@ class Add(Measurement):
             it does not work with nested Sweeps.
         '''
         super(Add, self).__init__(**kwargs)
-        m = self.add_measurement(m)
+        m = self.add_measurement(m, inherit_local_coords=False)
         # unify different formats of summands
         if hasattr(summand, 'get_data'):
             self._summand = lambda: summand.get_data()[1]
@@ -134,7 +134,7 @@ class Integrate(Measurement):
         self._coordinate = coordinate
         self.range = range
         self.average=average
-        m = self.add_measurement(m)
+        m = self.add_measurement(m, inherit_local_coords=False)
         # add child coordinates to self, ignoring the coordinate integrated over
         cs = m.get_coordinates()
         self._axis = cs.index(coordinate)

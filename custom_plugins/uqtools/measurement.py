@@ -146,7 +146,7 @@ class Measurement(object):
                 name - parent name
         '''
         self._parent_name = name
-        for child in self._children:
+        for child, _ in self._children:
             child.set_parent_name(name + ('_' if name else '') + self._name)
         
     def set_parent_coordinates(self, dimensions = []):
@@ -214,11 +214,16 @@ class Measurement(object):
         ''' run get() on all values '''
         return [dimension.get() for dimension in self.get_values()]
     
-    def add_measurement(self, measurement):
+    def add_measurement(self, measurement, inherit_local_coords=True):
         '''
             add a nested measurement to an internal list,
             so setup and cleanup can be automated
             #copies the measurement object so it can be embedded in several measurements
+            
+            Input:
+                measurement - Measurement object to add
+                interhit_locals - if True, local coordinates are prepended
+                    to the measurements own coordinates
         '''
         if self._setup_done:
             raise EnvironmentError('unable to add nested measurements after the measurement has been setup.')
@@ -230,11 +235,12 @@ class Measurement(object):
         ):
             raise TypeError('parameter measurement must be an instance of Measurement.')
         #measurement = copy.copy(measurement)
-        self._children.append(measurement)
+        flags = {'inherit_local_coords':inherit_local_coords}
+        self._children.append((measurement, flags))
         return measurement
     
     def get_measurements(self):
-        return self._children
+        return [c for c, _ in self._children]
 
     def get_data_file_paths(self):
         '''
@@ -391,9 +397,11 @@ class Measurement(object):
         if len(self.get_values()):
             self._create_data_files()
         # pass coordinates and paths to children
-        for child in self._children:
+        for child, flags in self._children:
             child.set_parent_data_directory(self.get_data_directory())
-            child.set_parent_coordinates(self.get_coordinates(parent=True, local=False))
+            child.set_parent_coordinates(
+                self.get_coordinates(parent=True, local=flags['inherit_local_coords'])
+            )
             #child._setup()
         # make sure setup is not run again
         self._setup_done = True
@@ -425,7 +433,7 @@ class Measurement(object):
             called when the top-level measurement has finished. 
         '''
         # clean-up of all nested measurements is handled by the top-level measurement
-        for child in self._children:
+        for child, _ in self._children:
             child._teardown()
         # allow setup to run for the next measurement
         self._setup_done = False

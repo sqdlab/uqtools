@@ -30,7 +30,7 @@ from measurement import Measurement, ResultDict
 from progress import ProgressReporting
 from basics import Delay, ParameterMeasurement, MeasurementArray, ReportingMeasurementArray, Sweep, ContinueIteration
 from basics import Delay as NullMeasurement
-from calibrate import CalibrateResonator
+from calibrate import FittingMeasurement, CalibrateResonator, CalibrateResonatorMonolithic
 from process import Buffer, Add, Integrate
 from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement, AveragedTvModeMeasurement, AveragedTvModeMeasurementMonolithic 
 from awg import ProgramAWG, ProgramAWGParametric

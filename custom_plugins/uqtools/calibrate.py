@@ -1,75 +1,183 @@
 import numpy
-import scipy.stats
-import scipy.optimize
 from . import Parameter, Measurement, ResultDict
 from . import Sweep, ContinueIteration
 from . import ProgressReporting
 import logging
 
 class FittingMeasurement(ProgressReporting, Measurement):
+    '''
+        Generic fitting of one-dimensional data via the fitting library
+    '''
     
-    def __init__(self, measurement, fitter, test=None, **kwargs):
+    def __init__(self, source, fitter, measurements=None, indep=None, dep=None, test=None, popt_out=None, **kwargs):
         '''
-        measure something, try to fit the data returned
+        Generic fitting of one-dimensional data.
         
         Input:
-            measurement (instance of Measurement) - data source
-                only tested with Sweep as an input
+            source (instance of Measurement) - data source
             fitter (instance of fitting.FitBase) - data fitter
-            test (callable) - if test(xs, ys, p_opt, p_std, p_est) returns  
-                False, a ContinueIteration exception is raised
+            measurements ((iterable of) Measurement) - measurements performed
+                after a successful fit. If None, a ContinueIteration is raised
+                when the fit fails. 
+            indep (instance of Parameter) - independent variable,
+                defaults to first coordinate returned by measurement
+            dep (instance of Parameter) - dependent variable,
+                defaults to first value returned by measurement
+            test (callable) - test optimized parameters for plausibility.
+                if test(xs, ys, p_opt, p_std, p_est.values()) returns False, the fit
+                is taken to be unsuccessful.
+            popt_out (dict of str:Parameter) - After a successful fit, each
+                optimized parameter present as a key is passed to the
+                associated Parameter object. 
             **kwargs are passed to superclasses
             
             does not currently support fitting.PeakFind
+            handles ContinueIteration in nested measurements
         '''
         super(FittingMeasurement, self).__init__(**kwargs)
-        self.add_measurement(measurement)
+        self.add_measurement(source, inherit_local_coords=False)
+        self.indep = indep
+        self.dep = dep
+        self.popt_out = popt_out if popt_out is not None else {}
         # add parameters returned by the fitter
         for pname in fitter.PARAMETERS:
             self.add_values(Parameter(pname))
         for pname in fitter.PARAMETERS:
-            self.add_values(Parameter(pname)+'_std')
-        self._fitter = fitter
+            self.add_values(Parameter(pname+'_std'))
+        self.add_values(Parameter('fit_ok'))
+        # support fitters with multiple outputs
+        self.fitter = fitter
+        if fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
+            self.add_coordinates(Parameter('fit_id'))
+        # add measurements
+        self.raise_exceptions = measurements is None
+        if measurements is not None:
+            for m in measurements if numpy.iterable(measurements) else (measurements,):
+                self.add_measurement(m)
+        # test function
+        if test is not None:
+            if callable(test):
+                self.test = test
+            else:
+                raise TypeError('test must be a function.')
+        else:
+            self.test = lambda xs, ys, p_opt, p_std, p_est: numpy.all(numpy.isfinite(p_opt))
     
     def _measure(self, *args, **kwargs):
-        # run nested sweep
-        m = self.get_measurements()[0]
-        _range, responses = m(nested=True, output_data=True)
-        # remove failed measurements
-        if None in responses:
-            _range = [x for x,y in zip(range, responses) if y is not None]
-            responses = [x for x,y in zip(range, responses) if y is not None]
-        if not len(responses):
-            raise ContinueIteration('swept frequency range was empty or all measurements failed.')
-        # check shape of the measured data
-        if len(responses[0][0]):
-            cs = numpy.array(responses[0][1])
-            if numpy.prod(cs.shape)>1:
-                logging.warning(__name__ + ': data measured has at least one non-singleton dimension. using the mean of all points.')
-            data = [numpy.mean(d) for _, d in responses]
+        # reset progress bar
+        self._reporting_start()
+        # for standard fitters, progress bar shows measurement id including calibration
+        if not self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
+            self._reporting_state.iterations = len(self.get_measurements())
+        # run data source
+        source = self.get_measurements()[0]
+        cs, d = source(nested=True, output_data=True)
+        # pick dependent variable
+        if self.dep is not None:
+            ys = d[self.dep]
         else:
-            data = [d for _, d in responses]
-        # fit & save the fit result
-        p_opt, p_cov = self._fitter.fit(_range, data)
-        if p_cov is None:
-            p_std = [numpy.NaN]*len(p_opt)
+            # use first value by default
+            ys = d.values()[0]
+        # make sure ys is a ndarray
+        if not isinstance(ys, numpy.ndarray):
+            ys = numpy.array(ys, copy=False)
+        # pick independent variable
+        if self.indep is not None:
+            # roll independent variable into first position
+            indep_idx = cs.keys().index(self.indep)
+            xs = numpy.rollaxis(cs[self.indep], indep_idx)
+            ys = numpy.rollaxis(d, indep_idx)
         else:
-            p_std = numpy.sqrt(numpy.diag(p_cov)) 
-        result = list(p_opt) + list(p_std)
-        self._data.add_data_point(*result)
-        for p, v in zip(self.get_values(), result):
-            p.set(v)
-        # set source on resonance
-        if success:
-            self._coordinate.set(p_opt[0])
+            xs = cs.values()[0]
+        # convert multi-dimensional coordinate and data arrays to 1d
+        if numpy.prod(ys.shape[1:])>1:
+            logging.warning(__name__ + ': data measured has at least one ' + 
+                'non-singleton dimension. using the mean of all points.')
+            xs = xs[tuple([slice(None)]+[0]*(d.ndim-1))]
+            ys = [numpy.mean(y) for y in ys]
         else:
-            raise ContinueIteration('fit failed.')
+            xs = numpy.ravel(xs)
+            ys = numpy.ravel(ys)
+        # test for data
+        if not len(xs):
+            # short-cut if no data was measured
+            logging.warning(__name__ + ': empty data set was returned by source') 
+            if self.raise_exceptions:
+                raise ContinueIteration('empty data set was returned by source.')
+            p_opts = ()
+            p_covs = ()
+        else:
+            # regular fitting if data was measured
+            try:
+                p_est = self.fitter.guess(xs, ys)
+            except:
+                logging.warning(__name__ + 'parameter guesser failed.')
+                p_est = {}
+            p_opts, p_covs = self.fitter.fit(xs, ys, **p_est)
+            if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
+                # for multi-fitters, progress bar shows result set id
+                self._reporting_state.iterations = 1+len(p_opts)
+            else:
+                # unify output of multi- and non-multi fitters
+                p_opts = (p_opts,)
+                p_covs = (p_covs,)
+        self._reporting_next()
+        # loop over parameter sets returned by fit
+        return_buf = ResultDict()
+        for v in self.get_coordinates()+self.get_values():
+            return_buf[v] = numpy.empty((len(p_opts),))
+        for idx, p_opt, p_cov in zip(range(len(p_opts)), p_opts, p_covs):
+            p_std = numpy.sqrt(p_cov.diagonal())
+            p_test = self.test(xs, ys, p_opt, p_std, p_est.values())
+            # save fit to: file
+            result = [idx] if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS else []
+            result += list(p_opt) + list(p_std) + [1 if p_test else 0]
+            self._data.add_data_point(*result)
+            # save fit to: internal values & return buffer
+            for p, v in zip(self.get_coordinates()+self.get_values(), result):
+                p.set(v)
+                if p not in self.get_coordinates():
+                    return_buf[p][idx] = v
+            # update user-provided parameters and run nested measurements
+            # only if fit was successful
+            if p_test:
+                # save fit to: user-provided Parameters (set instruments)
+                for k, p in self.popt_out.iteritems():
+                    p.set(self.values[k].get())
+                # run nested measurements
+                try:
+                    kwargs.update({'output_data':False})
+                    for m in self.get_measurements()[1:]:
+                        m(nested=True, **kwargs)
+                        # update progress bar indicating measurement id
+                        if not self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
+                            self._reporting_next()
+                except ContinueIteration:
+                    pass
+            # update progress bar indicating result set
+            if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
+                self._reporting_next()
+        # raise ContinueIteration only if all fits have failed or zero parameter sets were returned
+        if not numpy.any(return_buf[self.values['fit_ok']]):
+            if self.raise_exceptions:
+                raise ContinueIteration('fit failed.')
+        # set progress bar to 100% 
+        self._reporting_finish()
         # return fit result
-        return (), result
+        if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
+            return (
+                ResultDict([(self.get_coordinates()[0],numpy.arange(len(p_opts)))]), 
+                return_buf
+            )
+        else:
+            return {}, ResultDict(zip(self.get_values(), self.get_value_values()))
 
+        
 try:
     import fitting
-    
+except ImportError:
+    logging.warning(__name__+': fitting library is not available.')
+else:    
     def test_resonator(xs, ys, p_opt, p_std, p_est):
             f0_opt, df_opt, offset_opt, amplitude_opt = p_opt 
             f0_std, df_std, offset_std, amplitude_std = p_std
@@ -82,26 +190,52 @@ try:
                 (amplitude_opt < 2*numpy.std(ys-fitting.Lorentzian.f(xs, *p_opt)))
             )
             return not numpy.any(tests)
-except ImportError:
-    logging.warning(__name__+': fitting library is not available.')
 
+    def CalibrateResonator(c_freq, freq_range, m, **kwargs):
+        '''
+        factory function returning a FittingMeasurement with fitting.Lorentzian as
+        its fitter and the same test function also used by the former 
+        CalibrateResonator class.
+        
+        Input:
+            c_freq - frequency coordinate
+            freq_range - frequency range to measure
+            m - response measurement object
+        consult documentation of FittingMeasurement for further keyword arguments.
+        '''
+        if not kwargs.has_key('test'):
+            kwargs['test'] = test_resonator
+        return FittingMeasurement(
+            source=Sweep(c_freq, freq_range, m),
+            fitter=fitting.Lorentzian(),
+            **kwargs
+        )
 
-class CalibrateResonator(ProgressReporting, Measurement):
+#
+#
+# OLD STUFF HERE
+#
+#
+import scipy.stats
+import scipy.optimize
+
+class CalibrateResonatorMonolithic(ProgressReporting, Measurement):
     '''
     calibrate resonator probe frequency by sweeping and fitting
+    (superseeded by CalibrateResonator factory function)
     '''
     
-    def __init__(self, c_freq, freq_range, m, value=None, **kwargs):
+    def __init__(self, c_freq, freq_range, m, dep=None, **kwargs):
         '''
         Input:
             c_freq - frequency coordinate
             freq_range - frequency range to measure
             m - response measurement object 
-            value - which value to fit, defaults to first
+            dep - dependent variable, defaults to first
         '''
-        super(CalibrateResonator, self).__init__(**kwargs)
+        super(CalibrateResonatorMonolithic, self).__init__(**kwargs)
         self.coordinate = c_freq
-        self.value = value
+        self.value = dep
         if len(m.get_values()) != 1:
             raise ValueError('nested measurement must measure exactly one value.')
         self.add_measurement(Sweep(c_freq, freq_range, m))
@@ -115,13 +249,6 @@ class CalibrateResonator(ProgressReporting, Measurement):
         # run nested sweep
         m = self.get_measurements()[0]
         cs, d = m(nested=True, output_data=True)
-        # remove failed measurements
-        #if None in d:
-        #    mask = numpy.nonzero()
-        #    _range = [x for x,y in zip(_range, responses) if y is not None]
-        #    responses = [y for y in responses if y is not None]
-        #if not len(responses):
-        #    raise ContinueIteration('swept frequency range was empty or all measurements failed.')
         # use first value by default
         if self.value is not None:
             d = d[self.value]
@@ -129,9 +256,12 @@ class CalibrateResonator(ProgressReporting, Measurement):
             d = d.values()[0]
         # check shape of the measured data
         if not isinstance(d, numpy.ndarray):
-            d = numpy.array(d)
+            d = numpy.array(d, copy=False)
+        if not len(d):
+            raise ContinueIteration('swept frequency range was empty or all measurements failed.')
         if numpy.prod(d.shape[1:])>1:
-            logging.warning(__name__ + ': data measured has at least one non-singleton dimension. using the mean of all points.')
+            logging.warning(__name__ + ': data measured has at least one ' + 
+                'non-singleton dimension. using the mean of all points.')
             _range = cs[self.coordinate][tuple([slice(None)]+[0]*(d.ndim-1))]
             data = [numpy.mean(x) for x in d]
         else:

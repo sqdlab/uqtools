@@ -277,9 +277,9 @@ class ProgressReporting(object):
         results = []
         if do_self:
             results.append((level, self, function(self)))
-        for child in self._children:
-            if isinstance(child, ProgressReporting):
-                results.extend(child._reporting_dfs(function, level+1))
+        for m in self.get_measurements():
+            if isinstance(m, ProgressReporting):
+                results.extend(m._reporting_dfs(function, level+1))
         return results
     
     def _reporting_next(self):
