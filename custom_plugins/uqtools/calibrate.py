@@ -203,8 +203,10 @@ else:
             m - response measurement object
         consult documentation of FittingMeasurement for further keyword arguments.
         '''
-        if not kwargs.has_key('test'):
+        if 'test' not in kwargs:
             kwargs['test'] = test_resonator
+        if 'popt_out' not in kwargs:
+            kwargs['popt_out'] = {'f0':c_freq}
         return FittingMeasurement(
             source=Sweep(c_freq, freq_range, m),
             fitter=fitting.Lorentzian(),
