@@ -1,7 +1,8 @@
 import numpy
-from . import Measurement, ResultDict
-from collections import defaultdict
 import logging
+from collections import defaultdict
+
+from measurement import Measurement, ResultDict
 
 class Buffer(Measurement):
     '''

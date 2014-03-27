@@ -1,8 +1,10 @@
 import numpy
-from . import Parameter, Measurement, ResultDict
-from . import Sweep, ContinueIteration
-from . import ProgressReporting
 import logging
+
+from parameter import Parameter
+from measurement import Measurement, ResultDict
+from basics import Sweep, ContinueIteration
+from progress import ProgressReporting
 
 class FittingMeasurement(ProgressReporting, Measurement):
     '''
@@ -27,11 +29,10 @@ class FittingMeasurement(ProgressReporting, Measurement):
                 if test(xs, ys, p_opt, p_std, p_est.values()) returns False, the fit
                 is taken to be unsuccessful.
             popt_out (dict of str:Parameter) - After a successful fit, each
-                optimized parameter present as a key is passed to the
+                optimized parameter present as a key is stored in the
                 associated Parameter object. 
             **kwargs are passed to superclasses
             
-            does not currently support fitting.PeakFind
             handles ContinueIteration in nested measurements
         '''
         super(FittingMeasurement, self).__init__(**kwargs)

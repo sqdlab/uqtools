@@ -1,7 +1,9 @@
 import numpy
 import logging
-from . import Measurement, ResultDict, Integrate
 import contextlib
+
+from measurement import Measurement, ResultDict 
+from process import Integrate
 
 class FPGAMeasurement(Measurement):
     '''

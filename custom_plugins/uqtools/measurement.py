@@ -1,18 +1,19 @@
 import os
 import time
-from functools import wraps
 import numpy
-import copy
-from . import NullContextManager
-from dimension import ParameterList
+from functools import wraps
 from collections import OrderedDict
-#make_iterable = lambda obj: obj if numpy.iterable(obj) else [obj]
-make_iterable = lambda obj: obj if isinstance(obj, list) or isinstance(obj, tuple) else (obj,)
 
 import qt
 from data import Data
 from lib.config import get_config
 config = get_config()
+
+from context import NullContextManager
+from parameter import ParameterList
+
+make_iterable = lambda obj: obj if isinstance(obj, list) or isinstance(obj, tuple) else (obj,)
+
 
 class ResultDict(OrderedDict):
     '''
@@ -158,7 +159,7 @@ class Measurement(object):
         '''
         if self._setup_done:
             raise EnvironmentError('unable to add coordinates after the measurement has been setup.')
-        self._parent_coordinates = [dim for dim in dimensions if dim.inheritable]
+        self._parent_coordinates = dimensions
     
     def set_parent_data_directory(self, directory=''):
         self._parent_data_directory = directory
@@ -267,8 +268,10 @@ class Measurement(object):
             create required data files.
             may be replaced in subclasses if a more complex file handling is desired.
         '''
-        self._data = self._create_data_file()
-        self._data_file_path = self._data.get_filepath()
+        # create own data files if any value dimensions are present
+        if len(self.get_values()):
+            self._data = self._create_data_file()
+            self._data_file_path = self._data.get_filepath()
     
     def _create_data_file(self, name = None):
         '''
@@ -405,9 +408,8 @@ class Measurement(object):
         # generate a new data directory name
         if not self._parent_data_directory:
             self.set_parent_data_directory(self._file_name_generator.generate_directory_name(self._name))
-        # create own data files if any value dimensions are present
-        if len(self.get_values()):
-            self._create_data_files()
+        # create own data files
+        self._create_data_files()
         # pass coordinates and paths to children
         for child, flags in self._children:
             child.set_parent_data_directory(self.get_data_directory())

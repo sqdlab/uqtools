@@ -1,7 +1,8 @@
 import time
-import collections
 import numpy
+import collections
 import IPython.display
+
 import gobject
 import qt
 
@@ -397,43 +398,3 @@ class SweepStateMulti(object):
     
     def time_remaining(self):
         return self._nest(lambda state: state.time_remaining())
-
-#
-#
-#
-# TESTING STUFF
-#
-#
-#
-class DummyMeasurement(object):
-    def __init__(self, name):
-        self._name = name
-        self._children = []
-    def __call__(self, nested=False):
-        if not nested:
-            self._setup()
-        self._measure()
-        if not nested:
-            self._teardown()
-    def _setup(self):
-        for child in self._children:
-            child._setup()
-    def _teardown(self):
-        for child in self._children:
-            child._teardown()
-    def _measure(self):
-        import numpy.random
-        time_per_iteration = 100e-3*numpy.random.random()
-        self._reporting_state.iterations = numpy.random.randint(10)
-        for _ in range(self._reporting_state.iterations):
-            self._reporting_start_iteration()
-            for m in self._children:
-                m(nested=True)
-            self._reporting_next()
-            qt.msleep()
-            time.sleep(time_per_iteration)
-    def add_measurements(self, measurements):
-        self._children.extend(measurements)
-
-class ReportingMeasurement(ProgressReporting, DummyMeasurement):
-    pass

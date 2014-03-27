@@ -11,7 +11,7 @@ class Parameter(object):
         additional properties like the parameter name can be automatically added to new data files
         created by nested measurements. 
     '''
-    def __init__(self, name, set_func=None, get_func=None, value=None, dtype=None, inheritable=True, **info):
+    def __init__(self, name, set_func=None, get_func=None, value=None, dtype=None, **info):
         '''
             initialize parameter.
             
@@ -21,7 +21,6 @@ class Parameter(object):
                 get_func - function called when get() is called, returns stored value if not given
                 value - stored value. not necessarily scalar.
                 dtype - data type
-                inheritable - (deprecataed) if False, Parameter is not passed to nested measurements if used as a coordinate
                 **info - extra keyword arguments are descriptive information and may be stored in data files
         '''
         self.name = name
@@ -33,7 +32,6 @@ class Parameter(object):
             self._value = None
         self.dtype = dtype
         self.info = info
-        self.inheritable = inheritable
     
     def set(self, value):
         ''' store value and call set_func if defined '''

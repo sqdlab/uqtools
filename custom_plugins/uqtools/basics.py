@@ -1,9 +1,12 @@
 import time
 import types
 import numpy
+
 import qt
 from collections import deque
-from . import Measurement, Parameter, ResultDict, ProgressReporting
+from parameter import Parameter
+from measurement import Measurement, ResultDict
+from progress import ProgressReporting
 
 class Delay(Measurement):
     '''
@@ -53,9 +56,9 @@ class MeasurementArray(Measurement):
     '''
     def __init__(self, *measurements, **kwargs):
         super(MeasurementArray, self).__init__(**kwargs)
-        self.add_coordinates(Parameter(name='nestedId', type=int, values=range(len(measurements))))
-        for measurement in measurements:
-            self.add_measurement(measurement, inherit_local_coords=False)
+        for idx, m in enumerate(measurements):
+            self.add_measurement(m, inherit_local_coords=False)
+            self.add_values(Parameter('nested_{0}'.format(idx)))
 
     def _measure(self, **kwargs):
         output_data = kwargs.get('output_data', False)
@@ -71,8 +74,11 @@ class MeasurementArray(Measurement):
                     continueIteration = True
             results.append(result)
         if output_data:
-            cs = ResultDict(zip(self.get_coordinates(), range(len(results))))
-            return cs, {None: results}
+            return {}, ResultDict(zip(self.get_values(), results))
+        
+    def _create_data_files(self):
+        ''' MeasurementArray does never create data files '''
+        pass
 
 class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
     '''
@@ -96,8 +102,7 @@ class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
             self._reporting_next()
         self._reporting_finish()
         if output_data:
-            cs = ResultDict(zip(self.get_coordinates(), range(len(results))))
-            return cs, {None: results}
+            return {}, ResultDict(zip(self.get_values(), results))
 
 
 class ContinueIteration(Exception):
@@ -121,16 +126,17 @@ class Sweep(ProgressReporting, Measurement):
                     is executed once per value in range. A measurement may raise 
                     a ContinueIteration exception to indicate that the remaining
                     measurements should be skipped in the current iteration.
-                    If measurements is an iterable, the measured data will be 
-                    two-dimensional with the measurement index as the first dimension, 
-                    otherwise it will be one-dimensional.
+                    If measurements is an iterable, a value parameter is added for
+                    each measurement and _measure will return (coordinates, values)
+                    tuples for each measurement. Otherwise, _measure will return
+                    a single (coordinates, values) pair with the sweep coordinate
+                    added. In other words, it will produce the same output the
+                    nested measurement would if it had an additional internal
+                    coordinate.
         '''
         if('name' not in kwargs):
             kwargs['name'] = coordinate.name
         super(Sweep, self).__init__(**kwargs)
-        if numpy.iterable(measurements):
-            # if measurements is an iterable, return a 2d result
-            self.add_coordinates(Parameter(name='nestedId', type=int, values=[i for i in xrange(len(measurements))], inheritable=False))
         self.add_coordinates(coordinate)
         self.coordinate = coordinate
         # range may be an iterable or a function
@@ -138,10 +144,17 @@ class Sweep(ProgressReporting, Measurement):
             self.range = range
         else:
             self.range = lambda:range
-        # add nested measurements 
-        for measurement in measurements if numpy.iterable(measurements) else (measurements,):
-            measurement = self.add_measurement(measurement)
-            measurement.set_parent_name(self.get_name())
+        # add nested measurements
+        self._values_passthrough = not numpy.iterable(measurements)  
+        if not self._values_passthrough:
+            for idx, m in enumerate(measurements):
+                m = self.add_measurement(m)
+                m.set_parent_name(self.get_name())
+                self.add_values(Parameter('nested_{0}'.format(idx)))
+        else:
+            m = self.add_measurement(measurements)
+            m.set_parent_name(self.get_name())
+            self.add_values(m.get_values())
         
     def _measure(self, **kwargs):
         ''' 
@@ -167,8 +180,12 @@ class Sweep(ProgressReporting, Measurement):
         # create output buffer if output is requested
         output_data = kwargs.get('output_data', False)
         if output_data:
-            results = numpy.zeros((len(measurements), len(_range)), numpy.object)
-            results.fill(None) 
+            results = [
+                numpy.zeros((len(_range),), numpy.object) 
+                for _ in range(len(measurements))
+            ]
+            for result in results:
+                result.fill(None)
         # sweep coordinate
         for ridx, x in enumerate(_range):
             # reset child progress bars
@@ -182,7 +199,7 @@ class Sweep(ProgressReporting, Measurement):
                 try:
                     result = measurement(nested=True, **kwargs)
                     if output_data:
-                        results[midx, ridx] = result
+                        results[midx][ridx] = result
                 except ContinueIteration:
                     # if a ContinueIteration exception is raised, 
                     # do not execute any more measurements in this iteration
@@ -190,36 +207,42 @@ class Sweep(ProgressReporting, Measurement):
             # indicate that the current data point is complete
             self._reporting_next()
         if output_data:
-            coordinates = self.get_coordinates()
-            if len(coordinates) == 2:
+            if not self._values_passthrough:
                 # the simple case: multiple measurements, no mangling of data
-                cs = coordinate_concat(
-                    {coordinates[0]: numpy.arange(len(measurements))},
-                    {coordinates[1]: _range}
+                return (
+                    ResultDict([(self.coordinate, _range)]), 
+                    ResultDict(zip(self.get_values(), results))
                 )
-                return cs, {None: results}
             else:
+                # remove measurement index from results, there is only one item
+                results = results[0]
                 # the complex case: concatenate coordinate and data matrices
                 # skip points that where not measured
-                mask = results[0,:].nonzero()
+                mask = results.nonzero()
                 if not len(mask[0]):
-                    return ResultDict([(self.coordinate,[])]), {}
+                    return (
+                        ResultDict([(self.coordinate,[])]), 
+                        ResultDict(zip(self.get_values(), [[]]*len(self.get_values())))
+                    )
                 _range = numpy.array(_range)[mask]
-                results = results[0,mask]
+                results = results[mask]
                 # expand _range array
-                cs = ResultDict()
                 cs = coordinate_concat(
                     {self.coordinate: _range},
-                    results[0,0][0]
+                    results[0][0]
                 )
                 # concatenate other coordinate arrays
-                for k in results[0,0][0].keys():
-                    cs[k] = numpy.concatenate([x[k] for x, _ in results[0,:]])
+                for k in results[0][0].keys():
+                    cs[k] = numpy.concatenate([x[k] for x, _ in results])
                 # concatenate data arrays
                 d = ResultDict()
-                for k in results[0,0][1].keys():
-                    d[k] = numpy.array([x[k] for _, x in results[0,:]])
+                for k in results[0][1].keys():
+                    d[k] = numpy.array([y[k] for _, y in results])
                 return cs, d
+
+    def _create_data_files(self):
+        ''' Sweep does never create data files '''
+        pass
 
 def coordinate_concat(*css):
     '''

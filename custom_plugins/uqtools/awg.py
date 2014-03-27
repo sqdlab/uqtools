@@ -1,6 +1,7 @@
 import logging
 import os
-from . import Measurement, Parameter
+from parameter import Parameter
+from measurement import Measurement
 
 class ProgramAWG(Measurement):
     '''
