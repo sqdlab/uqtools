@@ -1,11 +1,20 @@
 # return sub-modules when module is reloaded
+#import logging
+#import types
+#for k, v in locals().items():
+#    if isinstance(v, types.ModuleType) and v.__name__.startswith(__name__):
+#        reload(v)
+#        logging.debug(__name__ + ': reloading {0}'.format(v.__name__))
+#del logging, types, k, v
+
+# reload sub-modules in fixed order
 import logging
-import types
-for k, v in locals().items():
-    if isinstance(v, types.ModuleType) and v.__name__.startswith(__name__):
-        reload(v)
-        logging.debug(__name__ + ': reloading {0}'.format(v.__name__))
-del logging, types, k, v
+for k in ('parameter', 'context', 'measurement', 'progress', 'basics', 
+          'process', 'fpga', 'awg', 'calibrate'):
+    if k in locals():
+        logging.debug(__name__ + ': reloading {0}'.format(k))
+        reload(locals()[k])
+del k
 
 #import os
 #import logging
