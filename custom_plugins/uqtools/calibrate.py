@@ -87,14 +87,14 @@ class FittingMeasurement(ProgressReporting, Measurement):
             # roll independent variable into first position
             indep_idx = cs.keys().index(self.indep)
             xs = numpy.rollaxis(cs[self.indep], indep_idx)
-            ys = numpy.rollaxis(d, indep_idx)
+            ys = numpy.rollaxis(ys, indep_idx)
         else:
             xs = cs.values()[0]
         # convert multi-dimensional coordinate and data arrays to 1d
         if numpy.prod(ys.shape[1:])>1:
             logging.warning(__name__ + ': data measured has at least one ' + 
                 'non-singleton dimension. using the mean of all points.')
-            xs = xs[tuple([slice(None)]+[0]*(d.ndim-1))]
+            xs = xs[tuple([slice(None)]+[0]*(ys.ndim-1))]
             ys = [numpy.mean(y) for y in ys]
         else:
             xs = numpy.ravel(xs)
