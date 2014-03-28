@@ -287,8 +287,10 @@ class Measurement(object):
         # create dummy data object if self._data_save is not set
         if not self._data_save:
             class DummyData:
+                ''' does nothing '''
                 def add_data_point(self, *args, **kwargs):
-                    ''' does nothing '''
+                    pass
+                def get_filepath(self):
                     pass
             return DummyData()
         
