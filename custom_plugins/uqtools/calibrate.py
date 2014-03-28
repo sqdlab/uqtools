@@ -187,7 +187,7 @@ else:
                 not numpy.all(numpy.isfinite(p_opt)),
                 not numpy.all(numpy.isfinite(p_std)),
                 (f0_opt<xs[0]) or (f0_opt>xs[-1]),
-                (numpy.abs(f0_opt-f0_est) > df_opt),
+                (numpy.abs(f0_opt-f0_est) > numpy.abs(df_opt)),
                 (amplitude_opt < amplitude_est/2.),
                 (amplitude_opt < 2*numpy.std(ys-fitting.Lorentzian.f(xs, *p_opt)))
             )
