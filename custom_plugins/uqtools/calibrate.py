@@ -184,7 +184,8 @@ else:
             f0_std, df_std, offset_std, amplitude_std = p_std
             f0_est, df_est, offset_est, amplitude_est = p_est 
             tests = (
-                not numpy.isfinite((f0_std, df_std, offset_std, amplitude_std)),
+                not numpy.all(numpy.isfinite(p_opt)),
+                not numpy.all(numpy.isfinite(p_std)),
                 (f0_opt<xs[0]) or (f0_opt>xs[-1]),
                 (numpy.abs(f0_opt-f0_est) > df_opt),
                 (amplitude_opt < amplitude_est/2.),
