@@ -1,7 +1,12 @@
 import logging
 import os
+
 from parameter import Parameter
 from measurement import Measurement
+try:
+    from pulsegen import ptplot_gui
+except ImportError:
+    logging.warning(__name__+': pulsegen.ptplot_gui is not available. plotting functions are disabled.')
 
 class ProgramAWG(Measurement):
     '''
@@ -64,10 +69,17 @@ class ProgramAWG(Measurement):
                 if awg.get_seq_length() != length:
                     logging.error(__name__ + ': sequence length reported by AWG #{0} differs from the expected value {1}.'.format(idx, len(self._sequence)))
 
-    def plot(self):
-        self._sequence.sample()
-        from custom_lib.pulsegen import ptplot_gui
-        ptplot_gui.plot(self._sequence, [0,1,2,3], [0,1], 0)
+    if 'ptplot_gui' in globals():
+        def plot(self, channels=range(4), markers=range(2), pattern=0):
+            '''
+            Plot the sampled sequence.
+            
+            Input:
+                channels, markers - indices of the channels and markers to plot
+                pattern - unknown
+            '''
+            self._sequence.sample()
+            ptplot_gui.plot(seq=self._sequence, channels=channels, markers=markers, pattern=pattern)
 
 
 class ProgramAWGParametric(ProgramAWG):
@@ -86,7 +98,8 @@ class ProgramAWGParametric(ProgramAWG):
                 a new sequence must be exported to the AWG
         '''
         data_directory = kwargs.pop('data_directory', 'patterns')
-        super(ProgramAWG, self).__init__(data_directory=data_directory, **kwargs)
+        #super(ProgramAWG, self).__init__(data_directory=data_directory, **kwargs)
+        Measurement.__init__(self, data_directory=data_directory, **kwargs)
         self._awgs = awgs
         self._seq_func = seq_func
         self._seq_kwargs = seq_kwargs
@@ -97,10 +110,10 @@ class ProgramAWGParametric(ProgramAWG):
         self._host_dir = None
 
         # add function arguments as parameters
-        self.add_values(Parameter('index'))
         for key, arg in seq_kwargs.iteritems():
             if hasattr(arg, 'get'):
-                self.add_value(Parameter(key, get_func=key.get))
+                self.add_values(Parameter(key, get_func=arg.get))
+        self.add_values(Parameter('index'))
 
     def _setup(self):
         # create data files etc.
@@ -111,7 +124,8 @@ class ProgramAWGParametric(ProgramAWG):
         for key, arg in self._seq_kwargs.iteritems():
             if not hasattr(arg, 'get'):
                 has_constants = True
-                self._data.add_comment('\t{0}: {1}'.format(key, arg))
+                arg_str = repr(arg).replace('\n', '\n#\t\t')
+                self._data.add_comment('\t{0}: {1}'.format(key, arg_str))
         if not has_constants:
             self._data.add_comment('\tNone')
 
@@ -133,28 +147,51 @@ class ProgramAWGParametric(ProgramAWG):
             else:
                 value.set(None)
         
-        # if the parameter set was seen before, program previously sampled sequence
+        # check if the parameter set is in the cache
         for idx, prev_seq_kwargs in enumerate(self._prev_seq_kwargss):
             if seq_kwargs == prev_seq_kwargs:
-                self.value['index'].set(idx)
-                self._program(host_dir, host_file(idx), wait, self._prev_seq_lengths[idx])
-                #TODO: log programming of the old data files
-                return
-        
-        # generate and export new sequence
-        idx = len(self._prev_seq_kwargss)
-        self.value['index'].set(idx)
-        seq = self._sequence_func(**seq_kwargs)
-        seq.sample()
-        seq.export(host_dir, host_file(idx))
-        
-        # add evaluated args to lists
-        self._prev_seq_kwargss.append(seq_kwargs)
-        self._prev_seq_lengths.append(len(seq))
+                # program previously sampled sequence
+                self.values['index'].set(idx)
+                break
+        else:
+            # generate and export new sequence
+            idx = len(self._prev_seq_kwargss)
+            seq = self._seq_func(**seq_kwargs)
+            seq.sample()
+            seq.export(host_dir, host_file(idx))
+            # add evaluated args to lists
+            self._prev_seq_kwargss.append(seq_kwargs)
+            self._prev_seq_lengths.append(len(seq))
+            # program newly sampled sequence
+            self.values['index'].set(idx)
         
         # save evaluated args to file
-        self._data.add_data_point(*[self.get_coordinate_values()+self.get_value_values()])
+        self._data.add_data_point(*self.get_value_values())
         
         # program awg
-        self._program(host_dir, host_file(idx), wait, length=len(seq))
+        self._program(host_dir, host_file(idx), wait, self._prev_seq_lengths[idx])
 
+    if 'ptplot_gui' in globals():
+        def plot(self, channels=range(4), markers=range(2), pattern=0):
+            '''
+            Plot current sequence.
+            
+            Generates a sequence for the current parameter set and plots it.
+            
+            Input:
+                channels, markers - indices of the channels and markers to plot
+                pattern - unknown
+            '''
+            # evaluate parameters
+            seq_kwargs = {}
+            for key, arg in self._seq_kwargs.iteritems():
+                seq_kwargs[key] = arg.get() if hasattr(arg, 'get') else arg
+            print 'plotting sequence for parameters:'
+            for key, arg in seq_kwargs.iteritems():
+                arg_str = repr(arg).replace('\n', '\n\t\t')
+                print '\t{0}: {1}'.format(key, arg_str)
+            # regenerate sequence
+            seq = self._seq_func(**seq_kwargs)
+            seq.sample()
+            # plot sequence
+            ptplot_gui.plot(seq=seq, channels=channels, markers=markers, pattern=pattern)

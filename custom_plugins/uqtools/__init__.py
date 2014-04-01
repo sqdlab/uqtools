@@ -10,7 +10,7 @@
 # reload sub-modules in fixed order
 import logging
 for k in ('parameter', 'context', 'measurement', 'progress', 'basics', 
-          'process', 'fpga', 'awg', 'calibrate'):
+          'process', 'fpga', 'calibrate', 'pulselib', 'awg', 'simulation'):
     if k in locals():
         logging.debug(__name__ + ': reloading {0}'.format(k))
         reload(locals()[k])
@@ -36,5 +36,10 @@ from progress import ProgressReporting
 from basics import Delay, ParameterMeasurement, MeasurementArray, ReportingMeasurementArray, Sweep, ContinueIteration
 from process import Buffer, Add, Integrate
 from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement, AveragedTvModeMeasurement, AveragedTvModeMeasurementMonolithic 
-from awg import ProgramAWG, ProgramAWGParametric
 from calibrate import FittingMeasurement, CalibrateResonator, CalibrateResonatorMonolithic
+from simulation import DatReader
+try:
+    import pulselib
+except ImportError:
+    pass
+from awg import ProgramAWG, ProgramAWGParametric
