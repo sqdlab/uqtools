@@ -101,6 +101,9 @@ class SweepState(object):
             if len(self.point_timing) and (self.iterations is not None):
                 # point timing data is the best guess if the time taken per point changes during the measurement
                 return numpy.mean(self.point_timing)*max(0, self.iterations-self.iteration)
+            elif (self.progress() == 0.):
+                # avoid showing an upwards counting timer during the first iteration
+                return None
             elif (self.progress() != 1.) and (self.iterations is not None):
                 # this will overestimate the remaining time because it includes the setup time
                 return self.time_elapsed()/(1.-self.progress())
@@ -155,13 +158,30 @@ class MultiProgressBar(object):
 
     def _format_html_bar(self, level, obj, state, width=400):
         time_remaining = state.time_remaining()
-        if hasattr(obj, '_data'):
-            url = 'file://'+obj._data.get_filepath().replace('\\','/')
+        # links to child data files if they don't get their own bars
+        file_url = lambda fn: 'file://'+fn.replace('\\','/')
+        child_links = []
+        for m in obj.get_measurements():
+            if not isinstance(m, ProgressReporting):
+                child_labelfiles = obj.get_data_file_paths(children=True)
+                child_links.extend([
+                    '<a href="{0}" target="_new">{1}</a>'.format(file_url(fn), label)
+                    for label, fn in child_labelfiles
+                ])
+        if child_links:
+            child_line = '''
+                <tr style="border:none; font-size:14px;">
+                    <td style="border:none; padding-left:{indent:d}px;" colspan="4">{links}</td>
+                </tr>
+            '''.format(indent=20*(level+1), links=', '.join(child_links))
         else:
-            url = ''
+            child_line = ''
+        # link to own data file
+        fn = obj.get_data_file_paths()
         format_dict = {
             'indent': 20*level,
-            'label': '<a href="{0}" target="_new">{1}</a>'.format(url, state.label) if url else state.label,
+            'label': '<a href="{0}" target="_new">{1}</a>'.format(file_url(fn), state.label) if fn else state.label,
+            'child_line': child_line,
             'width': width,
             'width-unit': 'px' if isinstance(width, int) or isinstance(width, float) else '',
             'progress': int(100*state.progress()),
@@ -181,7 +201,8 @@ class MultiProgressBar(object):
             <td style="border:none;">{etc:s}</td>
             <td style="border:none; min-width:80px; text-align:right">{remaining:s}</td>
           </tr>
-        '''.format(**format_dict)
+          {child_line:s}
+          '''.format(**format_dict)
 
     def format_text(self, state_list):
         rlevel=0
@@ -239,7 +260,7 @@ class ProgressReporting(object):
             self._reporting_dfs(ProgressReporting._reporting_setup)
             self._reporting_bar = MultiProgressBar()
             self._reporting_timer = gobject.timeout_add(250, self._reporting_timer_cb)
-            #self._reporting_state = SweepState(label=self.get_name())
+            #self._reporting_state = SweepState(label=self.name)
         try:
             self._reporting_start()
             result = super(ProgressReporting, self).__call__(nested=nested, *args, **kwargs)
@@ -253,9 +274,8 @@ class ProgressReporting(object):
     
     def _reporting_setup(self):
         ''' attach SweepState object to self '''
-        #super(ProgressReporting, self)._setup()
         #if not hasattr(self, '_reporting_state'):
-        self._reporting_state = SweepState(label=self.get_name())
+        self._reporting_state = SweepState(label=self.name)
     
     def _reporting_timer_cb(self):
         ''' output progress bars '''
@@ -302,99 +322,3 @@ class ProgressReporting(object):
     def _reporting_finish(self):
         ''' stop local and child progress indicators. '''
         self._reporting_dfs(lambda obj: obj._reporting_state.finish())
-
-#
-#
-#
-# OBSOLETE STUFF
-#
-#
-#
-class SweepStateMulti(object):
-    '''
-        Progress reporting for multi-dimensional sweeps
-    '''
-    def __init__(self):
-        self._states = collections.OrderedDict()
-
-    def register(self, reporter, level, label=None, iterations=None, duration=None):
-        '''
-        register a progress reporter (usually a sweeping measurement)
-        it is assumed that registering is done in a depth first search order
-        
-        Input:
-            reporter - (hashable) unique identifier of the reporter.
-            level - nesting level of the reporter
-            label - (optional) friendly name of the reporter
-            iterations - (optional) expected number of iterations that result in completion
-                if None, this is inferred from the first sweep if the measurement is swept repeatedly
-            duration - (optional) expected duration of the measurement in seconds
-                
-        '''
-        self._states[reporter] = SweepState(level, label, iterations, duration)
-    
-    def _child_iter(self, root):
-        ''' iterate over all children of root in self._states. self._states is assumed to be populated in depth-first order'''
-        is_child = False
-        for reporter, state in self._states.iteritems():
-            if is_child:
-                if state.level<=self._states[root].level:
-                    break
-                yield reporter, state
-            if reporter==root:
-                is_child=True
-        raise StopIteration
-    
-    def _nest(self, function):
-        ''' apply function to each state and return result as a nested list '''
-        queue = [[]]
-        for _, state in self._states.iteritems():
-            if state.level!=len(queue)-1:
-                # if current entry is on a higer level, collapse levels
-                while state.level<len(queue)-1:
-                    queue[-2].append(queue[-1])
-                    queue.pop()
-                # if current entry is on a deeper level, add levels
-                while state.level>len(queue)-1:
-                    queue.append([])
-            # append value to current level
-            queue[-1].append(function(state))
-        # collapse to top level
-        while 0<len(queue)-1:
-            queue[-2].append(queue[-1])
-            queue.pop()
-        return queue[0]
-    
-    def start(self, reporter):
-        ''' Indicate that reporter has commenced a sweep. '''
-        self._states[reporter].start()
-        # reset the states of all children
-        for _, state in self._child_iter(reporter):
-            state.reset()
-    
-    def finish(self, reporter):
-        ''' Indicate that reporter has finished a sweep. '''
-        self._states[reporter].finish()
-        # execute finish of all children, just in case
-        for _, state in self._child_iter(reporter):
-            state.finish()
-    
-    def next(self, reporter):
-        ''' Indicate that reporter has finished a point. '''
-        self._states[reporter].next()
-        # reset the states of all children
-        for _, state in self._child_iter(reporter):
-            state.reset()
-
-    def progress(self):
-        ''' Return progress as a nested list '''
-        return self._nest(lambda state: state.progress())
-        
-    def time_total(self):
-        return self._nest(lambda state: state.time_total())
-    
-    def time_elapsed(self):
-        return self._nest(lambda state: state.time_elapsed())
-    
-    def time_remaining(self):
-        return self._nest(lambda state: state.time_remaining())

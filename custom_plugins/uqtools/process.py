@@ -15,7 +15,7 @@ class Buffer(Measurement):
         self._cs = None
         self._d = None
         # add m
-        m.set_parent_name(self.get_name())
+        m.set_parent_name(self.name)
         self.add_measurement(m, inherit_local_coords=False)
         self.add_coordinates(m.get_coordinates())
         self.add_values(m.get_values())

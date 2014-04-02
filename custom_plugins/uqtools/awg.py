@@ -33,7 +33,7 @@ class ProgramAWG(Measurement):
         super(ProgramAWG, self)._setup()
 
         self._host_dir = self.get_data_directory()
-        self._host_file = self.get_name()
+        self._host_file = self.name
 
         self._sequence_length = len(self._sequence)
         self._sequence.sample()
@@ -132,7 +132,7 @@ class ProgramAWGParametric(ProgramAWG):
     def _measure(self, wait=True, **kwargs):
         # sequence directory and filename
         host_dir = self.get_data_directory()
-        host_file = lambda idx: '{0}{1}'.format(self._name, idx)
+        host_file = lambda idx: '{0}{1}'.format(self.name, idx)
         if(self._host_dir != host_dir) and len(self._seq_kwargs):
             logging.info(__name__ + ': data directory has changed. clearing sequence cache.')
             self._prev_seq_kwargs = []

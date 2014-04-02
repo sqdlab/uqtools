@@ -149,11 +149,11 @@ class Sweep(ProgressReporting, Measurement):
         if not self._values_passthrough:
             for idx, m in enumerate(measurements):
                 m = self.add_measurement(m)
-                m.set_parent_name(self.get_name())
+                m.set_parent_name(self.name)
                 self.add_values(Parameter('nested_{0}'.format(idx)))
         else:
             m = self.add_measurement(measurements)
-            m.set_parent_name(self.get_name())
+            m.set_parent_name(self.name)
             self.add_values(m.get_values())
         
     def _measure(self, **kwargs):
