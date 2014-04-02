@@ -28,9 +28,9 @@ class FittingMeasurement(ProgressReporting, Measurement):
             test (callable) - test optimized parameters for plausibility.
                 if test(xs, ys, p_opt, p_std, p_est.values()) returns False, the fit
                 is taken to be unsuccessful.
-            popt_out (dict of str:Parameter) - After a successful fit, each
-                optimized parameter present as a key is stored in the
-                associated Parameter object. 
+            popt_out (dict of Parameter:str) - After a successful fit, each
+                Parameter object present in popt is assigned the associated
+                optimized parameter.
             **kwargs are passed to superclasses
             
             handles ContinueIteration in nested measurements
@@ -143,7 +143,7 @@ class FittingMeasurement(ProgressReporting, Measurement):
             # only if fit was successful
             if p_test:
                 # save fit to: user-provided Parameters (set instruments)
-                for k, p in self.popt_out.iteritems():
+                for p, k in self.popt_out.iteritems():
                     p.set(self.values[k].get())
                 # run nested measurements
                 try:
