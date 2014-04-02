@@ -1,8 +1,116 @@
 import numpy
 import logging
 from collections import defaultdict
+import functools
 
 from measurement import Measurement, ResultDict
+
+
+def apply_decorator(f, name=None):
+    '''
+    Make the signature of a function f(x[,...]) that takes a number of ndarrays
+    compatible with the signature expected by the function parameter of Apply.
+    
+    If the values parameters vi of all measurements contained in Apply are the 
+    same, f is applied as f(v0[k], v1[k], ...) for all keys k of v0.
+    Otherwise, f is applied as f(v0[k], *v1, ...) for all keys k of v0.
+    
+    Input:
+        f - decorated function
+        name (str) - optional name to be assigned to the decorated function
+    '''
+    @functools.wraps(f)
+    def decorated_f(*dec_args):
+        # extract data
+        ds = dec_args[1::2]
+        result = ResultDict()
+        if(
+           numpy.all([ds[0].keys() == d.keys() for d in ds]) or
+           numpy.all([[k.name for k in ds[0].keys()] == [k.name for k in d.keys()] for d in ds])
+        ):
+            # if all measurements have the same keys, execute f for each key 
+            # pass all matrices for that key to f
+            for k in ds[0].keys():
+                args = [d[k] for d in ds]
+                result[k] = f(*args)
+        else:
+            # otherwise, execute f for each key of the first ResultDict
+            # and pass all elements of the other ResultDicts
+            xargs = [arr for d in ds[1:] for arr in d.values()]
+            for k in ds[0].keys():
+                args = [ds[0][k]] + xargs
+                result[k] = f(*args)
+        return result
+    if name is not None:
+        decorated_f.__name__ = name
+    return decorated_f
+
+class Apply(Measurement):
+    '''
+    Apply an arbitrary non-reducing function to measured data 
+    '''
+    
+    def __init__(self, measurements, f=None, **kwargs):
+        '''
+        Input:
+            measurements - one or more measurements
+                The coordinate and value parameters of Apply are taken from the
+                first measurement in measurements.
+            f - Function applied to the data, transforming 
+                cs0, ds0 -> cs0, f(cs0, ds0, [cs1, ds1, ...]).
+                The cs and ds are ResultDict objects containing the coordinate
+                and value matrices, respectively. f is expected to return an
+                ResultDict that has the same keys (in the same order) as ds0 
+                and elements that have the same shape as the elements of ds0.
+        '''
+        name = kwargs.pop('name', f.__name__)
+        super(Apply, self).__init__(name=name, **kwargs)
+        # add f
+        # derived classes need not specify f
+        if f is not None:
+            self.f = f
+        if not callable(self.f):
+            raise TypeError('f must be callable as a function.')
+        # add measurements
+        measurements = tuple(measurements) if numpy.iterable(measurements) else (measurements,)
+        if not len(measurements):
+            raise ValueError('at least one measurement must be given.')
+        for m in measurements:
+            self.add_measurement(m, inherit_local_coords=False)
+        # copy local coordinates and values from first measurement
+        self.add_coordinates(measurements[0].get_coordinates())
+        self.add_values(measurements[0].get_values())
+    
+    def _measure(self, **kwargs):
+        # perform all nested measurements
+        results = [m(nested=True, **kwargs) for m in self.get_measurements()]
+        # flatten results list
+        results = [v for vs in results for v in vs]
+        # call function
+        cs = results[0]
+        ds = self.f(*results)
+        # check d for consistency
+        if not isinstance(ds, ResultDict):
+            raise TypeError('f must return a ResultDict object.')
+        if(ds.keys() != results[1].keys()):
+            logging.warning(__name__+': dict keys returned by f differ from the input keys.')
+        for k in ds.keys():
+            if (
+                hasattr(ds[k], 'shape') and hasattr(results[1][k], 'shape') and
+                ds[k].shape != results[1][k].shape
+            ):
+                logging.warning(__name__+': shape of the data returned by f '+
+                    'differs from the shape of the input data.')
+        # write data to disk & return
+        points = [numpy.ravel(m) for m in cs.values()+ds.values()]
+        self._data.add_data_point(*points, newblock=True)
+        return cs, ds
+
+class Reduce(Measurement):
+    '''
+    Apply an arbitrary reducing function to measured data
+    '''
+    pass
 
 class Buffer(Measurement):
     '''

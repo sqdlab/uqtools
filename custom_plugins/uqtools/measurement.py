@@ -3,6 +3,8 @@ import time
 import numpy
 from functools import wraps
 from collections import OrderedDict
+import string
+import unicodedata
 
 import qt
 from data import Data
@@ -26,6 +28,8 @@ class ResultDict(OrderedDict):
             return OrderedDict.__getitem__(self, key)
         except KeyError as err:
             # compare key to .name property of items
+            if hasattr(key, 'name'): 
+                key=key.name
             for parameter in self.keys():
                 if parameter.name == key:
                     return OrderedDict.__getitem__(self, parameter)
@@ -74,18 +78,26 @@ class DateTimeGenerator:
         if self._timesubdir:
             tsd = time.strftime('%H%M%S', ts)
             if name is not None:
-                tsd += '_' + name
+                tsd += '_' + self.sanitize(name)
             path = os.path.join(path, tsd)
         return path
     
     def generate_file_name(self, name = None, ts = None):
         '''Return a new filename, based on name and timestamp.'''
-
         tstr = time.strftime('%H%M%S', time.localtime() if ts is None else ts)
         if name:
-            return '%s_%s.dat'%(tstr, name)
+            return '%s_%s.dat'%(tstr, self.sanitize(name))
         else:
             return '%s.dat'%(tstr)
+
+    def sanitize(self, name):
+        ''' sanitize name so it can safely be used as a part of a file name '''
+        # remove accents etc.
+        name = unicodedata.normalize('NFKD',unicode(name)).encode('ASCII','ignore')
+        # retain only whitelisted characters
+        whitelist = '_()' + string.ascii_letters + string.digits
+        name = ''.join([c for c in name if c in whitelist])
+        return name
 
 
 class Measurement(object):

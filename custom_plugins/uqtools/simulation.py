@@ -4,8 +4,37 @@ import logging
 import csv
 
 from parameter import Parameter
+from basics import coordinate_concat
 from measurement import Measurement, ResultDict
 
+class Constant(Measurement):
+    '''
+    Convert ndarray into a Measurement.
+    '''
+    def __init__(self, data, **kwargs):
+        '''
+        Input:
+            data (ndarray) - value returned by Constant.
+                a coordinate is generated for each dimension of arr.
+        '''
+        super(Constant, self).__init__(**kwargs)
+        self.data = data
+        # generate coordinate and value dimensions
+        for i, n in enumerate(data.shape):
+            self.add_coordinates(Parameter(name='dim{0}'.format(i), value=range(n)))
+        self.add_values(Parameter('val'))
+        
+    def _measure(self, **kwargs):
+        return (
+            coordinate_concat(*[ResultDict([(c, c.get())]) for c in self.get_coordinates()]),
+            ResultDict(zip(self.get_values(), (self.data,)))
+        )
+
+    def _create_data_files(self):
+        ''' Constant never creates data files '''
+        pass
+    
+    
 class DatReader(Measurement):
     '''
     Simple .dat file reader.
