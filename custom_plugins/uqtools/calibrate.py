@@ -11,7 +11,7 @@ class FittingMeasurement(ProgressReporting, Measurement):
         Generic fitting of one-dimensional data via the fitting library
     '''
     
-    def __init__(self, source, fitter, measurements=None, indep=None, dep=None, test=None, popt_out=None, **kwargs):
+    def __init__(self, source, fitter, measurements=None, indep=None, dep=None, test=None, fail_func=None, popt_out=None, **kwargs):
         '''
         Generic fitting of one-dimensional data.
         
@@ -19,8 +19,7 @@ class FittingMeasurement(ProgressReporting, Measurement):
             source (instance of Measurement) - data source
             fitter (instance of fitting.FitBase) - data fitter
             measurements ((iterable of) Measurement) - measurements performed
-                after a successful fit. If None, a ContinueIteration is raised
-                when the fit fails. 
+                after a successful fit.
             indep (instance of Parameter) - independent variable,
                 defaults to first coordinate returned by measurement
             dep (instance of Parameter) - dependent variable,
@@ -28,6 +27,9 @@ class FittingMeasurement(ProgressReporting, Measurement):
             test (callable) - test optimized parameters for plausibility.
                 if test(xs, ys, p_opt, p_std, p_est.values()) returns False, the fit
                 is taken to be unsuccessful.
+            fail_func (Exception or callable) - Exception to raise or function to call
+                when the fit fails. Defaults to None if measurements is not None,
+                ContinueIteration otherwise.
             popt_out (dict of Parameter:str) - After a successful fit, each
                 Parameter object present in popt is assigned the associated
                 optimized parameter.
@@ -50,8 +52,11 @@ class FittingMeasurement(ProgressReporting, Measurement):
         self.fitter = fitter
         if fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
             self.add_coordinates(Parameter('fit_id'))
+        # fail_func defaults to ContinueIteration if no nested measurements are given
+        self.fail_func = fail_func
+        if (fail_func is None) and (measurements is None):
+            self.fail_func = ContinueIteration
         # add measurements
-        self.raise_exceptions = measurements is None
         if measurements is not None:
             for m in measurements if numpy.iterable(measurements) else (measurements,):
                 self.add_measurement(m)
@@ -103,8 +108,10 @@ class FittingMeasurement(ProgressReporting, Measurement):
         if not len(xs):
             # short-cut if no data was measured
             logging.warning(__name__ + ': empty data set was returned by source') 
-            if self.raise_exceptions:
-                raise ContinueIteration('empty data set was returned by source.')
+            if isinstance(self.fail_func, Exception):
+                raise self.fail_func#('empty data set was returned by source.')
+            elif self.fail_func is not None:
+                self.fail_func()
             p_opts = ()
             p_covs = ()
         else:
@@ -160,8 +167,10 @@ class FittingMeasurement(ProgressReporting, Measurement):
                 self._reporting_next()
         # raise ContinueIteration only if all fits have failed or zero parameter sets were returned
         if not numpy.any(return_buf[self.values['fit_ok']]):
-            if self.raise_exceptions:
-                raise ContinueIteration('fit failed.')
+            if isinstance(self.fail_func, Exception):
+                raise self.fail_func#('fit failed.')
+            elif self.fail_func is not None:
+                self.fail_func()
         # set progress bar to 100% 
         self._reporting_finish()
         # return fit result
@@ -205,13 +214,13 @@ else:
             m - response measurement object
         consult documentation of FittingMeasurement for further keyword arguments.
         '''
-        if 'test' not in kwargs:
-            kwargs['test'] = test_resonator
-        if 'popt_out' not in kwargs:
-            kwargs['popt_out'] = {'f0':c_freq}
+        test = kwargs.pop('test', test_resonator)
+        popt_out = kwargs.pop('popt_out', {c_freq:'f0'})
         return FittingMeasurement(
             source=Sweep(c_freq, freq_range, m),
             fitter=fitting.Lorentzian(),
+            test=test,
+            popt_out=popt_out,
             **kwargs
         )
 
