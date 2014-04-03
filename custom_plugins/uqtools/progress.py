@@ -163,7 +163,7 @@ class MultiProgressBar(object):
         child_links = []
         for m in obj.get_measurements():
             if not isinstance(m, ProgressReporting):
-                child_labelfiles = obj.get_data_file_paths(children=True)
+                child_labelfiles = m.get_data_file_paths(children=True)
                 child_links.extend([
                     '<a href="{0}" target="_new">{1}</a>'.format(file_url(fn), label)
                     for label, fn in child_labelfiles
