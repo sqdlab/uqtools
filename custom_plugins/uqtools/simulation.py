@@ -34,7 +34,34 @@ class Constant(Measurement):
         ''' Constant never creates data files '''
         pass
     
+class Function(Measurement):
+    '''
+    Generate measurement data by calling a function
+    '''
+    def __init__(self, coordinates, f, **kwargs):
+        '''
+        Input:
+            coordinates (Parameter) - iterable of Parameter objects that have 
+                the points for each coordinate set as their value
+            f (callable) - f(*cs.values()) is called with the matrices for all 
+                coordinates as arguments and must return a single ndarray of 
+                the same shape as the coordinate matrices
+        '''
+        super(Function, self).__init__(**kwargs)
+        self.f = f
+        self.add_coordinates(coordinates)
+        self.add_values(Parameter('val'))
     
+    def _measure(self, **kwargs):
+        cs = coordinate_concat(*[ResultDict([(c, c.get())]) for c in self.get_coordinates()])
+        d = self.f(*cs.values())
+        return cs, ResultDict(zip(self.get_values(), (d,)))
+
+    def _create_data_files(self):
+        ''' Function never creates data files '''
+        pass
+
+
 class DatReader(Measurement):
     '''
     Simple .dat file reader.

@@ -8,7 +8,7 @@ from basics import ContinueIteration
 try:
     from pulsegen import MultiAWGSequence, Pulse, pattern_start_marker, meas_marker, mwspacer
 except ImportError:
-    logging.warning(__name__+': pulsegen is not availabe. pulse library will be unavailable.')
+    logging.warning(__name__+': failed to import pulsegen. pulse library will be unavailable.')
     raise
 
 def seq_rabi(chpair, pulse_shape=None, **kwargs):

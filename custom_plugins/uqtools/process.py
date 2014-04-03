@@ -112,33 +112,84 @@ class Reduce(Measurement):
     '''
     pass
 
-class Buffer(Measurement):
+class Buffer(object):
     '''
-    Keep a measurement result in memory.
+    Buffer measurement data in memory.
     '''
-    def __init__(self, m, **kwargs):
-        ''' create an empty buffer with the same dimension as m '''
-        # initialize storage
-        super(Buffer, self).__init__(**kwargs)
-        self._cs = None
-        self._d = None
-        # add m
-        m.set_parent_name(self.name)
-        self.add_measurement(m, inherit_local_coords=False)
-        self.add_coordinates(m.get_coordinates())
-        self.add_values(m.get_values())
+    def __init__(self, source, **kwargs):
+        '''
+        Create BufferWrite and BufferRead objects for source
+        '''
+        # initialize buffer with multidimensional zeros :)
+        self.cs = None
+        self.d = None
+        # create reader and writer object
+        self.writer = BufferWrite(source, self)
+        self.reader = BufferRead(source, self)
+        
+    def __call__(self, **kwargs):
+        raise NotImplementedError('Buffer is no longer a subclass of Measurement. Use buffer.writer and buffer.reader to store/recall data.')
     
+class BufferWrite(Measurement):
+    '''
+    Update a Buffer from a Measurement
+    '''
+    def __init__(self, source, buf, **kwargs):
+        '''
+        Input:
+            source (Measurement) - data source
+            buffer (Buffer) - data storage 
+        '''
+        name = kwargs.pop('name', 'Buffer')
+        super(BufferWrite, self).__init__(name=name, **kwargs)
+        self.buf = buf
+        # add and imitate source
+        source.set_parent_name(self.name)
+        self.add_measurement(source, inherit_local_coords=False)
+        self.add_coordinates(source.get_coordinates())
+        self.add_values(source.get_values())
+        
     def _measure(self, **kwargs):
-        ''' perform measurement, storing the returned coordinate and data arrays '''
-        self._cs, self._d = self.get_measurements()[0](nested=True, **kwargs)
-        # write data to disk & return
-        points = [numpy.ravel(m) for m in self._cs.values()+self._d.values()]
+        ''' Measure data and store it in self.buffer '''
+        # measure
+        cs, d = self.get_measurements()[0](nested=True, **kwargs)
+        # store data in buffer
+        self.buf.cs = cs
+        self.buf.d = d
+        # store data in file
+        points = [numpy.ravel(m) for m in cs.values()+d.values()]
         self._data.add_data_point(*points, newblock=True)
-        return self._cs, self._d
-    
-    def get_data(self):
-        ''' return buffer contents '''
-        return self._cs, self._d
+        # return data
+        return cs, d
+        
+class BufferRead(Measurement):
+    '''
+    Return Buffer contents
+    '''
+    def __init__(self, source, buf, **kwargs):
+        '''
+        Input:
+            source (Measurement) - data source of to imitate.
+                may be either the associated BufferWrite object or the source 
+                object that was/will be passed to the associated BufferWrite.
+            buffer (Buffer) - data storage
+        '''
+        super(BufferRead, self).__init__(**kwargs)
+        self.buf = buf
+        # imitate source
+        self.add_coordinates(source.get_coordinates())
+        self.add_values(source.get_values())
+
+    def _measure(self, **kwargs):
+        ''' return buffered data '''
+        if (self.buf.cs is None) or (self.buf.d is None):
+            logging.warning(__name__+': read from uninitialized Buffer.')
+        return self.buf.cs, self.buf.d
+
+    def _create_data_files(self):
+        ''' BufferRead never creates data files '''
+        pass
+
 
 class Add(Measurement):
     '''
@@ -149,7 +200,7 @@ class Add(Measurement):
         Input:
             m - a measurement
             summand - 
-                an instance of Buffer or
+                a Measurement or 
                 a ndarray of values to add to the measured data or
                 a dictionary mapping Parameter to ndarray or
                 a callable returning a ndarray or a dictionary
@@ -164,8 +215,8 @@ class Add(Measurement):
         super(Add, self).__init__(**kwargs)
         m = self.add_measurement(m, inherit_local_coords=False)
         # unify different formats of summands
-        if hasattr(summand, 'get_data'):
-            self._summand = lambda: summand.get_data()[1]
+        if isinstance(summand, Measurement):
+            self._summand = lambda: summand()[1]
         elif callable(summand):
             self._summand = summand
         else:
@@ -173,9 +224,9 @@ class Add(Measurement):
         # determine summand and measurement coordinates
         if (
             (coordinates is None) and 
-            (not hasattr(summand, 'get_data') or not hasattr(summand, 'get_coordinates'))
+            not hasattr(summand, 'get_coordinates')
         ):
-            raise ValueError('coordinates must be specified if summand is not a Buffer.')
+            raise ValueError('coordinates must be specified if summand is not a Measurement.')
         l_cs = coordinates if (coordinates is not None) else summand.get_coordinates()
         m_cs = m.get_coordinates()
         # make sure all provided coordinates are present in the measurement
@@ -233,7 +284,7 @@ class Integrate(Measurement):
             m - nested measurement generating the data
             coordinate - coordinate over which to integrate
             range - (min, max) tuple of coordinate values to include
-            average - if True, devide by number of integration points
+            average - if True, divide by number of integration points
             
         TODO: Integrate requires coordinate to be present in m, therefore
             it does not work with nested Sweeps.
