@@ -125,10 +125,11 @@ class Buffer(object):
         self.cs = None
         self.d = None
         # create reader and writer object
+        self.kwargs = kwargs
         self.source = source
     
     def _gen_writer(self):
-        return BufferWrite(self.source, self)
+        return BufferWrite(self.source, self, **self.kwargs)
     writer = property(_gen_writer)
     
     def _gen_reader(self):
