@@ -4,6 +4,7 @@ from collections import defaultdict
 import functools
 
 from measurement import Measurement, ResultDict
+from basics import coordinate_concat
 
 
 def apply_decorator(f, name=None):
@@ -124,9 +125,16 @@ class Buffer(object):
         self.cs = None
         self.d = None
         # create reader and writer object
-        self.writer = BufferWrite(source, self)
-        self.reader = BufferRead(source, self)
-        
+        self.source = source
+    
+    def _gen_writer(self):
+        return BufferWrite(self.source, self)
+    writer = property(_gen_writer)
+    
+    def _gen_reader(self):
+        return BufferRead(self.source, self)
+    reader = property(_gen_reader)
+    
     def __call__(self, **kwargs):
         raise NotImplementedError('Buffer is no longer a subclass of Measurement. Use buffer.writer and buffer.reader to store/recall data.')
     
@@ -191,6 +199,82 @@ class BufferRead(Measurement):
         pass
 
 
+class Reshape(Measurement):
+    '''
+    Reshape measured data.
+    '''
+    def __init__(self, source, coords_del, ranges_ins, **kwargs):
+        '''
+        Input:
+            source (Measurement) - data source
+            coords_del (list of Parameter) - coordinates to be removed
+            ranges_ins (OrderedDict({Parameter:range, ...}) - 
+                coordinaates to be inserted and their ranges
+        '''
+        super(Reshape, self).__init__(**kwargs)
+        self.add_measurement(source, inherit_local_coords=False)
+        self.coords_del = coords_del
+        self.ranges_ins = ranges_ins
+        # remove input coordinates, prepend output coordinates
+        cs = source.get_coordinates()
+        for c in coords_del:
+            cs.remove(c)
+        cs = ranges_ins.keys()+cs
+        self.add_coordinates(cs)
+        self.add_values(source.get_values())
+        
+    def _measure(self, **kwargs):
+        # call source
+        cs, d = self.get_measurements()[0](nested=True, **kwargs)
+        # check if the new shape is compatible with the shape of data
+        # also checks if all relevant keys are present
+        del_shape = [cs[k].shape[cs.keys().index(k)] for k in self.coords_del]
+        ins_shape = [len(v) for v in self.ranges_ins.values()]
+        if numpy.prod(del_shape) != numpy.prod(ins_shape):
+            raise ValueError('total size of new array must be unchanged.')
+        # delete obsolete coordinate matrices
+        coords_in = cs.keys()
+        for k in self.coords_del:
+            del cs[k]
+        # reshape coordinates and data
+        for od in (cs, d):
+            for k in od.keys():
+                # roll axes to be removed to the front
+                coords_cur = list(coords_in)
+                for c in reversed(self.coords_del):
+                    # roll axes of matrix
+                    od[k] = numpy.rollaxis(od[k], coords_cur.index(c))
+                    # keep track of current axes
+                    coords_cur.remove(c)
+                    coords_cur.insert(0, c)
+                # reshape matrices
+                od[k] = numpy.reshape(od[k], ins_shape+list(od[k].shape[len(del_shape):]))
+        # build new coordinate matrices
+        # calling the coordinate_concat machinery to build the correct matrices for
+        # the coordinates in ranges_ins and retaining all unchanged coordinates
+        out_slice = [0]*len(ins_shape)+[Ellipsis]
+        cs_out = coordinate_concat(*(
+            # build outer product of ranges_ins shapes
+            [ResultDict([(k, v)]) for k, v in self.ranges_ins.iteritems()]+
+            # these would be the correct coordinates if we removed coords_del
+            [ResultDict([(k, v[out_slice]) for k,v in cs.iteritems()])]
+        ))
+        # we've already reshaped these above... 
+        for k in cs_out.keys():
+            if k not in self.ranges_ins:
+                cs_out[k] = cs[k]
+        # return data
+        return cs_out, d
+        
+    def _create_data_files(self):
+        ''' BufferRead never creates data files '''
+        pass
+
+#
+#
+# STUFF TO BE REWORKED
+#
+#
 class Add(Measurement):
     '''
     Add constants to measurement data
