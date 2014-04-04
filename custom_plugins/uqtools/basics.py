@@ -57,7 +57,7 @@ class MeasurementArray(Measurement):
     def __init__(self, *measurements, **kwargs):
         super(MeasurementArray, self).__init__(**kwargs)
         for idx, m in enumerate(measurements):
-            self.add_measurement(m, inherit_local_coords=False)
+            self.add_measurement(m)
             self.add_values(Parameter('nested_{0}'.format(idx)))
 
     def _measure(self, **kwargs):
@@ -70,7 +70,7 @@ class MeasurementArray(Measurement):
             if not continueIteration:
                 try:
                     result = measurement(nested=True, **kwargs)
-                except ContinueIteration:
+                except ContinueIteration, BreakIteration:
                     continueIteration = True
             results.append(result)
         if output_data:
@@ -96,7 +96,7 @@ class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
             if not continueIteration:
                 try:
                     result = measurement(nested=True, **kwargs)
-                except ContinueIteration:
+                except ContinueIteration, BreakIteration:
                     continueIteration = True
             results.append(result)
             self._reporting_next()
@@ -109,20 +109,23 @@ class ContinueIteration(Exception):
     ''' signal Sweep to continue at the next coordinate value '''
     pass
 
+class BreakIteration(Exception):
+    ''' signal Sweep to continue at the next coordinate value '''
+    pass
 
 class Sweep(ProgressReporting, Measurement):
     '''
         do a one-dimensional sweep of one or more nested measurements
     '''
     
-    def __init__(self, coordinate, range, measurements, **kwargs):
+    def __init__(self, coordinate, range, measurements, output_data=False, **kwargs):
         '''
             Input:
                 coordinate - swept coordinate
                 range - sweep range
                     If range is a function, it is called with zero arguments at 
                     the start of the/each sweep.
-            measurements - nested measurement or measurements. each measurement
+                measurements - nested measurement or measurements. each measurement
                     is executed once per value in range. A measurement may raise 
                     a ContinueIteration exception to indicate that the remaining
                     measurements should be skipped in the current iteration.
@@ -133,6 +136,11 @@ class Sweep(ProgressReporting, Measurement):
                     added. In other words, it will produce the same output the
                     nested measurement would if it had an additional internal
                     coordinate.
+                    
+            Note:
+                ContinueIteration and BreakIteration exceptions can be used by 
+                nested measurements to advance to the next point in the sweep
+                or abort the sweep completely.
         '''
         if('name' not in kwargs):
             kwargs['name'] = coordinate.name
@@ -140,10 +148,10 @@ class Sweep(ProgressReporting, Measurement):
         self.add_coordinates(coordinate)
         self.coordinate = coordinate
         # range may be an iterable or a function
-        if type(range)==types.FunctionType:
+        if callable(range):
             self.range = range
         else:
-            self.range = lambda:range
+            self.range = lambda: range
         # add nested measurements
         self._values_passthrough = not numpy.iterable(measurements)  
         if not self._values_passthrough:
@@ -155,6 +163,8 @@ class Sweep(ProgressReporting, Measurement):
             m = self.add_measurement(measurements)
             m.set_parent_name(self.name)
             self.add_values(m.get_values())
+        # default value for output_data
+        self.output_data = output_data
         
     def _measure(self, **kwargs):
         ''' 
@@ -178,7 +188,7 @@ class Sweep(ProgressReporting, Measurement):
         if hasattr(_range, '__len__'):
             self._reporting_state.iterations = len(_range)
         # create output buffer if output is requested
-        output_data = kwargs.get('output_data', False)
+        output_data = kwargs.get('output_data', self.output_data)
         if output_data:
             results = [
                 numpy.zeros((len(_range),), numpy.object) 
@@ -187,25 +197,30 @@ class Sweep(ProgressReporting, Measurement):
             for result in results:
                 result.fill(None)
         # sweep coordinate
-        for ridx, x in enumerate(_range):
-            # reset child progress bars
-            self._reporting_start_iteration()
-            # set coordinate value
-            self.coordinate.set(x)
-            for midx, measurement in enumerate(measurements):
-                # run background tasks (e.g. progress reporter)
-                qt.msleep()
-                # measure
-                try:
-                    result = measurement(nested=True, **kwargs)
-                    if output_data:
-                        results[midx][ridx] = result
-                except ContinueIteration:
-                    # if a ContinueIteration exception is raised, 
-                    # do not execute any more measurements in this iteration
-                    break
-            # indicate that the current data point is complete
-            self._reporting_next()
+        try:
+            for ridx, x in enumerate(_range):
+                # reset child progress bars
+                self._reporting_start_iteration()
+                # set coordinate value
+                self.coordinate.set(x)
+                for midx, measurement in enumerate(measurements):
+                    # run background tasks (e.g. progress reporter)
+                    qt.msleep()
+                    # measure
+                    try:
+                        result = measurement(nested=True, **kwargs)
+                        if output_data:
+                            results[midx][ridx] = result
+                    except ContinueIteration:
+                        # if a ContinueIteration exception is raised, 
+                        # do not execute any more measurements in this iteration
+                        break
+                # indicate that the current data point is complete
+                self._reporting_next()
+        except BreakIteration:
+            # if a BreakIteration exception is raised,
+            # do not measure any additional data points
+            pass
         if output_data:
             if not self._values_passthrough:
                 # the simple case: multiple measurements, no mangling of data
@@ -233,7 +248,7 @@ class Sweep(ProgressReporting, Measurement):
                 )
                 # concatenate other coordinate arrays
                 for k in results[0][0].keys():
-                    cs[k] = numpy.concatenate([x[k] for x, _ in results])
+                    cs[k] = numpy.concatenate([x[k][numpy.newaxis,...] for x, _ in results])
                 # concatenate data arrays
                 d = ResultDict()
                 for k in results[0][1].keys():
@@ -280,3 +295,30 @@ def coordinate_concat(*css):
     for cs in css:
         ks.extend(cs.keys())
     return ResultDict(zip(ks, reshaped_cs))
+
+def MultiSweep(*args, **kwargs):
+    '''
+    Create a hierarchy of nested Sweep objects.
+    
+    Input:
+        coordinate0, range0, coordinate1, range1, ... - any number of Parameter
+            objects and sweep ranges
+        measurements - one or more measurements to be swept
+        **kwargs are passed to the constructors of all Sweeps
+    Usage example:
+        MultiSweep(c_flux, linspace(-5, 5, 51), c_freq, linspace(6e9, 9e9, 101), 
+            [AveragedTvModeMeasurement(fpga)])
+    '''
+    # unpack coordinates, ranges, measurements from *args
+    coords = list(args[::2])
+    ranges = list(args[1::2])
+    if len(coords)>len(ranges):
+        m = coords.pop()
+    else:
+        if 'measurements' not in kwargs:
+            raise ValueError('measurements argument is missing.')
+        m = kwargs.pop('measurements')
+    # generate hierarchy of Sweeps
+    for coord, _range in reversed(zip(coords, ranges)):
+        m = Sweep(coord, _range, m, **kwargs)
+    return m
