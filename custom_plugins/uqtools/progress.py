@@ -164,10 +164,14 @@ class MultiProgressBar(object):
         for m in obj.get_measurements():
             if not isinstance(m, ProgressReporting):
                 child_labelfiles = m.get_data_file_paths(children=True)
-                child_links.extend([
-                    '<a href="{0}" target="_new">{1}</a>'.format(file_url(fn), label)
-                    for label, fn in child_labelfiles
-                ])
+            elif m._reporting_suppress:
+                child_labelfiles = [(m.name, m.get_data_file_paths(children=False))]
+            else:
+                child_labelfiles = []
+            child_links.extend([
+                '<a href="{0}" target="_new">{1}</a>'.format(file_url(fn), label)
+                for label, fn in child_labelfiles
+            ])
         if child_links:
             child_line = '''
                 <tr style="border:none; font-size:14px;">
@@ -205,6 +209,9 @@ class MultiProgressBar(object):
           '''.format(**format_dict)
 
     def format_text(self, state_list):
+        # this happens when all measurements in the tree have _reporting_suppress
+        if not len(state_list):
+            return ''
         rlevel=0
         parts = ['\r']
         for level, _, state in state_list:
@@ -226,7 +233,7 @@ class MultiProgressBar(object):
             rlevel=level
             # add parts
             parts.append('{label} {progress: >3d}%'.format(**format_dict))
-        parts.append(' {etc} {remaining}'.format(**format_dict))
+            parts.append(' {etc} {remaining}'.format(**format_dict))
         return ''.join(parts)
 
     def format_text_multiline(self, state_list):
@@ -246,14 +253,21 @@ class MultiProgressBar(object):
         Input:
             state_list - list of (level, obj, state) tuples in depth-first order
         '''
-        bars = [self._format_html_bar(level, obj, state) for level, obj, state in state_list]
-        return '<table style="border:none;">\r\n{0}</table>'.format('\r\n'.join(bars))
+        if len(state_list):
+            bars = [self._format_html_bar(level, obj, state) for level, obj, state in state_list]
+            return '<table style="border:none;">\r\n{0}</table>'.format('\r\n'.join(bars))
+        else:
+            return ''
 
     
 class ProgressReporting(object):
     '''
     Mixin class adding progress reporting to Measurements
     '''
+    # if set to True in derived classes, suppress the progress bar for all 
+    # instances of that class
+    _reporting_suppress = False
+    
     def __call__(self, nested=False, *args, **kwargs):
         # if this is a top-level measurement, it is responsible for generating the progress indicator
         if not nested:
@@ -262,9 +276,11 @@ class ProgressReporting(object):
             self._reporting_timer = gobject.timeout_add(250, self._reporting_timer_cb)
             #self._reporting_state = SweepState(label=self.name)
         try:
-            self._reporting_start()
+            if not self._reporting_suppress:
+                self._reporting_start()
             result = super(ProgressReporting, self).__call__(nested=nested, *args, **kwargs)
-            self._reporting_finish()
+            if not self._reporting_suppress:
+                self._reporting_finish()
         finally:
             if not nested:
                 gobject.source_remove(self._reporting_timer)
@@ -296,11 +312,12 @@ class ProgressReporting(object):
             where level is the nesting level
         '''
         results = []
-        if do_self:
+        if do_self and not self._reporting_suppress:
             results.append((level, self, function(self)))
         for m in self.get_measurements():
             if isinstance(m, ProgressReporting):
-                results.extend(m._reporting_dfs(function, level+1))
+                child_level = level if self._reporting_suppress else level+1
+                results.extend(m._reporting_dfs(function, child_level))
         return results
     
     def _reporting_next(self):
