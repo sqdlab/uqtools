@@ -210,7 +210,10 @@ class Reshape(Measurement):
             source (Measurement) - data source
             coords_del (list of Parameter) - coordinates to be removed
             ranges_ins (OrderedDict({Parameter:range, ...}) - 
-                coordinaates to be inserted and their ranges
+                coordinaates to be inserted and their ranges.
+        Note:
+            The ranges in ranges_ins may be functions, but changing the number 
+            of points in the ranges during a measurement is not recommended.
         '''
         super(Reshape, self).__init__(**kwargs)
         self.add_measurement(source, inherit_local_coords=False)
@@ -230,7 +233,8 @@ class Reshape(Measurement):
         # check if the new shape is compatible with the shape of data
         # also checks if all relevant keys are present
         del_shape = [cs[k].shape[cs.keys().index(k)] for k in self.coords_del]
-        ins_shape = [len(v) for v in self.ranges_ins.values()]
+        ranges_ins = [r() if callable(r) else r for r in self.ranges_ins.values()]
+        ins_shape = [len(r) for r in ranges_ins]
         if numpy.prod(del_shape) != numpy.prod(ins_shape):
             raise ValueError('total size of new array must be unchanged.')
         # delete obsolete coordinate matrices
@@ -256,7 +260,7 @@ class Reshape(Measurement):
         out_slice = [0]*len(ins_shape)+[Ellipsis]
         cs_out = coordinate_concat(*(
             # build outer product of ranges_ins shapes
-            [ResultDict([(k, v)]) for k, v in self.ranges_ins.iteritems()]+
+            [ResultDict([(k, v)]) for k, v in zip(self.ranges_ins.keys(), ranges_ins)]+
             # these would be the correct coordinates if we removed coords_del
             [ResultDict([(k, v[out_slice]) for k,v in cs.iteritems()])]
         ))
