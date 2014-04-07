@@ -10,7 +10,7 @@ try:
 except ImportError:
     logging.warning(__name__+': pulsegen.ptplot_gui is not available. plotting functions are disabled.')
 from pulsegen import MultiAWGSequence
-
+from pulselib import default_marker_func
 
 class ProgramAWG(Measurement):
     '''
@@ -256,7 +256,7 @@ class ProgramAWGSweep(ProgramAWG):
         self.awgs = kwargs.pop('awgs')
         self.pulse_func = kwargs.pop('pulse_func')
         self.pulse_kwargs = kwargs.pop('pulse_kwargs', {})
-        self.marker_func = kwargs.pop('marker_func') # TODO: default
+        self.marker_func = kwargs.pop('marker_func', default_marker_func)
         self.force_program = kwargs.pop('force_program', False)
         self.wait = kwargs.pop('wait', True)
         # save patterns in patterns subdirectory
@@ -333,7 +333,7 @@ class ProgramAWGSweep(ProgramAWG):
             # add evaluated args to lists
             self._prev_rangess.append(ranges)
             self._prev_user_kwargss.append(user_kwargs)
-            self._prev_seq_lengths.append(numpy.prod(len(r) for r in ranges))
+            self._prev_seq_lengths.append(numpy.prod([len(r) for r in ranges]))
         # program awg
         if (cache_idx != self.values['index'].get()) or self.force_program:
             self._program(host_dir, host_file(cache_idx), wait, self._prev_seq_lengths[cache_idx])
@@ -463,5 +463,9 @@ class MultiAWGSweep(Measurement):
         program, rsource = self.get_measurements()
         # program waveform generator
         program(nested=True)
-        # measure and return data
-        return rsource(nested=True, **kwargs)
+        # measure data
+        cs, d = rsource(nested=True, **kwargs)
+        # save data to file
+        #TODO: data saving
+        # return data
+        return cs, d

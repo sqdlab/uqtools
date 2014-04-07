@@ -11,6 +11,18 @@ except ImportError:
     logging.warning(__name__+': failed to import pulsegen. pulse library will be unavailable.')
     raise
 
+def default_marker_func(seq, idx, **kwargs):
+    '''
+    default marker function used if no marker function is passed to ProgramAWGSweep
+    
+    for all waveforms: add meas_marker to first channel, second marker
+    for first waveform: also add pattern_start_marker to first channel, first marker
+    '''
+    if idx:
+        seq.append_markers([[], meas_marker()], 0)
+    else:
+        seq.append_markers([pattern_start_marker(), meas_marker()], 0)
+        
 def seq_rabi(chpair, pulse_shape=None, **kwargs):
     '''
         generate Rabi sequence
