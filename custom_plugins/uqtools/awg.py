@@ -399,6 +399,8 @@ def MeasureAWGSweep(*args, **kwargs):
             a 'segment' coordinate.
         any keyword arguments apart from source are passed to Reshape.
     '''
+    # apply default name
+    name = kwargs.pop('name', 'MeasureAWGSweep')
     # source may be in args or kwargs
     source = args[-1] if len(args)%2 else kwargs.pop('source')
     # remove segment
@@ -407,7 +409,8 @@ def MeasureAWGSweep(*args, **kwargs):
     coords = [Parameter(name=c) for c in args[::2]]
     ranges = list(args[1::2])
     ranges_ins = dict(zip(coords, ranges))
-    return Reshape(source, coords_del=[segment], ranges_ins=ranges_ins, **kwargs)
+    return Reshape(source, coords_del=[segment], ranges_ins=ranges_ins, 
+                   name=name, **kwargs)
 
 
 class MultiAWGSweep(Measurement):
@@ -465,7 +468,9 @@ class MultiAWGSweep(Measurement):
         program(nested=True)
         # measure data
         cs, d = rsource(nested=True, **kwargs)
-        # save data to file
-        #TODO: data saving
         # return data
         return cs, d
+    
+    def _create_data_files(self):
+        ''' Data files are created by MeasureAWGSweep. '''
+        pass

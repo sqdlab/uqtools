@@ -268,12 +268,11 @@ class Reshape(Measurement):
         for k in cs_out.keys():
             if k not in self.ranges_ins:
                 cs_out[k] = cs[k]
+        # store data in file
+        points = [numpy.ravel(m) for m in cs_out.values()+d.values()]
+        self._data.add_data_point(*points, newblock=True)
         # return data
         return cs_out, d
-        
-    def _create_data_files(self):
-        ''' BufferRead never creates data files '''
-        pass
 
 #
 #
