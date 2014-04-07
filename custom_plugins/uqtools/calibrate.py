@@ -231,8 +231,9 @@ class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
     '''
     Two-dimensional parameter optimization.
     '''
+    _reporting_suppress = True
     
-    def __init__(self, source, c0=None, c1=None, dep=None, preprocess=None, **kwargs):
+    def __init__(self, source, c0=None, c1=None, dep=None, preprocess=None, popt_out=None, **kwargs):
         '''
         Input:
             source (Measurement) - 
@@ -246,6 +247,10 @@ class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
                 c0 and c1 are the first and second dimension of xs, ys and zs.
                 any extra dimensions in xs, ys and zs are discarded after
                 preprocess has finished.
+            popt_out (dict of Parameter:str) - After successful minimization, 
+                each Parameter object present in popt is assigned the associated
+                optimized parameter. The optimized parameters are 'c0', 'c1',
+                'min' and 'fit_ok'.
         '''
         super(Minimize, self).__init__(**kwargs)
         # save args
@@ -254,8 +259,9 @@ class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
         self.dep = dep
         if preprocess is not None:
             self.preprocess = preprocess
+        self.popt_out = popt_out if popt_out is not None else {}
         # add coordinates and values
-        for name, c in (('x', c0), ('y', c1)):
+        for name, c in (('c0', c0), ('c1', c1)):
             if c is None:
                 self.add_values(Parameter(name))
             elif isinstance(c, str):
@@ -264,6 +270,7 @@ class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
                 self.add_values(Parameter(c.name))
             else:
                 raise TypeError('if given, c0 and c1 must be str or Parameter objects.')
+        self.add_values(Parameter('min'))
         self.add_values(Parameter('fit_ok'))
         # add source
         self.add_measurement(source)
@@ -323,7 +330,13 @@ class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
         # save result in local values
         self.get_values()[0].set(result.x[0])
         self.get_values()[1].set(result.x[1])
-        self.get_values()[2].set(1 if result.success else 0)
+        self.get_values()[2].set(*result.fun)
+        self.get_values()[3].set(1 if result.success else 0)
+        # save fit to: user-provided Parameters (set instruments)
+        for p, k in self.popt_out.iteritems():
+            popt_out_map = dict(zip(('c0','c1','min','fit_ok'), self.get_values()))
+            p.set(popt_out_map[k].get())
+        # return values
         return (
             {},#ResultDict(zip(self.get_coordinates(), self.get_coordinate_values())),
             ResultDict(zip(self.get_values(), self.get_value_values()))
@@ -335,7 +348,7 @@ class MinimizeIterative(Sweep):
     Two-dimensional parameter Minimization with range zooming
     '''
     def __init__(self, source, sweepgen, c0, c1, r0, r1, 
-        n0=11, n1=11, z0=3., z1=3., dep=None, iterations=3, preprocess=None, **kwargs):
+        n0=11, n1=11, z0=3., z1=3., dep=None, iterations=3, preprocess=None, popt_out=None, **kwargs):
         '''
         Input:
             source (Measurement) - 
@@ -359,10 +372,14 @@ class MinimizeIterative(Sweep):
                 c0 and c1 are the first and second dimension of xs, ys and zs.
                 any extra dimensions in xs, ys and zs are discarded after
                 preprocess is called.
+            popt_out (dict of Parameter:str) - After each successful minimization 
+                step, each Parameter object present in popt is assigned the 
+                associated optimized parameter. The optimized parameters are 'c0', 
+                'c1', 'min' and 'fit_ok'.
         '''    
         # generate source sweep
         coord_sweep = sweepgen(c0, self._range_func0, c1, self._range_func1, source)
-        minimizer = Minimize(coord_sweep, c0, c1, dep, preprocess, name='')
+        minimizer = Minimize(coord_sweep, c0, c1, dep, preprocess, popt_out, name='')
         # save arguments
         self.c0, self.c1 = minimizer.get_values()[:2]
         self.r0, self.n0, self.z0 = (r0, n0, z0)
