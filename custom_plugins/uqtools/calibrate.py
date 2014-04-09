@@ -227,13 +227,14 @@ else:
         )
 
 
-class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
+class Minimize(ProgressReporting, Measurement):
     '''
     Two-dimensional parameter optimization.
     '''
     _reporting_suppress = True
     
-    def __init__(self, source, c0=None, c1=None, dep=None, preprocess=None, popt_out=None, **kwargs):
+    def __init__(self, source, c0=None, c1=None, dep=None, preprocess=None, 
+                 popt_out=None, smoothing=1., **kwargs):
         '''
         Input:
             source (Measurement) - 
@@ -251,6 +252,9 @@ class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
                 each Parameter object present in popt is assigned the associated
                 optimized parameter. The optimized parameters are 'c0', 'c1',
                 'min' and 'fit_ok'.
+            smoothing (float) - amount of smoothing.
+                sets the s parameter of SmoothBivariateSpline. 
+                s=0 disables spline fitting altogether.
         '''
         super(Minimize, self).__init__(**kwargs)
         # save args
@@ -260,6 +264,7 @@ class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
         if preprocess is not None:
             self.preprocess = preprocess
         self.popt_out = popt_out if popt_out is not None else {}
+        self.smoothing=smoothing
         # add coordinates and values
         for name, c in (('c0', c0), ('c1', c1)):
             if c is None:
@@ -288,67 +293,84 @@ class Minimize(ProgressReporting, Measurement): #TODO: remove ProgressReporting
         ys = cs[self.c1] if (self.c1 is not None) else cs.values()[1]
         zs = d[self.dep] if (self.dep is not None) else d.values()[0]
         # roll independent variables into first two positions
-        c0_idx = cs.keys().index(self.c0) if self.c0 is not None else 0
-        c1_idx = cs.keys().index(self.c1) if self.c1 is not None else 1
+        def idx_func(idx, c):
+            if c is None:
+                return idx
+            elif isinstance(c, str):
+                return [lc.name for lc in cs.keys()].index(c)
+            else:
+                return cs.keys().index(c)
+        c0_idx, c1_idx = [idx_func(idx, c) for idx, c in enumerate([self.c0, self.c1])]
         for k in ('xs', 'ys', 'zs'):
             locals()[k] = numpy.rollaxis(locals()[k], c1_idx)
             locals()[k] = numpy.rollaxis(locals()[k], c0_idx + (1 if c1_idx>c0_idx else 0))
         # pass data to preprocessing functions
         zs = self.preprocess(xs, ys, zs)
         # convert multi-dimensional coordinate and data arrays to 2d
-        if numpy.prod(xs.shape[2:]>1):
+        if (xs.ndim>2) or (ys.ndim>2):
             xs = xs[tuple([slice(None),slice(None)]+[0]*(xs.ndim-2))]
             ys = ys[tuple([slice(None),slice(None)]+[0]*(ys.ndim-2))]
         if numpy.prod(zs.shape[2:])>1:
             logging.warning(__name__ + ': data measured has at least one ' + 
                 'non-singleton dimension. using the mean of all points.')
-            for _ in range(2, zs.ndim):
-                zs = numpy.mean(zs, 2)
+        for _ in range(2, zs.ndim):
+            zs = numpy.mean(zs, 2)
         # interpolate data
-        logging.debug(__name__+': smoothing data')
-        spl = scipy.interpolate.SmoothBivariateSpline(
-            xs.ravel(), ys.ravel(), zs.ravel()
-        )
-        # find global minimum of interpolated data
-        # sample smoothed function on all points of the original grid and
-        # take the position of the global minimum of the sample points as
-        # the starting point for optimization
-        min_idx_flat = numpy.argmin(spl.ev(xs.ravel(), ys.ravel()))
+        if self.smoothing:
+            logging.debug(__name__+': smoothing data')
+            spl = scipy.interpolate.SmoothBivariateSpline(
+                xs.ravel(), ys.ravel(), zs.ravel(), 
+                s=1.*numpy.prod(xs.shape)/self.smoothing
+            )
+            # find global minimum of interpolated data
+            # sample smoothed function on all points of the original grid and
+            # take the position of the global minimum of the sample points as
+            # the starting point for optimization
+            min_idx_flat = numpy.argmin(spl.ev(xs.ravel(), ys.ravel()))
+        else:
+            min_idx_flat = numpy.argmin(zs)
         min_idx = numpy.unravel_index(min_idx_flat, zs.shape)
-        xmin, ymin = xs[min_idx], ys[min_idx]
-        # use constrained optimization algorithm to find off-grid minimum
-        xlim = (numpy.min(xs), numpy.max(xs))
-        ylim = (numpy.min(ys), numpy.max(ys))
-        result = scipy.optimize.minimize(
-            lambda xs: spl.ev(*xs), x0=(xmin, ymin), method='L-BFGS-B', bounds=(xlim, ylim)
-        )
-        if not result.success:
-            logging.warning(__name__+': L-BGFS-B minimizer failed with message '+
-                '"{0}".'.format(result.message))
-            result.x = (numpy.NaN, numpy.NaN)
-            #raise BreakIteration
-        # save result in local values
-        self.get_values()[0].set(result.x[0])
-        self.get_values()[1].set(result.x[1])
-        self.get_values()[2].set(*result.fun)
-        self.get_values()[3].set(1 if result.success else 0)
+        xmin, ymin, zmin = xs[min_idx], ys[min_idx], zs[min_idx]
+        if self.smoothing:
+            # use constrained optimization algorithm to find off-grid minimum
+            xlim = (numpy.min(xs), numpy.max(xs))
+            ylim = (numpy.min(ys), numpy.max(ys))
+            result = scipy.optimize.minimize(
+                lambda xs: spl.ev(*xs), x0=(xmin, ymin), method='L-BFGS-B', bounds=(xlim, ylim)
+            )
+            if not result.success:
+                logging.warning(__name__+': L-BGFS-B minimizer failed with message '+
+                    '"{0}".'.format(result.message))
+                result.x = (numpy.NaN, numpy.NaN)
+                #raise BreakIteration
+            # save fit result in local values
+            results = (result.x[0], result.x[1], result.fun[0], 1 if result.success else 0)
+        else:
+            # save global minimum of data points in local values
+            results = (xmin, ymin, zmin, 1)
+        # save fit to: own Parameters
+        for k, v in zip(self.get_values(), results):
+            k.set(v)
         # save fit to: user-provided Parameters (set instruments)
         for p, k in self.popt_out.iteritems():
             popt_out_map = dict(zip(('c0','c1','min','fit_ok'), self.get_values()))
             p.set(popt_out_map[k].get())
+        # save fit to: file
+        cs = {}
+        d = ResultDict(zip(self.get_values(), self.get_value_values()))
+        points = [numpy.ravel(m) for m in cs.values()+d.values()]
+        self._data.add_data_point(*points)
         # return values
-        return (
-            {},#ResultDict(zip(self.get_coordinates(), self.get_coordinate_values())),
-            ResultDict(zip(self.get_values(), self.get_value_values()))
-        )
+        return cs, d
 
 
 class MinimizeIterative(Sweep):
     '''
     Two-dimensional parameter Minimization with range zooming
     '''
-    def __init__(self, source, sweepgen, c0, c1, r0, r1, 
-        n0=11, n1=11, z0=3., z1=3., dep=None, iterations=3, preprocess=None, popt_out=None, **kwargs):
+    def __init__(self, source, sweepgen, c0, c1, l0, l1, 
+        n0=11, n1=11, z0=3., z1=3., dep=None, iterations=3, preprocess=None, 
+        popt_out=None, smoothing=1., sweepgen_kwargs={}, **kwargs):
         '''
         Input:
             source (Measurement) - 
@@ -357,7 +379,7 @@ class MinimizeIterative(Sweep):
                 See MultiSweep for signature if creating a custom function.
             c0/c1 (Parameter or str) -
                 first/second independent variable.
-            r0/r1 (tuple of numeric) -
+            l0/l1 (tuple of numeric) -
                 lower and upper limit of the values of c0/c1
             n0/n1 (tuple of int) -
                 number of points of the c0/c1 sweep
@@ -378,16 +400,18 @@ class MinimizeIterative(Sweep):
                 'c1', 'min' and 'fit_ok'.
         '''    
         # generate source sweep
-        coord_sweep = sweepgen(c0, self._range_func0, c1, self._range_func1, source)
-        minimizer = Minimize(coord_sweep, c0, c1, dep, preprocess, popt_out, name='')
+        coord_sweep = sweepgen(c0, self._range_func0, c1, self._range_func1, 
+            source, **sweepgen_kwargs)
+        minimizer = Minimize(coord_sweep, c0, c1, dep=dep, preprocess=preprocess, 
+                             popt_out=popt_out, smoothing=smoothing, name='')
         # save arguments
         self.c0, self.c1 = minimizer.get_values()[:2]
-        self.r0, self.n0, self.z0 = (r0, n0, z0)
-        self.r1, self.n1, self.z1 = (r1, n1, z1)
+        self.l0, self.n0, self.z0 = (l0, n0, z0)
+        self.l1, self.n1, self.z1 = (l1, n1, z1)
         # generate iteration sweep
         name = kwargs.pop('name', 'MinimizeIterative')
         output_data = kwargs.pop('output_data', True)
-        self.iteration = Parameter('iteration')
+        self.iteration = Parameter('iteration', dtype=int)
         super(MinimizeIterative, self).__init__(self.iteration, range(iterations), 
             minimizer, name=name, output_data=output_data, **kwargs)
     
@@ -395,19 +419,19 @@ class MinimizeIterative(Sweep):
         ''' generate sweep ranges for current iteration '''
         it = self.iteration.get()
         if axis==0:
-            cn, r, n, z = ('c0', self.r0, self.n0, self.z0)
+            cn, l, n, z = ('c0', self.l0, self.n0, self.z0)
         elif axis==1:
-            cn, r, n, z = ('c1', self.r1, self.n1, self.z1)
+            cn, l, n, z = ('c1', self.l1, self.n1, self.z1)
         else:
             raise ValueError('axis must be 0 or 1')
         # centre point is the mean of the initial range on the first iteration,
         # and the previous fit result otherwise
-        c = (r[-1]+r[0])/2. if not it else getattr(self, cn).get()
+        c = (l[-1]+l[0])/2. if not it else getattr(self, cn).get()
         # full range in 0th iteration, zoomed range for all others
-        d = float(z)**(-it)*(r[-1]-r[0])
+        d = float(z)**(-it)*(l[-1]-l[0])
         # calculate new range, check limits only for "zoom in" operations
         if z>=1:
-            r = numpy.clip((c-d/2., c+d/2.), numpy.min(r), numpy.max(r))
+            r = numpy.clip((c-d/2., c+d/2.), numpy.min(l), numpy.max(l))
         else:
             r = (c-d/2., c+d/2.)
         return numpy.linspace(r[0], r[-1], n)
