@@ -97,10 +97,10 @@ def AveragedTvModeMeasurement(fpga, **kwargs):
     '''
         integrate TvModeMeasurement over time
     '''
-    kwargs.update({'data_save': False})
-    tv = TvModeMeasurement(fpga, **kwargs)
+    tv = TvModeMeasurement(fpga, data_save=False)
     time = tv.get_coordinates()[-1]
-    return Integrate(tv, time, average=True, name='AveragedTvMode')
+    name = kwargs.pop('name', 'AveragedTvMode')
+    return Integrate(tv, time, average=True, name=name, **kwargs)
 
 class AveragedTvModeMeasurementMonolithic(FPGAMeasurement):
     '''
