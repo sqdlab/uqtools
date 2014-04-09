@@ -253,7 +253,9 @@ class Reshape(Measurement):
                     coords_cur.remove(c)
                     coords_cur.insert(0, c)
                 # reshape matrices
-                od[k] = numpy.reshape(od[k], ins_shape+list(od[k].shape[len(del_shape):]))
+                od[k] = numpy.reshape(od[k], 
+                                      ins_shape+list(od[k].shape[len(del_shape):]), 
+                                      order='C')
         # build new coordinate matrices
         # calling the coordinate_concat machinery to build the correct matrices for
         # the coordinates in ranges_ins and retaining all unchanged coordinates
