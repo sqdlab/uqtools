@@ -9,7 +9,7 @@
 
 # reload sub-modules in fixed order
 import logging
-for k in ('parameter', 'context', 'measurement', 'progress', 'basics', 
+for k in ('parameter', 'context', 'progress', 'measurement', 'basics', 
           'process', 'fpga', 'calibrate', 'pulselib', 'awg', 'simulation'):
     if k in locals():
         logging.debug(__name__ + ': reloading {0}'.format(k))

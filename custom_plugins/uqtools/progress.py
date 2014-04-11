@@ -1,9 +1,6 @@
 import time
 import numpy
 import collections
-import IPython.display
-
-import gobject
 import qt
 
 class SweepState(object):
@@ -164,13 +161,13 @@ class MultiProgressBar(object):
         for m in obj.get_measurements():
             if not isinstance(m, ProgressReporting):
                 child_labelfiles = m.get_data_file_paths(children=True)
-            elif m._reporting_suppress:
-                child_labelfiles = [(m.name, m.get_data_file_paths(children=False))]
+            #elif m._reporting_suppress:
+            #    child_labelfiles = [(m.name, m.get_data_file_paths(children=False))]
             else:
                 child_labelfiles = []
             child_links.extend([
                 '<a href="{0}" target="_new">{1}</a>'.format(file_url(fn), label)
-                for label, fn in child_labelfiles
+                for label, fn in child_labelfiles if fn
             ])
         if child_links:
             child_line = '''
@@ -259,66 +256,15 @@ class MultiProgressBar(object):
         else:
             return ''
 
-    
+
+
 class ProgressReporting(object):
     '''
     Mixin class adding progress reporting to Measurements
     '''
     # if set to True in derived classes, suppress the progress bar for all 
     # instances of that class
-    _reporting_suppress = False
-    
-    def __call__(self, nested=False, *args, **kwargs):
-        # if this is a top-level measurement, it is responsible for generating the progress indicator
-        if not nested:
-            self._reporting_dfs(ProgressReporting._reporting_setup)
-            self._reporting_bar = MultiProgressBar()
-            self._reporting_timer = gobject.timeout_add(250, self._reporting_timer_cb)
-            #self._reporting_state = SweepState(label=self.name)
-        try:
-            if not self._reporting_suppress:
-                self._reporting_start()
-            result = super(ProgressReporting, self).__call__(nested=nested, *args, **kwargs)
-            if not self._reporting_suppress:
-                self._reporting_finish()
-        finally:
-            if not nested:
-                gobject.source_remove(self._reporting_timer)
-        if not nested:
-            self._reporting_timer_cb()
-        return result
-    
-    def _reporting_setup(self):
-        ''' attach SweepState object to self '''
-        #if not hasattr(self, '_reporting_state'):
-        self._reporting_state = SweepState(label=self.name)
-    
-    def _reporting_timer_cb(self):
-        ''' output progress bars '''
-        IPython.display.clear_output()
-        state_list = self._reporting_dfs(lambda obj: obj._reporting_state)
-        IPython.display.publish_display_data('ProgressReporting', {
-            'text/html': self._reporting_bar.format_html(state_list),
-            'text/plain': self._reporting_bar.format_text(state_list),
-        })
-        return True
-
-    
-    def _reporting_dfs(self, function, level=0, do_self=True):
-        ''' 
-        do a depth-first search through the subtree of ProgressReporting Measurements
-        function(self) is executed on each Measurement
-        return values are returned as a flat list of tuples (level, self, value),
-            where level is the nesting level
-        '''
-        results = []
-        if do_self and not self._reporting_suppress:
-            results.append((level, self, function(self)))
-        for m in self.get_measurements():
-            if isinstance(m, ProgressReporting):
-                child_level = level if self._reporting_suppress else level+1
-                results.extend(m._reporting_dfs(function, child_level))
-        return results
+    #_reporting_suppress = False
     
     def _reporting_next(self):
         ''' advance local progress indicator. reset child progress indicators. '''

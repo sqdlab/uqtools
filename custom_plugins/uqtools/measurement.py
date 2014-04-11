@@ -10,9 +10,12 @@ import qt
 from data import Data
 from lib.config import get_config
 config = get_config()
+import IPython.display
+import gobject
 
 from context import NullContextManager
 from parameter import ParameterList
+from progress import ProgressReporting, MultiProgressBar, SweepState
 
 make_iterable = lambda obj: obj if isinstance(obj, list) or isinstance(obj, tuple) else (obj,)
 
@@ -100,7 +103,7 @@ class DateTimeGenerator:
         return name
 
 
-class Measurement(object):
+class MeasurementBase(object):
     '''
         a measurement
         
@@ -472,3 +475,60 @@ class Measurement(object):
         # forget data directory and inherited coordinates
         self.set_parent_data_directory()
         self.set_parent_coordinates()
+
+
+
+class Measurement(MeasurementBase):
+    def __call__(self, nested=False, *args, **kwargs):
+        # if this is a top-level measurement, it is responsible for generating the progress indicator
+        if not nested:
+            self._reporting_dfs(Measurement._reporting_setup)
+            self._reporting_bar = MultiProgressBar()
+            self._reporting_timer = gobject.timeout_add(250, self._reporting_timer_cb)
+        try:
+            #if not self._reporting_suppress:
+            if isinstance(self, ProgressReporting):
+                self._reporting_start()
+            result = super(Measurement, self).__call__(nested=nested, *args, **kwargs)
+            #if not self._reporting_suppress:
+            if isinstance(self, ProgressReporting):
+                self._reporting_finish()
+        finally:
+            if not nested:
+                gobject.source_remove(self._reporting_timer)
+        if not nested:
+            self._reporting_timer_cb()
+        return result
+
+    def _reporting_setup(self):
+        ''' attach SweepState object to self '''
+        #if not hasattr(self, '_reporting_state'):
+        self._reporting_state = SweepState(label=self.name)
+
+    def _reporting_timer_cb(self):
+        ''' output progress bars '''
+        IPython.display.clear_output()
+        state_list = self._reporting_dfs(lambda obj: obj._reporting_state)
+        IPython.display.publish_display_data('ProgressReporting', {
+            'text/html': self._reporting_bar.format_html(state_list),
+            'text/plain': self._reporting_bar.format_text(state_list),
+        })
+        return True
+
+    def _reporting_dfs(self, function, level=0, do_self=True, node=None):
+        ''' 
+        do a depth-first search through the subtree of ProgressReporting Measurements
+        function(self) is executed on each Measurement
+        return values are returned as a flat list of tuples (level, self, value),
+            where level is the nesting level
+        '''
+        results = []
+        if node is None:
+            node = self
+        if isinstance(node, ProgressReporting):# and not node._reporting_suppress:
+            if do_self:
+                results.append((level, node, function(node)))
+            level = level+1
+        for m in node.get_measurements():
+            results.extend(self._reporting_dfs(function, level, node=m))
+        return results
