@@ -121,7 +121,7 @@ class FittingMeasurement(ProgressReporting, Measurement):
             try:
                 p_est = self.fitter.guess(xs, ys)
             except:
-                logging.warning(__name__ + 'parameter guesser failed.')
+                logging.warning(__name__ + ': parameter guesser failed.')
                 p_est = {}
             p_opts, p_covs = self.fitter.fit(xs, ys, **p_est)
             if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
@@ -217,22 +217,22 @@ else:
         consult documentation of FittingMeasurement for further keyword arguments.
         '''
         test = kwargs.pop('test', test_resonator)
+        name = kwargs.pop('name', 'CalibrateResonator')
         popt_out = kwargs.pop('popt_out', {c_freq:'f0'})
         return FittingMeasurement(
             source=Sweep(c_freq, freq_range, m),
-            fitter=fitting.Lorentzian(),
+            fitter=fitting.Lorentzian(preprocess=fitting.take_abs),
             test=test,
             popt_out=popt_out,
+            name=name,
             **kwargs
         )
 
 
-class Minimize(ProgressReporting, Measurement):
+class Minimize(Measurement):
     '''
     Two-dimensional parameter optimization.
     '''
-    _reporting_suppress = True
-    
     def __init__(self, source, c0=None, c1=None, dep=None, preprocess=None, 
                  popt_out=None, smoothing=1., **kwargs):
         '''
