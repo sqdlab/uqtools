@@ -39,7 +39,7 @@ from basics import ContinueIteration, BreakIteration
 from process import apply_decorator, Apply, Reshape
 from process import Buffer, Add, Integrate
 from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
-from fpga import AveragedTvModeMeasurement, AveragedTvModeMeasurementMonolithic 
+from fpga import AveragedTvModeMeasurement 
 from calibrate import FittingMeasurement, CalibrateResonator, Minimize, MinimizeIterative
 from simulation import Constant, Function, DatReader
 try:
