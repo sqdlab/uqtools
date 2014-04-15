@@ -192,15 +192,17 @@ class MeasurementBase(object):
     
     def add_coordinates(self, dimension):
         ''' add one or more Parameter objects to the local coordinates list '''
-#         if not isinstance(dimension, Dimension):
-#             raise TypeError('parameter dimension must be an instance of Dimension.')
-        self.coordinates.extend(make_iterable(dimension))
+        dimension = make_iterable(dimension)
+        if not numpy.all([type(d).__name__ == 'Parameter' for d in dimension]):
+            raise TypeError('coordinates must be objects of type Parameter.')
+        self.coordinates.extend(dimension)
     
     def add_values(self, dimension):
         ''' add one or more Parameter objects to the values list '''
-#         if not isinstance(dimension, Dimension):
-#             raise TypeError('parameter dimension must be an instance of Dimension.')
-        self.values.extend(make_iterable(dimension))
+        dimension = make_iterable(dimension)
+        if not numpy.all([type(d).__name__ == 'Parameter' for d in dimension]):
+            raise TypeError('values must be objects of type Parameter.')
+        self.values.extend(dimension)
     
     def get_coordinates(self, parent=False, local=True, inheritable=False):
         ''' 
