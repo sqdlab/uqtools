@@ -6,7 +6,7 @@ import logging
 
 from basics import ContinueIteration
 try:
-    from pulsegen import MultiAWGSequence, Pulse, pattern_start_marker, meas_marker, mwspacer
+    from pulsegen import MultiAWGSequence, Pulse, pattern_start_marker, meas_marker, mwspacer, ZeroPulse
 except ImportError:
     logging.warning(__name__+': failed to import pulsegen. pulse library will be unavailable.')
     raise
@@ -22,7 +22,11 @@ def default_marker_func(seq, idx, **kwargs):
         seq.append_markers([[], meas_marker()], 0)
     else:
         seq.append_markers([pattern_start_marker(), meas_marker()], 0)
-        
+
+def zero_pulse_func(seq, idx, chpair, length=100e-9, separation=0, **kwargs):
+    ''' add a zero amplitude pulse. '''
+    seq.append_pulses([Pulse(ZeroPulse)(length=length, separation=separation, **kwargs)], chpair=chpair)
+
 def seq_rabi(chpair, pulse_shape=None, **kwargs):
     '''
         generate Rabi sequence
