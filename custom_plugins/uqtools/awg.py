@@ -24,8 +24,8 @@ class ProgramAWG(Measurement):
             awgs - list of AWG instruments the sequence is distributed to
             wait - wait for AWG to finish programming
         '''
-        data_directory = kwargs.pop('data_directory', 'patterns')
-        super(ProgramAWG, self).__init__(data_directory=data_directory, **kwargs)
+        super(ProgramAWG, self).__init__(**kwargs)
+        self._data_directory = kwargs.get('data_directory', self.name)
         self.wait = wait
         self._sequence = sequence
         self.awgs = awgs
@@ -89,6 +89,7 @@ class ProgramAWG(Measurement):
 class ProgramAWGParametric(ProgramAWG):
     '''
     Program dynamically generated AWG sequences and store in the data directory of the measurement
+    (now made obsolete by ProgramAWGSweep/MeasureAWGSweep/MultiAWGSweep)
     '''
     
     def __init__(self, awgs, seq_func, seq_kwargs={}, wait=True, **kwargs):
@@ -101,9 +102,9 @@ class ProgramAWGParametric(ProgramAWG):
                 their values are compared to the previous iteration to determine whether
                 a new sequence must be exported to the AWG
         '''
-        data_directory = kwargs.pop('data_directory', 'patterns')
         #super(ProgramAWG, self).__init__(data_directory=data_directory, **kwargs)
-        Measurement.__init__(self, data_directory=data_directory, **kwargs)
+        Measurement.__init__(**kwargs)
+        self._data_directory = kwargs.get('data_directory', self.name)
         self.awgs = awgs
         self._seq_func = seq_func
         self._seq_kwargs = seq_kwargs
@@ -260,8 +261,8 @@ class ProgramAWGSweep(ProgramAWG):
         self.force_program = kwargs.pop('force_program', False)
         self.wait = kwargs.pop('wait', True)
         # save patterns in patterns subdirectory
-        data_directory = kwargs.pop('data_directory', 'patterns')
-        Measurement.__init__(self, data_directory=data_directory, **kwargs)
+        Measurement.__init__(self, **kwargs)
+        self._data_directory = kwargs.pop('data_directory', self.name)
         # sequence cache indices
         self._prev_rangess = []
         self._prev_user_kwargss = []
@@ -450,8 +451,12 @@ class MultiAWGSweep(Measurement):
         for key in ('source',):
             if key in kwargs:
                 measure_kwargs[key] = kwargs.pop(key)
+        # build name from sweep coordinates
+        name = kwargs.pop('name', '_'.join(args[::2]))
+        program_kwargs['name'] = name + '_ProgramAWGSweep'
+        measure_kwargs['name'] = name
         # initalize Measurement
-        super(MultiAWGSweep, self).__init__(**kwargs)
+        super(MultiAWGSweep, self).__init__(name=name, **kwargs)
         # create AWG programmer
         programmer = ProgramAWGSweep(*args, **program_kwargs)
         self.add_measurement(programmer, inherit_local_coords=False)

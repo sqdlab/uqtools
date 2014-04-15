@@ -50,6 +50,7 @@ class Apply(Measurement):
     '''
     Apply an arbitrary non-reducing function to measured data 
     '''
+    _propagate_name = True
     
     def __init__(self, measurements, f=None, **kwargs):
         '''
@@ -205,6 +206,8 @@ class Reshape(Measurement):
     '''
     Reshape measured data.
     '''
+    _propagate_name = True
+
     def __init__(self, source, coords_del, ranges_ins, **kwargs):
         '''
         Input:
@@ -299,9 +302,6 @@ class Add(Measurement):
                 if summand is a ndarray, an iterable of Coordinate instances 
                 describing the axes of summand
             subtract - if True, subtract summand instead of adding it
-            
-        TODO: Add requires all coordinates to be present in m, therefore
-            it does not work with nested Sweeps.
         '''
         super(Add, self).__init__(**kwargs)
         m = self.add_measurement(m, inherit_local_coords=False)
@@ -367,6 +367,8 @@ class Integrate(Measurement):
     '''
     Integrate measurement data
     '''
+    _propagate_name = True
+
     def __init__(self, m, coordinate, range=None, average=False, **kwargs):
         '''
         create an integrator
@@ -376,9 +378,6 @@ class Integrate(Measurement):
             coordinate - coordinate over which to integrate
             range - (min, max) tuple of coordinate values to include
             average - if True, divide by number of integration points
-            
-        TODO: Integrate requires coordinate to be present in m, therefore
-            it does not work with nested Sweeps.
         '''
         super(Integrate, self).__init__(**kwargs)
         
