@@ -22,29 +22,57 @@ def apply_decorator(f, name=None):
     '''
     @functools.wraps(f)
     def decorated_f(*dec_args):
-        # extract data
-        ds = dec_args[1::2]
+        # decorate functions and methods alike
+        if isinstance(dec_args[0], Apply):
+            self = dec_args[0]
+            dec_args = dec_args[1:]
+        else:
+            self = None
+        # extract coordinates and data
+        css = dec_args[::2]
+        dss = dec_args[1::2]
+        # Apply takes its coordinates from the first measurement.
+        # Half-broadcast the data to the dimensions of the first data array.
+        ref_cs = css[0]
+        for cs, ds in zip(css[1:], dss[1:]):
+            for k in cs.keys():
+                if k not in ref_cs:
+                    raise ValueError('arguments 1..n may not contain coordinates '+
+                                     'that are not found in argument 0.')
+            for k, d in ds.iteritems():
+                d = d.view()
+                # for each coordinate in cs find its location in ref_cs
+                dims_take = [ref_cs.keys().index(c) for c in cs if c in ref_cs]
+                # add singleton dimensions for coordinates that are not in c
+                dims_add = list(numpy.setdiff1d(range(len(ref_cs)), dims_take))
+                d.shape = (1,)*len(dims_add)+d.shape
+                # perform reshape
+                d = d.transpose(dims_add+dims_take)
+                # write data back
+                ds[k] = d
+        # call wrapped function
         result = ResultDict()
         if(
-           numpy.all([ds[0].keys() == d.keys() for d in ds]) or
-           numpy.all([[k.name for k in ds[0].keys()] == [k.name for k in d.keys()] for d in ds])
+           numpy.all([dss[0].keys() == ds.keys() for ds in dss]) or
+           numpy.all([[k.name for k in dss[0].keys()] == [k.name for k in ds.keys()] for ds in dss])
         ):
             # if all measurements have the same keys, execute f for each key 
             # pass all matrices for that key to f
-            for k in ds[0].keys():
-                args = [d[k] for d in ds]
-                result[k] = f(*args)
+            for k in dss[0].keys():
+                args = [ds[k] for ds in dss]
+                result[k] = f(*args) if self is None else f(self, *args)
         else:
             # otherwise, execute f for each key of the first ResultDict
             # and pass all elements of the other ResultDicts
-            xargs = [arr for d in ds[1:] for arr in d.values()]
-            for k in ds[0].keys():
-                args = [ds[0][k]] + xargs
-                result[k] = f(*args)
+            xargs = [arr for ds in dss[1:] for arr in ds.values()]
+            for k in dss[0].keys():
+                args = [dss[0][k]] + xargs
+                result[k] = f(*args) if self is None else f(self, *args)
         return result
     if name is not None:
         decorated_f.__name__ = name
     return decorated_f
+
 
 class Apply(Measurement):
     '''
@@ -65,8 +93,9 @@ class Apply(Measurement):
                 ResultDict that has the same keys (in the same order) as ds0 
                 and elements that have the same shape as the elements of ds0.
         '''
-        name = kwargs.pop('name', f.__name__)
-        super(Apply, self).__init__(name=name, **kwargs)
+        if (f is not None) and ('name' not in kwargs):
+            kwargs['name'] = f.__name__
+        super(Apply, self).__init__(**kwargs)
         # add f
         # derived classes need not specify f
         if f is not None:
@@ -108,98 +137,70 @@ class Apply(Measurement):
         self._data.add_data_point(*points, newblock=True)
         return cs, ds
 
+
+class Add(Apply):
+    def __init__(self, *summands, **kwargs):
+        '''
+        Input:
+            *args - measurements to be added
+            subtract (bool, deprecated) - calculate numpy.sum if False (the default), 
+            numpy.diff of the reversed inputs otherwise
+        '''
+        self.subtract = kwargs.pop('subtract', False)
+        super(Add, self).__init__(summands, **kwargs)
+    
+    @apply_decorator
+    def f(self, *summands):
+        if not self.subtract:
+            return numpy.sum(summands, axis=0)
+        else:
+            return numpy.diff(summands[::-1], axis=0)
+
+        
+class Diff(Apply):
+    def __init__(self, *summands, **kwargs):
+        '''
+        Input:
+            *summands - measurements to be differentiated
+        '''
+        super(Diff, self).__init__(summands, **kwargs)
+    
+    @apply_decorator
+    def f(self, *summands):
+        return numpy.diff(summands, axis=0)
+
+        
+class Multiply(Apply):
+    def __init__(self, *factors, **kwargs):
+        '''
+        Input:
+            *args - measurements to be added
+        '''
+        super(Multiply, self).__init__(factors, **kwargs)
+    
+    @apply_decorator
+    def f(self, *factors):
+        return numpy.prod(factors, axis=0)
+
+
+class Divide(Apply):
+    def __init__(self, num, denom, **kwargs):
+        '''
+        Input:
+            num, denom - numerator and denominator
+        '''
+        super(Divide, self).__init__((num, denom), **kwargs)
+    
+    @apply_decorator
+    def f(self, *factors):
+        return numpy.divide(*factors)
+            
+        
 class Reduce(Measurement):
     '''
     Apply an arbitrary reducing function to measured data
     '''
     pass
-
-class Buffer(object):
-    '''
-    Buffer measurement data in memory.
-    '''
-    def __init__(self, source, **kwargs):
-        '''
-        Create BufferWrite and BufferRead objects for source
-        '''
-        # initialize buffer with multidimensional zeros :)
-        self.cs = None
-        self.d = None
-        # create reader and writer object
-        self.kwargs = kwargs
-        self.source = source
-    
-    def _gen_writer(self):
-        return BufferWrite(self.source, self, **self.kwargs)
-    writer = property(_gen_writer)
-    
-    def _gen_reader(self):
-        return BufferRead(self.source, self)
-    reader = property(_gen_reader)
-    
-    def __call__(self, **kwargs):
-        raise NotImplementedError('Buffer is no longer a subclass of Measurement. Use buffer.writer and buffer.reader to store/recall data.')
-    
-class BufferWrite(Measurement):
-    '''
-    Update a Buffer from a Measurement
-    '''
-    _propagate_name = True
-    
-    def __init__(self, source, buf, **kwargs):
-        '''
-        Input:
-            source (Measurement) - data source
-            buffer (Buffer) - data storage 
-        '''
-        name = kwargs.pop('name', 'Buffer')
-        super(BufferWrite, self).__init__(name=name, **kwargs)
-        self.buf = buf
-        # add and imitate source
-        self.add_measurement(source, inherit_local_coords=False)
-        self.add_coordinates(source.get_coordinates())
-        self.add_values(source.get_values())
-        
-    def _measure(self, **kwargs):
-        ''' Measure data and store it in self.buffer '''
-        # measure
-        cs, d = self.get_measurements()[0](nested=True, **kwargs)
-        # store data in buffer
-        self.buf.cs = cs
-        self.buf.d = d
-        # store data in file
-        points = [numpy.ravel(m) for m in cs.values()+d.values()]
-        self._data.add_data_point(*points, newblock=True)
-        # return data
-        return cs, d
-        
-class BufferRead(Measurement):
-    '''
-    Return Buffer contents
-    '''
-    def __init__(self, source, buf, **kwargs):
-        '''
-        Input:
-            source (Measurement) - data source of to imitate.
-                may be either the associated BufferWrite object or the source 
-                object that was/will be passed to the associated BufferWrite.
-            buffer (Buffer) - data storage
-        '''
-        super(BufferRead, self).__init__(**kwargs)
-        self.buf = buf
-        # imitate source
-        self.add_coordinates(source.get_coordinates())
-        self.add_values(source.get_values())
-
-    def _measure(self, **kwargs):
-        ''' return buffered data '''
-        if (self.buf.cs is None) or (self.buf.d is None):
-            logging.warning(__name__+': read from uninitialized Buffer.')
-        return self.buf.cs, self.buf.d
-
-    def _create_data_files(self):
-        ''' BufferRead never creates data files '''
-        pass
 
 
 class Reshape(Measurement):
@@ -285,7 +286,7 @@ class Reshape(Measurement):
 # STUFF TO BE REWORKED
 #
 #
-class Add(Measurement):
+class AddMonolithic(Measurement):
     '''
     Add constants to measurement data
     '''
@@ -362,6 +363,7 @@ class Add(Measurement):
         points = [numpy.ravel(m) for m in cs.values()+d.values()]
         self._data.add_data_point(*points, newblock=True)
         return cs, d
+
 
 class Integrate(Measurement):
     '''
