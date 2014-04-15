@@ -112,6 +112,8 @@ class MeasurementBase(object):
     '''
     # generate qtlab style directory names
     _file_name_generator = DateTimeGenerator()
+    # pass name as parent name to children
+    _propagate_name = False
     
     def __init__(self, name=None, data_directory='', data_save=True, context=None):
         '''
@@ -147,20 +149,19 @@ class MeasurementBase(object):
         self._parent_coordinates = []
         self._setup_done = False
     
-    def set_parent_name(self, name):
+    def set_parent_name(self, name=''):
         '''
             set parent name
             
             self.name is concatenated with the parent name when generating data file names
             parent measurements are not required to propagate their name and should do so
             only if it adds to the user experience (e.g. a sweep could add a coordinate name)
+            this is controlled by the _propagate_name class property.
             
             Input:
                 name - parent name
         '''
         self._parent_name = name
-        for child, _ in self._children:
-            child.set_parent_name(name + ('_' if name else '') + self.name)
         
     def set_parent_coordinates(self, dimensions = []):
         '''
@@ -437,6 +438,10 @@ class MeasurementBase(object):
         self._create_data_files()
         # pass coordinates and paths to children
         for child, flags in self._children:
+            # join parent name and own name with '_' and pass to child
+            child_names = [self._parent_name, self.name if self._propagate_name else '']
+            child_names = [n for n in child_names if n]
+            child.set_parent_name('_'.join(child_names))
             child.set_parent_data_directory(self.get_data_directory())
             child.set_parent_coordinates(
                 self.get_coordinates(parent=True, local=flags['inherit_local_coords'], inheritable=True)
@@ -485,6 +490,7 @@ class MeasurementBase(object):
         # forget data directory and inherited coordinates
         self.set_parent_data_directory()
         self.set_parent_coordinates()
+        self.set_parent_name()
 
 
 

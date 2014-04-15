@@ -143,6 +143,8 @@ class BufferWrite(Measurement):
     '''
     Update a Buffer from a Measurement
     '''
+    _propagate_name = True
+    
     def __init__(self, source, buf, **kwargs):
         '''
         Input:
@@ -153,7 +155,6 @@ class BufferWrite(Measurement):
         super(BufferWrite, self).__init__(name=name, **kwargs)
         self.buf = buf
         # add and imitate source
-        source.set_parent_name(self.name)
         self.add_measurement(source, inherit_local_coords=False)
         self.add_coordinates(source.get_coordinates())
         self.add_values(source.get_values())

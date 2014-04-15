@@ -117,6 +117,7 @@ class Sweep(ProgressReporting, Measurement):
     '''
         do a one-dimensional sweep of one or more nested measurements
     '''
+    _propagate_name = True
     
     def __init__(self, coordinate, range, measurements, output_data=False, **kwargs):
         '''
@@ -157,11 +158,9 @@ class Sweep(ProgressReporting, Measurement):
         if not self._values_passthrough:
             for idx, m in enumerate(measurements):
                 m = self.add_measurement(m)
-                m.set_parent_name(self.name)
                 self.add_values(Parameter('nested_{0}'.format(idx)))
         else:
             m = self.add_measurement(measurements)
-            m.set_parent_name(self.name)
             self.add_coordinates(m.get_coordinates())
             self.add_values(m.get_values())
         # default value for output_data
