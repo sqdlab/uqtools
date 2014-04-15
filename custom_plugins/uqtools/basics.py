@@ -162,6 +162,7 @@ class Sweep(ProgressReporting, Measurement):
         else:
             m = self.add_measurement(measurements)
             m.set_parent_name(self.name)
+            self.add_coordinates(m.get_coordinates())
             self.add_values(m.get_values())
         # default value for output_data
         self.output_data = output_data
@@ -254,6 +255,17 @@ class Sweep(ProgressReporting, Measurement):
                 for k in results[0][1].keys():
                     d[k] = numpy.array([y[k] for _, y in results])
                 return cs, d
+
+    def get_coordinates(self, parent=False, local=True, inheritable=False):
+        ''' 
+        return a list of parent and/or local coordinates.
+        see Measurement.get_coordinates for full doc.
+        '''
+        return (
+            (self._parent_coordinates if parent else []) + 
+            (self.coordinates[:1] if local else []) +
+            (self.coordinates[1:] if not inheritable else [])
+        )
 
     def _create_data_files(self):
         ''' Sweep does never create data files '''

@@ -201,8 +201,18 @@ class MeasurementBase(object):
 #             raise TypeError('parameter dimension must be an instance of Dimension.')
         self.values.extend(make_iterable(dimension))
     
-    def get_coordinates(self, parent = False, local = True):
-        ''' return a list of parent and/or local coordinates '''
+    def get_coordinates(self, parent=False, local=True, inheritable=False):
+        ''' 
+        return a list of parent and/or local coordinates
+        
+        Input:
+            parent (bool) - return parent coordinates
+            local (bool) - return local coordinates
+            inheritable (bool) - return only inheritable coordinates
+                inheritable=True is passed when the parent coordinates of child 
+                measurements are set up. It has no effect in the Measurement
+                base class.
+        '''
         return (
             (self._parent_coordinates if parent else []) + 
             (self.coordinates if local else [])
@@ -429,7 +439,7 @@ class MeasurementBase(object):
         for child, flags in self._children:
             child.set_parent_data_directory(self.get_data_directory())
             child.set_parent_coordinates(
-                self.get_coordinates(parent=True, local=flags['inherit_local_coords'])
+                self.get_coordinates(parent=True, local=flags['inherit_local_coords'], inheritable=True)
             )
             #child._setup()
         # make sure setup is not run again
