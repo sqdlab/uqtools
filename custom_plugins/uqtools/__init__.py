@@ -38,7 +38,7 @@ from basics import Delay, ParameterMeasurement
 from basics import MeasurementArray, ReportingMeasurementArray, Sweep, MultiSweep
 from basics import ContinueIteration, BreakIteration
 from buffer import Buffer
-from process import apply_decorator, Apply, Add, Diff, Multiply, Divide
+from process import apply_decorator, Apply, Add, Multiply, Divide
 from process import Reshape, Integrate
 from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
 from fpga import AveragedTvModeMeasurement 

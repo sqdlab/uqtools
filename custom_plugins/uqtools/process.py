@@ -68,7 +68,7 @@ def apply_decorator(f, name=None):
             for k in dss[0].keys():
                 args = [dss[0][k]] + xargs
                 result[k] = f(*args) if self is None else f(self, *args)
-        return result
+        return ref_cs, result
     if name is not None:
         decorated_f.__name__ = name
     return decorated_f
@@ -87,11 +87,12 @@ class Apply(Measurement):
                 The coordinate and value parameters of Apply are taken from the
                 first measurement in measurements.
             f - Function applied to the data, transforming 
-                cs0, ds0 -> cs0, f(cs0, ds0, [cs1, ds1, ...]).
+                cs0, ds0 -> f(cs0, ds0, [cs1, ds1, ...]).
                 The cs and ds are ResultDict objects containing the coordinate
-                and value matrices, respectively. f is expected to return an
-                ResultDict that has the same keys (in the same order) as ds0 
-                and elements that have the same shape as the elements of ds0.
+                and value matrices, respectively. f is expected to return two
+                ResultDicts that have the same keys (in the same order) as cs0
+                and ds0 and thus elements that have the same number of dimensions
+                as the elements of ds0.
         '''
         if (f is not None) and ('name' not in kwargs):
             kwargs['name'] = f.__name__
@@ -118,8 +119,7 @@ class Apply(Measurement):
         # flatten results list
         results = [v for vs in results for v in vs]
         # call function
-        cs = results[0]
-        ds = self.f(*results)
+        cs, ds = self.f(*results)
         # check d for consistency
         if not isinstance(ds, ResultDict):
             raise TypeError('f must return a ResultDict object.')
@@ -127,11 +127,11 @@ class Apply(Measurement):
             logging.warning(__name__+': dict keys returned by f differ from the input keys.')
         for k in ds.keys():
             if (
-                hasattr(ds[k], 'shape') and hasattr(results[1][k], 'shape') and
-                ds[k].shape != results[1][k].shape
+                hasattr(ds[k], 'ndim') and hasattr(results[1][k], 'ndim') and
+                ds[k].ndim != results[1][k].ndim
             ):
-                logging.warning(__name__+': shape of the data returned by f '+
-                    'differs from the shape of the input data.')
+                logging.error(__name__+': number of dimensions of the data '+
+                    'returned by f differs from the shape of the input data.')
         # write data to disk & return
         points = [numpy.ravel(m) for m in cs.values()+ds.values()]
         self._data.add_data_point(*points, newblock=True)
@@ -147,6 +147,8 @@ class Add(Apply):
             numpy.diff of the reversed inputs otherwise
         '''
         self.subtract = kwargs.pop('subtract', False)
+        if self.subtract and len(summands) != 2:
+            raise ValueError('Need exactly two inputs if subtract is True.')
         super(Add, self).__init__(summands, **kwargs)
     
     @apply_decorator
@@ -154,20 +156,7 @@ class Add(Apply):
         if not self.subtract:
             return numpy.sum(summands, axis=0)
         else:
-            return numpy.diff(summands[::-1], axis=0)
-
-        
-class Diff(Apply):
-    def __init__(self, *summands, **kwargs):
-        '''
-        Input:
-            *summands - measurements to be differentiated
-        '''
-        super(Diff, self).__init__(summands, **kwargs)
-    
-    @apply_decorator
-    def f(self, *summands):
-        return numpy.diff(summands, axis=0)
+            return numpy.diff(summands[::-1], axis=0)[0,...]
 
         
 class Multiply(Apply):
