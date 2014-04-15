@@ -11,22 +11,42 @@ class Constant(Measurement):
     '''
     Convert ndarray into a Measurement.
     '''
-    def __init__(self, data, **kwargs):
+    def __init__(self, data, coordinates=None, value=None, **kwargs):
         '''
         Input:
             data (ndarray) - value returned by Constant.
                 a coordinate is generated for each dimension of arr.
+            coordinates (list of Parameter) - coordinate corresponding
+                to each dimension
+            value (Parameter) - value dimension
         '''
         super(Constant, self).__init__(**kwargs)
-        self.data = data
+        self.data = numpy.array(data)
         # generate coordinate and value dimensions
-        for i, n in enumerate(data.shape):
-            self.add_coordinates(Parameter(name='dim{0}'.format(i), value=range(n)))
-        self.add_values(Parameter('val'))
+        if coordinates is None:
+            coordinates = [Parameter(name='dim{0}'.format(i)) for i in range(data.ndim)]
+        if len(coordinates) != self.data.ndim:
+            raise ValueError('number of dimensions of data must be equal '+
+                             'to the number of coordinates passed')
+        self.add_coordinates(coordinates)
+        self.add_values(value if value is not None else Parameter('val'))
+        # determine range of each coordinate
+        self.ranges = []
+        for i, n in enumerate(self.data.shape):
+            cv = coordinates[i].get()
+            if (cv is None) or (numpy.isscalar(cv) and (n!=1)):
+                self.ranges.append(range(n))
+            else:
+                if len(cv) != n:
+                    raise ValueError('length of each coordinate vector must equal '+
+                                     'the length of corresponding dimension of data')
+                self.ranges.append(cv)
         
     def _measure(self, **kwargs):
+        cs = [ResultDict([(c, self.ranges[i])]) 
+              for i, c in enumerate(self.get_coordinates())]
         return (
-            coordinate_concat(*[ResultDict([(c, c.get())]) for c in self.get_coordinates()]),
+            coordinate_concat(*cs),
             ResultDict(zip(self.get_values(), (self.data,)))
         )
 
@@ -38,14 +58,14 @@ class Function(Measurement):
     '''
     Generate measurement data by calling a function
     '''
-    def __init__(self, coordinates, f, **kwargs):
+    def __init__(self, f, coordinates=[], **kwargs):
         '''
         Input:
-            coordinates (Parameter) - iterable of Parameter objects that have 
-                the points for each coordinate set as their value
             f (callable) - f(*cs.values()) is called with the matrices for all 
                 coordinates as arguments and must return a single ndarray of 
                 the same shape as the coordinate matrices
+            coordinates (Parameter) - iterable of Parameter objects that have 
+                the points for each coordinate set as their value
         '''
         super(Function, self).__init__(**kwargs)
         self.f = f
