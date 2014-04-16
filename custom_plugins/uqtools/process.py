@@ -3,8 +3,12 @@ import logging
 from collections import defaultdict
 import functools
 
+import qt
+
 from measurement import Measurement, ResultDict
-from basics import coordinate_concat
+from basics import coordinate_concat, ContinueIteration, BreakIteration
+from parameter import Parameter
+from progress import ProgressReporting
 
 
 def apply_decorator(f, name=None):
@@ -288,95 +292,97 @@ class Reshape(Measurement):
         return cs_out, d
 
 
-class Accumulate(Measurement):
+class Accumulate(ProgressReporting, Measurement):
     '''
     Accumulate data measured over several iterations
     
     
     '''
-    def __init__(self, source, coordinate=None, average=True, **kwargs):
+    def __init__(self, source, iterations, average=True, **kwargs):
         '''
         Input:
             source (Measurement) - data source
-            coordinate (Parameter) - iteration coordinate.
-                if coordinate is given, it is removed from the data file written
-                by Accumulate and the file is truncated before writing new output.
+            range 
             average (bool) - if True, output the average of all measured data 
                 instead of the sum.
         '''
         super(Accumulate, self).__init__(**kwargs)
+        self.average = average
+        # iterations may be a function
+        self.iterations = iterations if callable(iterations) else (lambda: iterations)
         # imitate source
+        self.coordinate = Parameter('iteration')
+        self.add_coordinates(self.coordinate)
         self.add_coordinates(source.get_coordinates())
         self.add_values(source.get_values())
         self.add_measurement(source, inherit_local_coords=False)
-        # save other args
-        self.coordinate = coordinate
-        self.average = average
     
     @functools.wraps(Measurement.get_coordinates)
     def get_coordinates(self, parent=False, local=True, inheritable=False):
-        coordinates = super(Accumulate, self).get_coordinates(parent, local, inheritable)
-        # remove self.coordinate *except* when initializing children
-        if (not inheritable) and (self.coordinate in coordinates):
-            coordinates.remove(self.coordinate)
-        return coordinates
-    
-    #def set_parent_coordinates(self, dimensions = []):
-    #    super(Accumulate, self).set_parent_coordinates(dimensions)
-    #    if (self.coordinate in dimensions) and (len(dimensions)>1):
-    #        logging.warning(__name__+': Can not handle more than one inherited'+
-    #                        'coordinate.')
-    
-    def _setup(self):
-        super(Accumulate, self)._setup()
-        # reset parent coordinates, will result in buffer flush on first iteration 
-        self.parent_coordinate_values = None
-        
+        return (
+            (self._parent_coordinates if parent else []) + 
+            (self.coordinates[:1] if inheritable else []) +
+            (self.coordinates[1:] if local else [])
+        )
+            
     def _measure(self, **kwargs):
-        kwargs['output_data'] = True
-        cs, ds = self.get_measurements()[0](nested=True, **kwargs)
-        # empty buffer if parent coordinate values have changed
-        parent_coordinate_values = [c.get() for c in 
-                                    self.get_coordinates(parent=True, local=False)]
-        if (parent_coordinate_values != self.parent_coordinate_values):
-            # first iteration: initialize buffer
-            self.parent_coordinate_values = parent_coordinate_values
-            self.file_position = self._data._file.tell()
-            self.iteration = 1
-            self.cs = cs
-            self.ds = ds
-        else:
-            # other iterations: accumulate data
-            if (self.cs.keys() != cs.keys()) or (self.ds.keys() != ds.keys()):
-                raise ValueError('coordinates or values returned by source have changed.')
-            if numpy.any([self.cs[k] != cs[k] for k in cs.keys()]):
-                raise ValueError('coordinate values returned by source have changed.')
-            self.iteration += 1
-            for k, d in ds.iteritems():
-                self.ds[k] += d
-            # transfer accumulated data to local var
-            if self.average:
-                ds = ResultDict([(k, d/float(self.iteration)) for k, d in self.ds.iteritems()])
+        iterations = self.iterations()
+        self._reporting_state.iterations = iterations
+        traces = 0
+        for iteration in range(iterations):
+            self._reporting_start_iteration()
+            # run background tasks (e.g. progress reporter)
+            qt.msleep()
+            # set iteration number
+            self.coordinate.set(iteration)
+            # acquire data, support the same control flow exceptions as Sweep
+            try:
+                kwargs['output_data'] = True
+                cs, ds = self.get_measurements()[0](nested=True, **kwargs)
+            except ContinueIteration:
+                continue
+            except BreakIteration:
+                break
+            finally:
+                self._reporting_next()
+            traces += 1
+            # accumulate data
+            if traces==1:
+                # first iteration: initialize accumulator
+                file_position = self._data._file.tell()
+                acc_cs = cs
+                acc_ds = ds
             else:
-                ds = self.ds
-        # truncate data file
-        if len(self.get_coordinates(parent=True, local=False)):
-            # if the measurement is swept over external coordinates,
-            # truncate the file at the start of the data set corresponding
-            # to the current coordinates
-            self._data._file.seek(self.file_position)
-            self._data._file.truncate()
-        else:
-            # if the measurement is not swept over external coordinates,
-            # rewrite the whole file each time new data is received
-            # this turns out to be faster when the file is monitored by
-            # an external program, because external reads do not interfere
-            # with our writes (they are operations on different files)
-            self._data.close_file()
-            self._data.create_file(filepath=self._data.get_filepath(), settings_file=False)
-        # write accumulated data to file
-        points = [numpy.ravel(m) for m in cs.values()+ds.values()]
-        self._data.add_data_point(*points, newblock=True)
+                # other iterations: accumulate data
+                if (acc_cs.keys() != cs.keys()) or (acc_ds.keys() != ds.keys()):
+                    raise ValueError('coordinates or values returned by source have changed.')
+                if numpy.any([acc_cs[k] != cs[k] for k in cs.keys()]):
+                    raise ValueError('coordinate values returned by source have changed.')
+                for k, d in ds.iteritems():
+                    acc_ds[k] += d
+                # transfer accumulated data to local var
+                if self.average:
+                    ds = ResultDict([(k, d/float(traces)) for k, d in acc_ds.iteritems()])
+                else:
+                    ds = acc_ds
+            # truncate data file
+            if len(self.get_coordinates(parent=True, local=False)):
+                # if the measurement is swept over external coordinates,
+                # truncate the file at the start of the data set corresponding
+                # to the current coordinates
+                self._data._file.seek(file_position)
+                self._data._file.truncate()
+            else:
+                # if the measurement is not swept over external coordinates,
+                # rewrite the whole file each time new data is received
+                # this turns out to be faster when the file is monitored by
+                # an external program, because external reads do not interfere
+                # with our writes (they are operations on different files)
+                self._data.close_file()
+                self._data.create_file(filepath=self._data.get_filepath(), settings_file=False)
+            # write accumulated data to file
+            points = [numpy.ravel(m) for m in cs.values()+ds.values()]
+            self._data.add_data_point(*points, newblock=True)
         # return data
         return cs, ds
 #
