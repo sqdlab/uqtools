@@ -39,7 +39,7 @@ from basics import MeasurementArray, ReportingMeasurementArray, Sweep, MultiSwee
 from basics import ContinueIteration, BreakIteration
 from buffer import Buffer
 from process import apply_decorator, Apply, Add, Multiply, Divide
-from process import Reshape, Integrate
+from process import Reshape, Integrate, Accumulate
 from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
 from fpga import AveragedTvModeMeasurement 
 from calibrate import FittingMeasurement, CalibrateResonator, Minimize, MinimizeIterative

@@ -115,9 +115,17 @@ class Apply(Measurement):
     
     def _measure(self, **kwargs):
         # perform all nested measurements
+        kwargs['output_data'] = True
         results = [m(nested=True, **kwargs) for m in self.get_measurements()]
-        # flatten results list
-        results = [v for vs in results for v in vs]
+        # inform user when measurements return no data
+        for cs, ds in results:
+            if (cs is None) and (ds is None):
+                logging.warning(__name__+ ': one of the measurements did not return any data.')
+            elif (cs is None) or (ds is None):
+                raise ValueError('nested measurement returned None for either '+
+                                 'coordinates or data (but not both).')
+        # flatten results list, ignoring measurements that returned None, None
+        results = [v for vs in results for v in (vs if vs != (None, None) else [])]
         # call function
         cs, ds = self.f(*results)
         # check d for consistency
@@ -156,7 +164,11 @@ class Add(Apply):
         if not self.subtract:
             return numpy.sum(summands, axis=0)
         else:
-            return numpy.diff(summands[::-1], axis=0)[0,...]
+            if len(summands) == 1:
+                # handle empty buffer
+                return summands[0]
+            else:
+                return numpy.diff(summands[::-1], axis=0)[0,...]
 
         
 class Multiply(Apply):
@@ -182,7 +194,11 @@ class Divide(Apply):
     
     @apply_decorator
     def f(self, *factors):
-        return numpy.divide(*factors)
+        if len(factors) == 1:
+            # handle empty buffer
+            return factors[0]
+        else:
+            return numpy.divide(*factors)
             
         
 class Reduce(Measurement):
@@ -223,6 +239,7 @@ class Reshape(Measurement):
         
     def _measure(self, **kwargs):
         # call source
+        kwargs['output_data'] = True
         cs, d = self.get_measurements()[0](nested=True, **kwargs)
         # check if the new shape is compatible with the shape of data
         # also checks if all relevant keys are present
@@ -270,6 +287,98 @@ class Reshape(Measurement):
         # return data
         return cs_out, d
 
+
+class Accumulate(Measurement):
+    '''
+    Accumulate data measured over several iterations
+    
+    
+    '''
+    def __init__(self, source, coordinate=None, average=True, **kwargs):
+        '''
+        Input:
+            source (Measurement) - data source
+            coordinate (Parameter) - iteration coordinate.
+                if coordinate is given, it is removed from the data file written
+                by Accumulate and the file is truncated before writing new output.
+            average (bool) - if True, output the average of all measured data 
+                instead of the sum.
+        '''
+        super(Accumulate, self).__init__(**kwargs)
+        # imitate source
+        self.add_coordinates(source.get_coordinates())
+        self.add_values(source.get_values())
+        self.add_measurement(source, inherit_local_coords=False)
+        # save other args
+        self.coordinate = coordinate
+        self.average = average
+    
+    @functools.wraps(Measurement.get_coordinates)
+    def get_coordinates(self, parent=False, local=True, inheritable=False):
+        coordinates = super(Accumulate, self).get_coordinates(parent, local, inheritable)
+        # remove self.coordinate *except* when initializing children
+        if (not inheritable) and (self.coordinate in coordinates):
+            coordinates.remove(self.coordinate)
+        return coordinates
+    
+    #def set_parent_coordinates(self, dimensions = []):
+    #    super(Accumulate, self).set_parent_coordinates(dimensions)
+    #    if (self.coordinate in dimensions) and (len(dimensions)>1):
+    #        logging.warning(__name__+': Can not handle more than one inherited'+
+    #                        'coordinate.')
+    
+    def _setup(self):
+        super(Accumulate, self)._setup()
+        # reset parent coordinates, will result in buffer flush on first iteration 
+        self.parent_coordinate_values = None
+        
+    def _measure(self, **kwargs):
+        kwargs['output_data'] = True
+        cs, ds = self.get_measurements()[0](nested=True, **kwargs)
+        # empty buffer if parent coordinate values have changed
+        parent_coordinate_values = [c.get() for c in 
+                                    self.get_coordinates(parent=True, local=False)]
+        if (parent_coordinate_values != self.parent_coordinate_values):
+            # first iteration: initialize buffer
+            self.parent_coordinate_values = parent_coordinate_values
+            self.file_position = self._data._file.tell()
+            self.iteration = 1
+            self.cs = cs
+            self.ds = ds
+        else:
+            # other iterations: accumulate data
+            if (self.cs.keys() != cs.keys()) or (self.ds.keys() != ds.keys()):
+                raise ValueError('coordinates or values returned by source have changed.')
+            if numpy.any([self.cs[k] != cs[k] for k in cs.keys()]):
+                raise ValueError('coordinate values returned by source have changed.')
+            self.iteration += 1
+            for k, d in ds.iteritems():
+                self.ds[k] += d
+            # transfer accumulated data to local var
+            if self.average:
+                ds = ResultDict([(k, d/float(self.iteration)) for k, d in self.ds.iteritems()])
+            else:
+                ds = self.ds
+        # truncate data file
+        if len(self.get_coordinates(parent=True, local=False)):
+            # if the measurement is swept over external coordinates,
+            # truncate the file at the start of the data set corresponding
+            # to the current coordinates
+            self._data._file.seek(self.file_position)
+            self._data._file.truncate()
+        else:
+            # if the measurement is not swept over external coordinates,
+            # rewrite the whole file each time new data is received
+            # this turns out to be faster when the file is monitored by
+            # an external program, because external reads do not interfere
+            # with our writes (they are operations on different files)
+            self._data.close_file()
+            self._data.create_file(filepath=self._data.get_filepath(), settings_file=False)
+        # write accumulated data to file
+        points = [numpy.ravel(m) for m in cs.values()+ds.values()]
+        self._data.add_data_point(*points, newblock=True)
+        # return data
+        return cs, ds
 #
 #
 # STUFF TO BE REWORKED
@@ -324,7 +433,8 @@ class AddMonolithic(Measurement):
 
     def _measure(self, **kwargs):
         # retrieve first summand: measured data
-        cs, d = self.get_measurements()[0](nested=True, **kwargs) # output_data=True
+        kwargs['output_data'] = True
+        cs, d = self.get_measurements()[0](nested=True, **kwargs)
         # retrieve second summand: calibration data
         s1s = self._summand()
         if s1s is None:
@@ -385,7 +495,8 @@ class Integrate(Measurement):
     
     def _measure(self, **kwargs):
         # retrieve data
-        cs, d = self.get_measurements()[0](nested=True, **kwargs) # output_data=True
+        kwargs['output_data'] = True
+        cs, d = self.get_measurements()[0](nested=True, **kwargs)
         d_int = ResultDict()
         if self.range is not None:
             # select values to be integrated

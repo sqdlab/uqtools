@@ -1,6 +1,7 @@
 import time
 import types
 import numpy
+import functools
 
 import qt
 from collections import deque
@@ -255,11 +256,8 @@ class Sweep(ProgressReporting, Measurement):
                     d[k] = numpy.array([y[k] for _, y in results])
                 return cs, d
 
+    @functools.wraps(Measurement.get_coordinates)
     def get_coordinates(self, parent=False, local=True, inheritable=False):
-        ''' 
-        return a list of parent and/or local coordinates.
-        see Measurement.get_coordinates for full doc.
-        '''
         return (
             (self._parent_coordinates if parent else []) + 
             (self.coordinates[:1] if local else []) +

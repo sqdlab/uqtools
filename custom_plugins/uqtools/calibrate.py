@@ -79,7 +79,8 @@ class FittingMeasurement(ProgressReporting, Measurement):
             self._reporting_state.iterations = len(self.get_measurements())
         # run data source
         source = self.get_measurements()[0]
-        cs, d = source(nested=True, output_data=True)
+        kwargs['output_data'] = True
+        cs, d = source(nested=True, **kwargs)
         # pick dependent variable
         if self.dep is not None:
             ys = d[self.dep]
@@ -156,7 +157,7 @@ class FittingMeasurement(ProgressReporting, Measurement):
                     p.set(self.values[k].get())
                 # run nested measurements
                 try:
-                    kwargs.update({'output_data':False})
+                    kwargs['output_data'] = False
                     for m in self.get_measurements()[1:]:
                         m(nested=True, **kwargs)
                         # update progress bar indicating measurement id
@@ -286,7 +287,8 @@ class Minimize(Measurement):
     
     def _measure(self, **kwargs):
         # acquire data
-        cs, d = self.get_measurements()[0](nested=True, output_data=True)
+        kwargs['output_data'] = True
+        cs, d = self.get_measurements()[0](nested=True, **kwargs)
         # pick independent variables
         # pick dependent variable, using first value as the default
         xs = cs[self.c0] if (self.c0 is not None) else cs.values()[0]

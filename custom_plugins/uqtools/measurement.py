@@ -349,7 +349,7 @@ class MeasurementBase(object):
         if len(complex_dims):
             df.add_data_point = self._unpack_complex_decorator(df.add_data_point, complex_dims)
         # decorate add_data_point to add parent dimensions without user interaction
-        if(len(self.get_coordinates(parent = True, local = False)) != 0):
+        if(len(self.get_coordinates(parent=True, local=False)) != 0):
             df.add_data_point = self._prepend_coordinates_decorator(df.add_data_point)
         return df
     
@@ -363,7 +363,7 @@ class MeasurementBase(object):
         @wraps(function)
         def decorated_function(*args, **kwargs):
             # fetch parent coordinate values
-            coordinates = tuple([c.get() for c in self._parent_coordinates])
+            coordinates = tuple([c.get() for c in self.get_coordinates(parent=True, local=False)])
             # if inputs are arrays, provide coordinates as arrays as well
             if(len(args) and isinstance(args[0], numpy.ndarray)):
                 coordinates = tuple([c*numpy.ones(args[0].shape) for c in coordinates])
