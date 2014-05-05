@@ -54,6 +54,7 @@ class FPGAMeasurement(Measurement):
         # and index into the coordinate lists
         coordinate_matrices = [numpy.array(c)[i] for c, i in zip(points, indices)]
         # retrieve measured data
+        self._fpga.stop()
         data = self._fpga.get_data_blocking()
         # concatenate coordinate and data matrices and make them into a 2d table
         table = [numpy.ravel(m) for m in coordinate_matrices+[data]]
