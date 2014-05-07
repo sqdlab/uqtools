@@ -152,7 +152,7 @@ class DatReader(Measurement):
         #data = numpy.loadtxt(filepath, unpack=True, ndmin=2)
         with open(filepath, 'r') as f:
             reader = csv.reader(f, dialect='excel-tab')
-            data = numpy.array([l for l in reader if len(l) and (l[0][0] != '#')]).transpose()
+            data = numpy.array([l for l in reader if len(l) and (l[0][0] != '#')], dtype=numpy.float64).transpose()
         
         if not data.shape[1]:
             # file is empty
