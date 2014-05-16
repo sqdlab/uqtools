@@ -6,10 +6,14 @@ from parameter import Parameter
 from measurement import Measurement
 from process import Reshape
 try:
+    from pulsegen import MultiAWGSequence
+except ImportError:
+    logging.warning(__name__+': pulsegen is not available. not loading awg library.')
+    raise
+try:
     from pulsegen import ptplot_gui
 except ImportError:
     logging.warning(__name__+': pulsegen.ptplot_gui is not available. plotting functions are disabled.')
-from pulsegen import MultiAWGSequence
 from pulselib import default_marker_func
 
 class ProgramAWG(Measurement):

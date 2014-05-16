@@ -49,5 +49,9 @@ try:
 except ImportError:
     # pulselib already generates a log entry
     pass
-from awg import ProgramAWG, ProgramAWGParametric
-from awg import ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep
+try:
+    from awg import ProgramAWG, ProgramAWGParametric
+    from awg import ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep
+except ImportError:
+    # awg already generates a log entry
+    pass
