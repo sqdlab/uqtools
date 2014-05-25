@@ -38,6 +38,15 @@ class ResultDict(OrderedDict):
                     return OrderedDict.__getitem__(self, parameter)
             raise err
 
+    def index(self, key):
+        try:
+            return self.keys().index(key)
+        except ValueError as err:
+            for idx, parameter in enumerate(self.keys()):
+                if parameter.name == key:
+                    return idx
+            raise err
+
     def __repr__(self):
         items = ['"{0}":{1}'.format(k.name, v) for k, v in self.iteritems()]
         return 'ResultDict(' + ', '.join(items) + ')'
