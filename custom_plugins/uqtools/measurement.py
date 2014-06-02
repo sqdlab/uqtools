@@ -536,10 +536,11 @@ class Measurement(MeasurementBase):
         ''' output progress bars '''
         IPython.display.clear_output()
         state_list = self._reporting_dfs(lambda obj: obj._reporting_state)
-        IPython.display.publish_display_data('ProgressReporting', {
-            'text/html': self._reporting_bar.format_html(state_list),
-            'text/plain': self._reporting_bar.format_text(state_list),
-        })
+        IPython.display.display(IPython.display.HTML(self._reporting_bar.format_html(state_list)))
+        #IPython.display.publish_display_data('ProgressReporting', {
+        #    'text/html': self._reporting_bar.format_html(state_list),
+        #   'text/plain': self._reporting_bar.format_text(state_list),
+        #})
         return True
 
     def _reporting_dfs(self, function, level=0, do_self=True, node=None):
