@@ -464,6 +464,7 @@ class MultiAWGSweep(Measurement):
         # create AWG programmer
         programmer = ProgramAWGSweep(*args, **program_kwargs)
         self.add_measurement(programmer, inherit_local_coords=False)
+        self.plot = programmer.plot
         # create reshaping source
         rsource = MeasureAWGSweep(*args, **measure_kwargs)
         self.add_measurement(rsource, inherit_local_coords=False)
