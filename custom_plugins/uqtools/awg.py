@@ -462,15 +462,15 @@ class MultiAWGSweep(Measurement):
         # initalize Measurement
         super(MultiAWGSweep, self).__init__(name=name, **kwargs)
         # create AWG programmer
-        programmer = ProgramAWGSweep(*args, **program_kwargs)
-        self.add_measurement(programmer, inherit_local_coords=False)
+        self.program = ProgramAWGSweep(*args, **program_kwargs)
+        self.add_measurement(self.program, inherit_local_coords=False)
         self.plot = programmer.plot
         # create reshaping source
-        rsource = MeasureAWGSweep(*args, **measure_kwargs)
-        self.add_measurement(rsource, inherit_local_coords=False)
+        self.measure = MeasureAWGSweep(*args, **measure_kwargs)
+        self.add_measurement(self.measure, inherit_local_coords=False)
         # imitate reshaping source
-        self.add_coordinates(rsource.get_coordinates())
-        self.add_values(rsource.get_values())
+        self.add_coordinates(self.measure.get_coordinates())
+        self.add_values(self.measure.get_values())
         
     def _measure(self, **kwargs):
         program, rsource = self.get_measurements()
