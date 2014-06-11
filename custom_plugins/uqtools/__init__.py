@@ -11,7 +11,7 @@
 import logging
 for k in ('parameter', 'context', 'progress', 'measurement', 'basics', 
           'buffer', 'process', 'fpga', 'calibrate', 'pulselib', 'awg', 
-          'simulation'):
+          'fsv', 'simulation'):
     if k in locals():
         logging.debug(__name__ + ': reloading {0}'.format(k))
         reload(locals()[k])
@@ -42,6 +42,7 @@ from process import apply_decorator, Apply, Add, Multiply, Divide
 from process import Reshape, Integrate, Accumulate
 from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
 from fpga import AveragedTvModeMeasurement 
+from fsv import FSVTrace, FSVMeasurement as FSVWait
 from calibrate import FittingMeasurement, CalibrateResonator, Minimize, MinimizeIterative
 from simulation import Constant, Function, DatReader
 try:
