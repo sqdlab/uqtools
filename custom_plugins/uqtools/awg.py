@@ -304,11 +304,9 @@ class ProgramAWGSweep(ProgramAWG):
             self._prev_user_kwargss = []
             self._prev_seq_lengths = []
         # evaluate ranges
-        ranges = [r() if callable(r) else r for r in self.ranges]
+        ranges = self.cur_ranges()
         # evaluate pulse function keyword arguments
-        user_kwargs = {}
-        for key, arg in self.pulse_kwargs.iteritems():
-            user_kwargs[key] = arg.get() if hasattr(arg, 'get') else arg
+        user_kwargs = self.cur_kwargs()
         for value in self.values:
             if value.name in user_kwargs:
                 value.set(user_kwargs[value.name])
@@ -347,7 +345,7 @@ class ProgramAWGSweep(ProgramAWG):
         self._data.add_data_point(*self.get_value_values())
 
     def sequence(self, ranges, kwargs):
-        ''' generate a sequence object for the current parameter values '''
+        ''' generate a sequence object for the provided parameter values '''
         # iterate through outer product of all ranges
         seq = MultiAWGSequence()
         for idx, ndidx in enumerate(numpy.ndindex(*[len(r) for r in ranges])):
@@ -358,6 +356,22 @@ class ProgramAWGSweep(ProgramAWG):
             self.pulse_func(seq, idx, **point_kwargs)
             self.marker_func(seq, idx, **point_kwargs)
         return seq
+    
+    # debugging tools
+    def cur_ranges(self):
+        ''' evaluate current culse ranges '''
+        return [r() if callable(r) else r for r in self.ranges]
+    
+    def cur_kwargs(self):
+        ''' evaluate current pulse keyword arguments '''
+        user_kwargs = {}
+        for key, arg in self.pulse_kwargs.iteritems():
+            user_kwargs[key] = arg.get() if hasattr(arg, 'get') else arg
+        return user_kwargs
+        
+    def cur_sequence(self):
+        ''' generate sequence for current ranges and pulse kwargs '''
+        return self.sequence(self.cur_ranges(), self.cur_kwargs())
         
     if 'ptplot_gui' in globals():
         def plot(self, channels=range(4), markers=range(2), pattern=0):
@@ -371,10 +385,8 @@ class ProgramAWGSweep(ProgramAWG):
                 pattern - unknown
             '''
             # evaluate parameters
-            ranges = [r() if callable(r) else r for r in self.ranges]
-            user_kwargs = {}
-            for key, arg in self.pulse_kwargs.iteritems():
-                user_kwargs[key] = arg.get() if hasattr(arg, 'get') else arg
+            ranges = self.cur_ranges()
+            user_kwargs = self.cur_kwargs()
             print 'plotting sequence for parameters:'
             for iteritems in [zip(self.coordinates, ranges), user_kwargs.iteritems()]:
                 for key, arg in iteritems:
@@ -464,7 +476,8 @@ class MultiAWGSweep(Measurement):
         # create AWG programmer
         self.program = ProgramAWGSweep(*args, **program_kwargs)
         self.add_measurement(self.program, inherit_local_coords=False)
-        self.plot = programmer.plot
+        if hasattr(self.program, 'plot'):
+            self.plot = self.program.plot
         # create reshaping source
         self.measure = MeasureAWGSweep(*args, **measure_kwargs)
         self.add_measurement(self.measure, inherit_local_coords=False)
