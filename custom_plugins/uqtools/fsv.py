@@ -6,24 +6,39 @@ from measurement import Measurement, ResultDict
 from parameter import Parameter
 
 class FSVMeasurement(Measurement):
-    def __init__(self, fsv, timeout=None, **kwargs):
+    def __init__(self, fsv, m=None, timeout=None, **kwargs):
         '''
         Start a measurement on a Rohde&Schwarz FSV spectrum analyzer 
         and wait for it to finish.
         
         Input:
             fsv (Instrument): Rohde&Schwarz FSV instrument
+            m (Measurement, optional): nested measurement
             timeout (float): maximum time to wait for the measurement to finish
                 before returning
         '''
         super(FSVMeasurement, self).__init__(**kwargs)
         self.fsv = fsv
         self.timeout = timeout
+        if m is not None:
+            # imitate m
+            self.add_measurement(m)
+            self.add_coordinates(m.get_coordinates())
+            self.add_values(m.get_values())
         
     def _measure(self, **kwargs):
         self._start()
         self._wait()
-        return {}, {}
+        # execute nested measurements if provided
+        ms = self.get_measurements()
+        if len(ms):
+            return ms[0](nested=True, **kwargs)
+        else:
+            return {}, {}
+
+    def _create_data_files(self):
+        ''' never creates data files '''
+        pass
         
     def _start(self):
         self.fsv.sweep_start()
