@@ -172,7 +172,7 @@ class Add(Apply):
                 # handle empty buffer
                 return summands[0]
             else:
-                return numpy.diff(summands[::-1], axis=0)[0,...]
+                return summands[1]-summands[0]
 
         
 class Multiply(Apply):
@@ -511,13 +511,13 @@ class Integrate(Measurement):
             for k in d.iterkeys():
                 d_int[k] = numpy.where(c_mask, d[k], 0.).sum(self._axis)
                 if self.average:
-                    d_int[k] /= numpy.sum(c_mask)
+                    d_int[k] /= float(numpy.sum(c_mask))
         else:
             # integrate over all values
             for k in d.iterkeys():
                 d_int[k] = d[k].sum(self._axis)
                 if self.average:
-                    d_int[k] /= d[k].shape[self._axis]
+                    d_int[k] /= float(d[k].shape[self._axis])
         # remove integration coordinate from returned coordinates
         cs.pop(self._coordinate)
         for k in cs.iterkeys():
