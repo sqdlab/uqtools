@@ -511,7 +511,7 @@ class Measurement(MeasurementBase):
         if not nested:
             self._reporting_dfs(Measurement._reporting_setup)
             self._reporting_bar = MultiProgressBar()
-            self._reporting_timer = gobject.timeout_add(250, self._reporting_timer_cb)
+            self._reporting_timer = gobject.timeout_add(1000, self._reporting_timer_cb)
         try:
             #if not self._reporting_suppress:
             if isinstance(self, ProgressReporting):
