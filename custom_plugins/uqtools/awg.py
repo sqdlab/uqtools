@@ -65,17 +65,21 @@ class ProgramAWG(Measurement):
         logging.info(__name__ + ': programming {0}.'.format(host_file))
         for idx, awg in enumerate(self.awgs):
             #awg.clear_waveforms()
-            host_fullpath = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx), host_file+'.seq')
+            host_path = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx))
+            host_file = host_file+'.seq'
+            host_fullpath = os.path.join(host_path, host_file)
             if os.path.exists(host_fullpath):
-                awg.load_host_sequence(host_fullpath)
+                awg.load_sequence(host_path, host_file)
             else:
                 logging.warning(__name__ + ': no sequence file found for AWG #{0}.'.format(idx))
         if wait:
             # wait for all AWGs to finish loading
             for idx, awg in enumerate(self.awgs):
-                awg.wait()
-                if awg.get_seq_length() != length:
-                    logging.error(__name__ + ': sequence length reported by AWG #{0} differs from the expected value {1}.'.format(idx, length))
+                if hasattr(awg, 'wait'):
+                    awg.wait()
+                if hasattr(awg, 'get_seq_length'):
+                    if awg.get_seq_length() != length:
+                        logging.error(__name__ + ': sequence length reported by AWG #{0} differs from the expected value {1}.'.format(idx, length))
 
     if 'ptplot_gui' in globals():
         def plot(self, channels=range(4), markers=range(2), pattern=0):
