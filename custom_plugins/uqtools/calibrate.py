@@ -350,7 +350,7 @@ class Minimize(Measurement):
                 result.x = (numpy.NaN, numpy.NaN)
                 #raise BreakIteration
             # save fit result in local values
-            results = (result.x[0], result.x[1], result.fun[0], 1 if result.success else 0)
+            results = (result.x[0], result.x[1], result.fun, 1 if result.success else 0)
         else:
             # save global minimum of data points in local values
             results = (xmin, ymin, zmin, 1)
