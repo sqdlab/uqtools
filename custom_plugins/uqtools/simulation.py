@@ -2,6 +2,7 @@ import numpy
 import re
 import logging
 import csv
+import copy
 
 from parameter import Parameter
 from basics import coordinate_concat
@@ -86,7 +87,6 @@ class DatReader(Measurement):
     '''
     Simple .dat file reader.
     Returns the entire contents of a file in one go.
-    Implements the Buffer interface.
     '''
     def __init__(self, filepath, **kwargs):
         '''
@@ -150,21 +150,36 @@ class DatReader(Measurement):
             
         # read data
         #data = numpy.loadtxt(filepath, unpack=True, ndmin=2)
-        with open(filepath, 'r') as f:
-            reader = csv.reader(f, dialect='excel-tab')
-            data = numpy.array([l for l in reader if len(l) and (l[0][0] != '#')], dtype=numpy.float64).transpose()
-        
-        if not data.shape[1]:
+        #with open(filepath, 'r') as f:
+            #reader = csv.reader(f, dialect='excel-tab')
+            #data = numpy.array([l for l in reader if len(l) and (l[0][0] != '#')], dtype=numpy.float64).transpose()
+        data = numpy.loadtxt(filepath, unpack=False)
+        if not data.shape[0]:
             # file is empty
             logging.warning(__name__+': no data found in file "{0}".'.format(filepath))
-        if data.shape[0] != len(columns):
+        if data.shape[1] != len(columns):
             logging.warning(__name__+': number of columns does not match the '+
                 'definition in the file header of file #{0}.'.format(filepath))
+        # reassemble complex columns
+        data_cols = []
+        for col_idx, column in enumerate(columns):
+            if ((col_idx < len(columns)) and 
+                column['name'].startswith('real(') and 
+                column['name'].endswith(')') and
+                columns[col_idx+1]['name'].startswith('imag(') and 
+                columns[col_idx+1]['name'].endswith(')') and
+                (columns['name'][5:-1] == columns[col_idx+1]['name'][5:-1])
+            ):
+                columns.pop(col_idx+1)
+                column['name'] = column['name'][5:-1]
+                data_cols.append(data[:, col_idx]+1j*data[:, col_idx+1])
+            else:
+                data_cols.append(data[:, col_idx])
         # separate coordinate from value dimensions
         coord_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='coordinate']
         value_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='value']
-        coords = ResultDict(zip([Parameter(**c) for _, c in coord_dims], [data[i] for i, _ in coord_dims]))
-        values = ResultDict(zip([Parameter(**c) for _, c in value_dims], [data[i] for i, _ in value_dims]))
+        coords = ResultDict(zip([Parameter(**c) for _, c in coord_dims], [data_cols[i] for i, _ in coord_dims]))
+        values = ResultDict(zip([Parameter(**c) for _, c in value_dims], [data_cols[i] for i, _ in value_dims]))
         # reshape data
         shape, order = self._detect_dimensions_size(coords)
         if (shape is not None) and (order is not None):
@@ -248,14 +263,10 @@ class DatReader(Measurement):
             logging.warning(__name__+': DatReader does not honour inherited coordinates.')
             
     def _create_data_files(self):
-        ''' Sweep does never create data files '''
+        ''' DatReader never creates data files '''
         pass
     
     def __call__(self, **kwargs):
         ''' return data loaded from file '''
-        return self._cs, self._d            
-    
-    def get_data(self):
-        ''' return data loaded from file '''
-        return self._cs, self._d
+        return copy.copy(self._cs), copy.copy(self._d)            
     
