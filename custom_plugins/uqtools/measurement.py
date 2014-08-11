@@ -5,6 +5,7 @@ from functools import wraps
 from collections import OrderedDict
 import string
 import unicodedata
+import logging
 
 import qt
 from data import Data
@@ -123,6 +124,8 @@ class MeasurementBase(object):
     _file_name_generator = DateTimeGenerator()
     # pass name as parent name to children
     _propagate_name = False
+    # what is output to the local log file?
+    log_level = logging.INFO
     
     def __init__(self, name=None, data_directory='', data_save=True, context=None):
         '''
@@ -430,6 +433,16 @@ class MeasurementBase(object):
             self._teardown()
         if not self._setup_done:
             self._setup()
+        # redirect log output to the data directory
+        if not nested:
+            if not(os.path.exists(self.get_data_directory())):
+                os.mkdir(self.get_data_directory())
+            local_log_fn = os.path.join(self.get_data_directory(), 'qtlab.log')
+            local_log = logging.FileHandler(local_log_fn)
+            local_log.setLevel(self.log_level)
+            local_log_format = '%(asctime)s %(levelname)-8s: %(message)s (%(filename)s:%(lineno)d)'
+            local_log.setFormatter(logging.Formatter(local_log_format))
+            logging.getLogger('').addHandler(local_log)
         # tell qtlab to stop background tasks and enable stop button
         qt.mstart()
         # measure
@@ -439,6 +452,7 @@ class MeasurementBase(object):
             # close data files etc if this is a top-level measurement
             if not nested:
                 self._teardown()
+                logging.getLogger('').removeHandler(local_log)
             qt.mend()
         return result
     
@@ -511,12 +525,26 @@ class MeasurementBase(object):
 
 
 class Measurement(MeasurementBase):
+    progress_interval = 1.
+    '''
+    (float) time between progress bar updates in seconds,
+    None disables progress bar display
+    '''
+    
     def __call__(self, nested=False, *args, **kwargs):
+        '''
+        Input:
+            nested (bool) - indicates that the measurement is executed as a child
+                of another measurement. used internally only.
+            remaining arguments are passed to _measure
+        '''
         # if this is a top-level measurement, it is responsible for generating the progress indicator
         if not nested:
             self._reporting_dfs(Measurement._reporting_setup)
             self._reporting_bar = MultiProgressBar()
-            self._reporting_timer = gobject.timeout_add(1000, self._reporting_timer_cb)
+            progress_interval = Measurement.progress_interval
+            if progress_interval is not None:
+                self._reporting_timer = gobject.timeout_add(int(1e3*progress_interval), self._reporting_timer_cb)
         try:
             #if not self._reporting_suppress:
             if isinstance(self, ProgressReporting):
@@ -526,11 +554,26 @@ class Measurement(MeasurementBase):
             if isinstance(self, ProgressReporting):
                 self._reporting_finish()
         finally:
-            if not nested:
+            if (not nested) and (progress_interval is not None):
                 gobject.source_remove(self._reporting_timer)
-        if not nested:
-            self._reporting_timer_cb()
+                self._reporting_timer_cb()
         return result
+
+    @staticmethod
+    def enable_progress_bar(interval = 1.):
+        '''
+        Enable progress bar display
+        
+        Input:
+            interval (float) - time between progress bar updates in seconds,
+                None disables progress bar display
+        '''
+        Measurement.progress_interval = interval
+        
+    @staticmethod
+    def disable_progress_bar():
+        ''' Disable progress bar display '''
+        Measurement.progress_interval = None
 
     def _reporting_setup(self):
         ''' attach SweepState object to self '''
