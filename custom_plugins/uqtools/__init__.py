@@ -10,8 +10,8 @@
 # reload sub-modules in fixed order
 import logging
 for k in ('parameter', 'context', 'progress', 'measurement', 'basics', 
-          'buffer', 'process', 'fpga', 'calibrate', 'pulselib', 'awg', 
-          'fsv', 'simulation'):
+          'buffer', 'process', 'fpga', 'simulation', 'calibrate', 'pulselib', 'awg', 
+          'fsv'):
     if k in locals():
         logging.debug(__name__ + ': reloading {0}'.format(k))
         reload(locals()[k])
@@ -44,6 +44,7 @@ from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
 from fpga import AveragedTvModeMeasurement 
 from fsv import FSVTrace, FSVMeasurement as FSVWait
 from calibrate import FittingMeasurement, CalibrateResonator, Minimize, MinimizeIterative
+from calibrate import Interpolate
 from simulation import Constant, Function, DatReader
 try:
     import pulselib

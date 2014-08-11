@@ -2,11 +2,13 @@ import numpy
 import logging
 import scipy.interpolate
 import scipy.optimize
+import time
 
 from parameter import Parameter
 from measurement import Measurement, ResultDict
 from basics import Sweep, ContinueIteration
 from progress import ProgressReporting
+from simulation import DatReader
 
 class FittingMeasurement(ProgressReporting, Measurement):
     '''
@@ -110,11 +112,12 @@ class FittingMeasurement(ProgressReporting, Measurement):
         # test for data
         if not len(xs):
             # short-cut if no data was measured
-            logging.warning(__name__ + ': empty data set was returned by source') 
-            if isinstance(self.fail_func, Exception):
-                raise self.fail_func#('empty data set was returned by source.')
-            elif self.fail_func is not None:
-                self.fail_func()
+            logging.warning(__name__ + ': empty data set was returned by source')
+            if self.fail_func is not None: 
+                if issubclass(self.fail_func, Exception):
+                    raise self.fail_func#('empty data set was returned by source.')
+                else:
+                    self.fail_func()
             p_opts = ()
             p_covs = ()
         else:
@@ -170,10 +173,11 @@ class FittingMeasurement(ProgressReporting, Measurement):
                 self._reporting_next()
         # raise ContinueIteration only if all fits have failed or zero parameter sets were returned
         if not numpy.any(return_buf[self.values['fit_ok']]):
-            if isinstance(self.fail_func, Exception):
-                raise self.fail_func#('fit failed.')
-            elif self.fail_func is not None:
-                self.fail_func()
+            if self.fail_func is not None: 
+                if issubclass(self.fail_func, Exception):
+                    raise self.fail_func#('empty data set was returned by source.')
+                else:
+                    self.fail_func()
         # set progress bar to 100% 
         self._reporting_finish()
         # return fit result
@@ -443,3 +447,194 @@ class MinimizeIterative(Sweep):
     
     def _range_func1(self):
         return self._range_func(1)
+    
+class Interpolate(Measurement):
+    '''
+    Interpolate between calibration points
+    
+    Takes a vector of independent variables (the calibration point) that have 
+    an effect on the outcome of the calibration routine.
+    
+    Future improvements:
+    Tests if the calibration point is within the convex hull of all previously
+    calibrated points that are no further than a given distance.   
+    '''
+    
+    def __init__(self, indeps, deps, calibrator=None, test=None, cal_file=None, 
+                 interpolator=scipy.interpolate.LinearNDInterpolator, 
+                 fail_func=ContinueIteration, p_out={}, **kwargs):
+        '''
+        Construct an empty interpolator.
+        
+        Input:
+            indeps (list of Parameter) - independent parameters,
+                e.g. frequency, power for mixer leakage
+            deps (list of Parameter) - dependent parameters,
+                e.g. I and Q offset voltages for mixer leakage
+            calibrator (Measurement) - measurement that performs a calibration
+                must return at least the parameters specified in deps 
+            test (callable) - test interpolated calibration. If 
+                test(indep_dict, dep_dict) returns False, the interpolation is 
+                taken to be inaccurate and calibrator is called at the current 
+                parameter point.
+            cal_file (string) - calibration data is initially loaded from 
+                and continuously saved to this file
+            interpolator (class or object factory) - for each dependent value dep, 
+                interpolator(indeps_array, dep_array) is called to construct
+                an object that produces the interpolated value of dep when called 
+                with (indeps_array).
+                Typical inputs are
+                    scipy.optimize.NearestNDInterpolator for arbitrary-dimensional
+                        nearest-neighbour interpolation
+                    scipy.optimize.LinearNDInterpolator for arbitrary-dimensional
+                        linear interpolation
+                    scipy.optimize.CloughTocher2DInterpolator for two-dimensional
+                        piecewise cubic interpolation
+                    scipy.UnivariateSpline for one-dimensional spline interpolation
+                    etc.
+            fail_func (Exception or callable) - Exception to raise or function to call
+                when the interpolation fails. Defaults to ContinueIteration.
+            p_out (dict) - optional parameter outputs, format
+                {output Parameter:dep or dep.name}
+            additional keyword arguments are passed to Measurement
+        '''
+        super(Interpolate, self).__init__(**kwargs)
+        self.add_coordinates(indeps)
+        self.add_values(deps)
+        #self.add_values(Parameter('timestamp', get_func=time.time))
+        if calibrator is not None:
+            self.add_measurement(calibrator)
+        if isinstance(test, Measurement):
+            self.add_measurement(test)
+        self.calibrator = calibrator
+        self.test = test if test is not None else lambda *args, **kwargs: True
+        self.cal_file = cal_file
+        self.interpolator = interpolator
+        self.fail_func = fail_func
+        self.p_out = p_out
+        # load previous calibration
+        if cal_file is not None:
+            self._load(cal_file)
+            self._create_interpolators()
+        else:
+            raise ValueError('cal_file must be specified.')
+    
+    def _measure(self, **kwargs):
+        # determine values of independent variables
+        indep_dict = ResultDict(zip(self.get_coordinates(), self.get_coordinate_values()))
+        # determine values of the dependent variables
+        for step in ['interpolate', 'calibrate', 'fail']:
+            if step=='interpolate':
+                # always try interpolation first
+                dep_dict = self.interpolate()
+            elif step=='calibrate':
+                # if interpolation did not give any or an insufficient result,
+                # run the calibration routine
+                if self.calibrator is None:
+                    continue
+                dep_dict = self.calibrate()
+            elif step=='fail':
+                # fail if the result is still not good enough
+                dep_dict = ResultDict([(v, numpy.NaN) for v in self.get_values()])
+                self._fail()
+                break
+            if numpy.any(numpy.isnan(dep_dict.values())):
+                continue
+            # export deps to instrument parameters and check they give an 
+            # acceptable result
+            self._set_deps(dep_dict)
+            if self.test(indep_dict, dep_dict):
+                if step=='calibrate':
+                    # append new calibration point to interpolators
+                    table_row = self.table.row
+                    for dict_ in (indep_dict, dep_dict):
+                        for k, v in dict_.iteritems():
+                            table_row[k] = v
+                    table_row.append()
+                    self.table.flush()
+                    self._update_interpolators()
+                break
+        # save calibration point to file
+        self._data.add_data_point(indep_dict.values()+dep_dict.values())
+        # return calibration point
+        return (indep_dict, dep_dict)
+    
+    def _fail(self):
+        ''' notify the caller that an operation failed '''
+        if self.fail_func is not None: 
+            if issubclass(self.fail_func, Exception):
+                raise self.fail_func
+            else:
+                self.fail_func()
+                
+    def _set_deps(self, dep_dict):
+        ''' set values of dependent variables (including p_out) '''
+        # save to: internal parameters
+        for p, v in dep_dict.iteritems():
+            p.set(v)
+        # save to: additional outputs
+        for p, k in self.p_out.iteritems():
+            p.set(dep_dict[k])
+        
+    def interpolate(self):
+        ''' calculate interpolated values at the current coordinates '''
+        indep_values = self.get_coordinate_values(parent=False)
+        if None in indep_values:
+            raise ValueError('Not all independent coordinates have a value assigned.')
+        deps = self.get_values()
+        dep_values = [self._interpolators[dep](*indep_values) for dep in deps]
+        return ResultDict(zip(deps, dep_values))
+        
+    def calibrate(self):
+        ''' perform a calibration at the current coordinates '''
+        if self.calibrator is None:
+            raise RuntimeError('No calibrator provided.')
+        # run calibration routine 
+        _, d = self.calibrator(nested=True)
+        # return only the relevant values
+        return ResultDict([(v, d[v]) for v in self.get_values()])
+    
+    def _create_interpolators(self):
+        ''' generate an interpolator object for every dependent parameter '''
+        indep_names = [c.name for c in self.get_coordinates(parent=False)]
+        indep_arrs = [getattr(self.table.cols, indep_name) for indep_name in indep_names]
+        indep_arr = numpy.vstack(indep_arrs).transpose()
+        self._interpolators = {}
+        for dep in self.get_values():
+            dep_arr = getattr(self.table.cols, dep.name)
+            self._interpolators[dep] = self.interpolator(indep_arr, dep_arr)
+    
+    def _update_interpolators(self):
+        self._create_interpolators()
+        
+    def _load(self, fn):
+        ''' load a (CSV) calibration data file from disk '''
+        # load data from disk
+        df_cs, df_ds = DatReader(fn)()
+        # check if all variables are present
+        for c in self.get_coordinates(parent=False):
+            if c.name not in [df_c.name for df_c in df_cs.keys()]:
+                raise ValueError('Coordinate {0} is missing in the calibration file.'.format(c.name))
+        for c in self.get_values():
+            if c.name not in [df_c.name for df_c in df_ds.keys()]:
+                raise ValueError('Value {0} is missing in the calibration file.'.format(c.name))
+        # create a pytables-like object hierarchy
+        class DummyTable:
+            def flush(self):
+                pass
+        class DummyCols:
+            pass
+        class DummyRow(dict):
+            def append(self_):
+                for k,v in self_.iteritems():
+                    getattr(self.table.cols, k.name).append(v)
+        self.table = DummyTable()
+        self.table.row = DummyRow()
+        self.table.cols = DummyCols()
+        for c, cv in df_cs.iteritems():
+            setattr(self.table.cols, c.name, list(cv.ravel()))
+        for c, dv in df_ds.iteritems():
+            setattr(self.table.cols, c.name, list(dv.ravel()))
+    
+    def _save(self, fn):
+        pass
