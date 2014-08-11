@@ -62,11 +62,12 @@ class ProgramAWG(Measurement):
         '''
         upload sequence to the AWGs
         '''
+        host_file += '.seq'
         logging.info(__name__ + ': programming {0}.'.format(host_file))
         for idx, awg in enumerate(self.awgs):
-            #awg.clear_waveforms()
+            if hasattr(awg, 'clear_waveforms'):
+                awg.clear_waveforms()
             host_path = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx))
-            host_file = host_file+'.seq'
             host_fullpath = os.path.join(host_path, host_file)
             if os.path.exists(host_fullpath):
                 awg.load_sequence(host_path, host_file)
