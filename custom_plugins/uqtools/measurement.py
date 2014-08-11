@@ -304,33 +304,38 @@ class MeasurementBase(object):
             may be replaced in subclasses if a more complex file handling is desired.
         '''
         # create own data files if any value dimensions are present
+        self._data_file_path = None
         if len(self.get_values()):
-            self._data = self._create_data_file()
-            self._data_file_path = self._data.get_filepath()
+            if self._data_save:
+                self._data = self._create_data_file()
+                self._data_file_path = self._data.get_filepath()
+            else:
+                self._data = self._create_data_dummy()
+                
     
-    def _create_data_file(self, name = None):
+    def _create_data_dummy(self, name=None):
+        '''
+            create a dummy data object
+        '''
+        class DummyData:
+            ''' does nothing '''
+            def add_data_point(self, *args, **kwargs):
+                pass
+        return DummyData()
+        
+    def _create_data_file(self, name=None, parent=True):
         '''
             create an empty data file
             if self._data_save is False, it returns a dummy object
             
             Input:
-
-                name - suffix for file name, replaces self.name if set
+                name (str) - suffix for file name, replaces self.name if set
+                parent (bool) - 
             Return:
                 a data.Data object or something with a similar interface
         '''
-        # create dummy data object if self._data_save is not set
-        if not self._data_save:
-            class DummyData:
-                ''' does nothing '''
-                def add_data_point(self, *args, **kwargs):
-                    pass
-                def get_filepath(self):
-                    pass
-            return DummyData()
-        
         # create empty data file object and add dimensions
-        df = Data(name = self.name)
+        df = Data(name=self.name)
         for add_dimension, dimensions in [ 
             (df.add_coordinate, self.get_coordinates(parent=True)),
             (df.add_value, self.get_values()) 
