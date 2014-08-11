@@ -39,7 +39,7 @@ class Parameter(object):
             self.set_func(value)
         self._value = value
     
-    def get(self):
+    def get(self,  **kwargs):
         ''' return result of get_func or stored value if no get_func was defined '''
         if(self.get_func):
             return self.get_func()
