@@ -112,6 +112,9 @@ class DatReader(Measurement):
         Input:
             filepath - path to the file to read
         '''
+        # support file:// urls
+        if filepath.startswith('file:///'):
+            filepath = filepath[8:]
         # parse comments
         comments = []
         column = None
@@ -153,7 +156,8 @@ class DatReader(Measurement):
         #with open(filepath, 'r') as f:
             #reader = csv.reader(f, dialect='excel-tab')
             #data = numpy.array([l for l in reader if len(l) and (l[0][0] != '#')], dtype=numpy.float64).transpose()
-        data = numpy.loadtxt(filepath, unpack=False)
+        with open(filepath, 'r') as f:
+            data = numpy.loadtxt(f, unpack=False)
         if not data.shape[0]:
             # file is empty
             logging.warning(__name__+': no data found in file "{0}".'.format(filepath))
@@ -168,7 +172,7 @@ class DatReader(Measurement):
                 column['name'].endswith(')') and
                 columns[col_idx+1]['name'].startswith('imag(') and 
                 columns[col_idx+1]['name'].endswith(')') and
-                (columns['name'][5:-1] == columns[col_idx+1]['name'][5:-1])
+                (column['name'][5:-1] == columns[col_idx+1]['name'][5:-1])
             ):
                 columns.pop(col_idx+1)
                 column['name'] = column['name'][5:-1]
