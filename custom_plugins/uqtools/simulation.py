@@ -213,29 +213,29 @@ class DatReader(Measurement):
         # sort periods in descending order
         periods = numpy.sort(periods, kind='mergesort')[::-1]
     
-        # assume two coordinate columns with the same period are dependent.
-        # export only the last one found in the file 
-        for idx in range(1, len(periods)):
-            if periods[idx] == periods[idx-1]:
-                logging.info('coordinates with equal change periods found in file.')
-                periods[idx] = 1
         # calculate and block sizes for reshape
         nrows = len(coords.values()[0])
         sizes = []
-        for period in periods:
-            # divide file into blocks, blocks into subblocks and so on
-            size = 1.*nrows/numpy.prod(sizes)/period
-            # check if shape is ok
-            if(int(size) != size):
-                if (numpy.prod(sizes)==1):
-                    logging.warning('last block of the data file is incomplete. discarding.')
-                    nrows -= nrows % period
-                else:
-                    # additional checks are needed to make sure the data is rectangular. 
-                    # this just covers the cases where reshape would fail
-                    logging.error('data is not of a rectangular shape')
-                    return None, None
-            sizes.append(int(size))
+        for idx, period in enumerate(periods):
+            # assume two coordinate columns with the same period are dependent.
+            # export only the last one found in the file 
+            if idx and (period==periods[idx-1]):
+                logging.info('coordinates with equal change periods found in file.')
+                sizes.append(1)
+            else:
+                # divide file into blocks, blocks into subblocks and so on
+                size = 1.*nrows/numpy.prod(sizes)/period
+                # check if shape is ok
+                if(int(size) != size):
+                    if (numpy.prod(sizes)==1):
+                        logging.warning('last block of the data file is incomplete. discarding.')
+                        nrows -= nrows % period
+                    else:
+                        # additional checks are needed to make sure the data is rectangular. 
+                        # this just covers the cases where reshape would fail
+                        logging.error('data is not of a rectangular shape')
+                        return None, None
+                sizes.append(int(size))
         
         # store metadata
         return sizes, undodims
