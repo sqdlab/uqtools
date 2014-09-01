@@ -484,11 +484,11 @@ class Interpolate(Measurement):
                 an object that produces the interpolated value of dep when called 
                 with (indeps_array).
                 Typical inputs are
-                    scipy.optimize.NearestNDInterpolator for arbitrary-dimensional
+                    scipy.interpolate.NearestNDInterpolator for arbitrary-dimensional
                         nearest-neighbour interpolation
-                    scipy.optimize.LinearNDInterpolator for arbitrary-dimensional
+                    scipy.interpolate.LinearNDInterpolator for arbitrary-dimensional
                         linear interpolation
-                    scipy.optimize.CloughTocher2DInterpolator for two-dimensional
+                    scipy.interpolate.CloughTocher2DInterpolator for two-dimensional
                         piecewise cubic interpolation
                     scipy.UnivariateSpline for one-dimensional spline interpolation
                     etc.
@@ -555,7 +555,7 @@ class Interpolate(Measurement):
                     self._update_interpolators()
                 break
         # save calibration point to file
-        self._data.add_data_point(indep_dict.values()+dep_dict.values())
+        self._data.add_data_point(*(indep_dict.values()+dep_dict.values()))
         # return calibration point
         return (indep_dict, dep_dict)
     
