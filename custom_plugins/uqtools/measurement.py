@@ -316,6 +316,10 @@ class MeasurementBase(object):
                 self._data = self._create_data_dummy()
                 
     
+    def _create_data_directory(self):
+        if not(os.path.exists(self.get_data_directory())):
+            os.makedirs(self.get_data_directory())
+
     def _create_data_dummy(self, name=None):
         '''
             create a dummy data object
@@ -422,10 +426,14 @@ class MeasurementBase(object):
         return decorated_function
     
     @_nested_context_decorator
-    def __call__(self, nested=False, *args, **kwargs):
+    def __call__(self, comment=None, nested=False, *args, **kwargs):
         '''
             perform a measurement.
             perform setup, call self._measure, perform cleanup and return output of self._measure
+            
+            Input:
+                comment (str, optional) - comment to be saved in a separate file 
+                in the measurment directory.
         '''
         # initialize measurement, create data files etc.
         if self._setup_done and not nested:
@@ -435,14 +443,18 @@ class MeasurementBase(object):
             self._setup()
         # redirect log output to the data directory
         if not nested:
-            if not(os.path.exists(self.get_data_directory())):
-                os.mkdir(self.get_data_directory())
+            self._create_data_directory()
             local_log_fn = os.path.join(self.get_data_directory(), 'qtlab.log')
             local_log = logging.FileHandler(local_log_fn)
             local_log.setLevel(self.log_level)
             local_log_format = '%(asctime)s %(levelname)-8s: %(message)s (%(filename)s:%(lineno)d)'
             local_log.setFormatter(logging.Formatter(local_log_format))
             logging.getLogger('').addHandler(local_log)
+        # write comment to file
+        if comment is not None:
+            self._create_data_directory()
+            with open(os.path.join(self.get_data_directory(), 'comment.txt'), 'w+') as cfile:
+                cfile.write(comment)
         # tell qtlab to stop background tasks and enable stop button
         qt.mstart()
         # measure
@@ -531,6 +543,7 @@ class Measurement(MeasurementBase):
     None disables progress bar display
     '''
     
+    @wraps(MeasurementBase.__call__)
     def __call__(self, nested=False, *args, **kwargs):
         '''
         Input:
