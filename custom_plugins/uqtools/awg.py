@@ -83,7 +83,7 @@ class ProgramAWG(Measurement):
                         logging.error(__name__ + ': sequence length reported by AWG #{0} differs from the expected value {1}.'.format(idx, length))
 
     if 'ptplot_gui' in globals():
-        def plot(self, channels=range(4), markers=range(2), pattern=0):
+        def plot(self, channels=None, markers=None, pattern=0):
             '''
             Plot the sampled sequence.
             
@@ -186,7 +186,7 @@ class ProgramAWGParametric(ProgramAWG):
         self._program(host_dir, host_file(idx), wait, self._prev_seq_lengths[idx])
 
     if 'ptplot_gui' in globals():
-        def plot(self, channels=range(4), markers=range(2), pattern=0):
+        def plot(self, channels=None, markers=None, pattern=0):
             '''
             Plot current sequence.
             
@@ -379,7 +379,7 @@ class ProgramAWGSweep(ProgramAWG):
         return self.sequence(self.cur_ranges(), self.cur_kwargs())
         
     if 'ptplot_gui' in globals():
-        def plot(self, channels=range(4), markers=range(2), pattern=0):
+        def plot(self, channels=None, markers=None, pattern=0):
             '''
             Plot current sequence.
             
