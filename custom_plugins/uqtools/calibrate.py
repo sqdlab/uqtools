@@ -15,7 +15,7 @@ class FittingMeasurement(ProgressReporting, Measurement):
         Generic fitting of one-dimensional data via the fitting library
     '''
     
-    def __init__(self, source, fitter, measurements=None, indep=None, dep=None, test=None, fail_func=None, popt_out=None, **kwargs):
+    def __init__(self, source, fitter, measurements=None, indep=None, dep=None, test=None, fail_func=ContinueIteration, popt_out=None, **kwargs):
         '''
         Generic fitting of one-dimensional data.
         
@@ -32,8 +32,7 @@ class FittingMeasurement(ProgressReporting, Measurement):
                 if test(xs, ys, p_opt, p_std, p_est.values()) returns False, the fit
                 is taken to be unsuccessful.
             fail_func (Exception or callable) - Exception to raise or function to call
-                when the fit fails. Defaults to None if measurements is not None,
-                ContinueIteration otherwise.
+                when the fit fails. Ignored if measurements is not None.
             popt_out (dict of Parameter:str) - After a successful fit, each
                 Parameter object present in popt is assigned the associated
                 optimized parameter.
@@ -58,10 +57,9 @@ class FittingMeasurement(ProgressReporting, Measurement):
             self.add_coordinates(Parameter('fit_id'))
         # fail_func defaults to ContinueIteration if no nested measurements are given
         self.fail_func = fail_func
-        if (fail_func is None) and (measurements is None):
-            self.fail_func = ContinueIteration
         # add measurements
         if measurements is not None:
+            self.fail_func = None
             for m in measurements if numpy.iterable(measurements) else (measurements,):
                 self.add_measurement(m)
         # test function
