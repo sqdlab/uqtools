@@ -511,7 +511,7 @@ class Integrate(Measurement):
             for k in d.iterkeys():
                 d_int[k] = numpy.where(c_mask, d[k], 0.).sum(self._axis)
                 if self.average:
-                    d_int[k] /= float(numpy.sum(c_mask))
+                    d_int[k] /= c_mask.sum(self._axis, dtype=float)
         else:
             # integrate over all values
             for k in d.iterkeys():
