@@ -48,6 +48,9 @@ class SimpleContextManager(object):
             device, args = parameter
             if self._restore and hasattr(device, 'get'):
                 self._values[index] = device.get(*args[:-1])
+            # call get on all arguments that support it
+            args = [arg.get() if hasattr(arg, 'get') else arg 
+                    for arg in args]
             if self._values[index] != args[-1]:
                 device.set(*args)
         
