@@ -1,6 +1,7 @@
 import logging
 import os
 import numpy
+from collections import OrderedDict
 
 from parameter import Parameter
 from measurement import Measurement
@@ -424,13 +425,17 @@ def MeasureAWGSweep(*args, **kwargs):
     # apply default name
     name = kwargs.pop('name', 'MeasureAWGSweep')
     # source may be in args or kwargs
-    source = args[-1] if len(args)%2 else kwargs.pop('source')
+    if len(args)%2:
+        source = args[-1]
+        args = args[:-1]
+    else:
+        source = kwargs.pop('source')
     # remove segment
     segment = source.coordinates['segment']
     # and replace it by the ci
     coords = [Parameter(name=c) for c in args[::2]]
     ranges = list(args[1::2])
-    ranges_ins = dict(zip(coords, ranges))
+    ranges_ins = OrderedDict(zip(coords, ranges))
     return Reshape(source, coords_del=[segment], ranges_ins=ranges_ins, 
                    name=name, **kwargs)
 
@@ -469,7 +474,7 @@ class MultiAWGSweep(Measurement):
         if len(args)%2:
             measure_kwargs['source'] = args[-1]
             args = args[:-1]
-        for key in ('source',):
+        for key in ('source','context'):
             if key in kwargs:
                 measure_kwargs[key] = kwargs.pop(key)
         # build name from sweep coordinates
