@@ -301,6 +301,12 @@ class ProgramAWGSweep(ProgramAWG):
                 has_constants = True
                 arg_str = repr(arg).replace('\n', '\n#\t\t')
                 self._data.add_comment('\t{0}: {1}'.format(key, arg_str))
+        # store fixed ranges as comments
+        for c, rf in zip(self.coords, self.ranges):
+            if not callable(rf):
+                has_constants = True
+                arg_str = repr(rf).replace('\n', '\n#\t\t')
+                self._data.add_comment('\t{0}: {1}'.format(c, arg_str))
         if not has_constants:
             self._data.add_comment('\tNone')
 
