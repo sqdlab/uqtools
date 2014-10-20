@@ -64,8 +64,12 @@ class ProgramAWG(Measurement):
         upload sequence to the AWGs
         '''
         host_file += '.seq'
-        logging.info(__name__ + ': programming {0}.'.format(host_file))
+        logging.info(__name__ + ': programming awgs.')
         for idx, awg in enumerate(self.awgs):
+            if awg is None:
+                logging.info(__name__+': programming of awg #{0:d} skipped.'.format(idx))
+            else:
+                logging.info(__name__+': programming awg #{0:d} with file {0:s}'.format(idx, host_file))
             if hasattr(awg, 'clear_waveforms'):
                 awg.clear_waveforms()
             host_path = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx))
