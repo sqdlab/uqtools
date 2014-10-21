@@ -595,7 +595,10 @@ class Measurement(MeasurementBase):
 
     def _reporting_timer_cb(self):
         ''' output progress bars '''
-        IPython.display.clear_output()
+        if IPython.version_info > (2,1):
+            IPython.display.clear_output(wait=True)
+        else:
+            IPython.display.clear_output()
         state_list = self._reporting_dfs(lambda obj: obj._reporting_state)
         IPython.display.display(IPython.display.HTML(self._reporting_bar.format_html(state_list)))
         #IPython.display.publish_display_data('ProgressReporting', {
