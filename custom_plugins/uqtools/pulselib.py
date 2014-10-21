@@ -25,7 +25,8 @@ def default_marker_func(seq, idx, **kwargs):
 
 def zero_pulse_func(seq, idx, chpair, length=100e-9, separation=0, **kwargs):
     ''' add a zero amplitude pulse. '''
-    seq.append_pulses([Pulse(ZeroPulse)(length=length, separation=separation, **kwargs)], chpair=chpair)
+    for ch in chpair if not numpy.isscalar(chpair) else (chpair,):
+        seq.append_pulses([Pulse(ZeroPulse)(length=length, separation=separation, **kwargs)], chpair=ch)
 
 def seq_rabi(chpair, pulse_shape=None, **kwargs):
     '''
