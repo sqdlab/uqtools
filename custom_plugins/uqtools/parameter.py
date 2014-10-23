@@ -11,7 +11,7 @@ class Parameter(object):
         additional properties like the parameter name can be automatically added to new data files
         created by nested measurements. 
     '''
-    def __init__(self, name, set_func=None, get_func=None, value=None, dtype=None, **info):
+    def __init__(self, name, set_func=None, get_func=None, value=None, dtype=None, **options):
         '''
             initialize parameter.
             
@@ -31,7 +31,7 @@ class Parameter(object):
         else:
             self._value = None
         self.dtype = dtype
-        self.info = info
+        self.options = options
     
     def set(self, value):
         ''' store value and call set_func if defined '''
