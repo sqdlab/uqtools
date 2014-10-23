@@ -69,7 +69,7 @@ class ProgramAWG(Measurement):
             if awg is None:
                 logging.info(__name__+': programming of awg #{0:d} skipped.'.format(idx))
             else:
-                logging.info(__name__+': programming awg #{0:d} with file {0:s}'.format(idx, host_file))
+                logging.info(__name__+': programming awg #{0:d} with file {1:s}'.format(idx, host_file))
             if hasattr(awg, 'clear_waveforms'):
                 awg.clear_waveforms()
             host_path = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx))
@@ -126,7 +126,6 @@ class ProgramAWGParametric(ProgramAWG):
 
         self._prev_seq_kwargss = []
         self._prev_seq_lengths = []
-        self._host_dir = None
 
         # add function arguments as parameters
         for key, arg in seq_kwargs.iteritems():
@@ -137,6 +136,7 @@ class ProgramAWGParametric(ProgramAWG):
     def _setup(self):
         # create data files etc.
         super(ProgramAWG, self)._setup()
+        self._host_dir = self.get_data_directory()
         # store fixed parameters as comments
         self._data.add_comment('Constant sequence arguments:')
         has_constants = False
@@ -281,7 +281,6 @@ class ProgramAWGSweep(ProgramAWG):
         self._prev_rangess = []
         self._prev_user_kwargss = []
         self._prev_seq_lengths = []
-        self._host_dir = None
         # add variable pulse and marker function arguments as parameters
         # sweep ranges are stored as comments to save space 
         # (they will show up in the measured data files anyway)
@@ -293,6 +292,7 @@ class ProgramAWGSweep(ProgramAWG):
     def _setup(self):
         # create data files etc.
         super(ProgramAWG, self)._setup()
+        self._host_dir = self.get_data_directory()
         # store fixed parameters as comments
         self._data.add_comment('Constant sequence arguments:')
         has_constants = False
