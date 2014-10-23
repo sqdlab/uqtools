@@ -202,17 +202,23 @@ class MeasurementBase(object):
         self.values = ParameterList()
         self.add_values(dimensions)
     
+    def _is_parameter(self, dimension):
+        ''' check if dimension is compatible with Parameter '''
+        return (hasattr(dimension, 'get') and
+                hasattr(dimension, 'name') and
+                hasattr(dimension, 'iscomplex'))
+        
     def add_coordinates(self, dimension):
         ''' add one or more Parameter objects to the local coordinates list '''
         dimension = make_iterable(dimension)
-        if not numpy.all([type(d).__name__ == 'Parameter' for d in dimension]):
+        if not numpy.all([self._is_parameter(d) for d in dimension]):
             raise TypeError('coordinates must be objects of type Parameter.')
         self.coordinates.extend(dimension)
     
     def add_values(self, dimension):
         ''' add one or more Parameter objects to the values list '''
         dimension = make_iterable(dimension)
-        if not numpy.all([type(d).__name__ == 'Parameter' for d in dimension]):
+        if not numpy.all([self._is_parameter(d) for d in dimension]):
             raise TypeError('values must be objects of type Parameter.')
         self.values.extend(dimension)
     
@@ -349,11 +355,11 @@ class MeasurementBase(object):
         ]:
             for dim in dimensions:
                 # create two columns for complex types
-                if(callable(dim.dtype) and numpy.iscomplexobj(dim.dtype())):
-                    add_dimension('real(%s)'%dim.name, **dim.info)
-                    add_dimension('imag(%s)'%dim.name, **dim.info)
+                if(dim.iscomplex()):
+                    add_dimension('real(%s)'%dim.name, **dim.options)
+                    add_dimension('imag(%s)'%dim.name, **dim.options)
                 else:
-                    add_dimension(dim.name, **dim.info)
+                    add_dimension(dim.name, **dim.options)
         # calculate file name and create empty data file
         if(name is None):
             name = self.name
@@ -365,7 +371,7 @@ class MeasurementBase(object):
         df.create_file(filepath = file_path)
         # decorate add_data_point to convert complex arguments to two real arguments
         complex_dims = numpy.nonzero(
-            [callable(dim.dtype) and numpy.iscomplexobj(dim.dtype()) for dim in self.get_coordinates(parent=True)+self.get_values()]
+            [dim.iscomplex() for dim in self.get_coordinates(parent=True)+self.get_values()]
         )[0]
         if len(complex_dims):
             df.add_data_point = self._unpack_complex_decorator(df.add_data_point, complex_dims)
