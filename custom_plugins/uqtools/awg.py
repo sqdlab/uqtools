@@ -46,7 +46,7 @@ class ProgramAWG(Measurement):
 
         self._sequence_length = len(self._sequence)
         self._sequence.sample()
-        self._sequence.export(self._host_dir, self._host_file)
+        self._sequence.export(self._host_dir, self._host_file, rmdir=False)
         
     def _measure(self, wait=None, **kwargs):
         '''
@@ -116,8 +116,8 @@ class ProgramAWGParametric(ProgramAWG):
                 their values are compared to the previous iteration to determine whether
                 a new sequence must be exported to the AWG
         '''
-        #super(ProgramAWG, self).__init__(data_directory=data_directory, **kwargs)
-        Measurement.__init__(**kwargs)
+        super(ProgramAWG, self).__init__(**kwargs)
+        #Measurement.__init__(**kwargs)
         self._data_directory = kwargs.get('data_directory', self.name)
         self.awgs = awgs
         self._seq_func = seq_func
@@ -177,7 +177,7 @@ class ProgramAWGParametric(ProgramAWG):
             idx = len(self._prev_seq_kwargss)
             seq = self._seq_func(**seq_kwargs)
             seq.sample()
-            seq.export(host_dir, host_file(idx))
+            seq.export(host_dir, host_file(idx), rmdir=False)
             # add evaluated args to lists
             self._prev_seq_kwargss.append(seq_kwargs)
             self._prev_seq_lengths.append(len(seq))
@@ -348,7 +348,7 @@ class ProgramAWGSweep(ProgramAWG):
             # create sequence, sample pulses and export to file
             seq = self.sequence(ranges, user_kwargs)
             seq.sample()
-            seq.export(host_dir, host_file(cache_idx))
+            seq.export(host_dir, host_file(cache_idx), rmdir=False)
             # add evaluated args to lists
             self._prev_rangess.append(ranges)
             self._prev_user_kwargss.append(user_kwargs)
