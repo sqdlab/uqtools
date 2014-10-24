@@ -354,12 +354,18 @@ class MeasurementBase(object):
             (df.add_value, self.get_values()) 
         ]:
             for dim in dimensions:
+                # filter options dictionary
+                options = dict(dim.options)
+                for k in ('get_func', 'set_func', 'flags', 'value', 'group', 'tags'):
+                    options.pop(k, None)
+                if hasattr(dim.dtype, '__name__'):
+                    options['dtype'] = dim.dtype.__name__
                 # create two columns for complex types
                 if(dim.iscomplex()):
-                    add_dimension('real(%s)'%dim.name, **dim.options)
-                    add_dimension('imag(%s)'%dim.name, **dim.options)
+                    add_dimension('real(%s)'%dim.name, **options)
+                    add_dimension('imag(%s)'%dim.name, **options)
                 else:
-                    add_dimension(dim.name, **dim.options)
+                    add_dimension(dim.name, **options)
         # calculate file name and create empty data file
         if(name is None):
             name = self.name
