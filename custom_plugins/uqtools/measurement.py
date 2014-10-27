@@ -2,6 +2,7 @@ import os
 import time
 import numpy
 from functools import wraps
+import contextlib
 from collections import OrderedDict
 import string
 import unicodedata
@@ -437,7 +438,56 @@ class MeasurementBase(object):
                     return function(self, *args, **kwargs)
         return decorated_function
     
-    @_nested_context_decorator
+    @contextlib.contextmanager
+    def _mstart_ctx(self, nested):
+        ''' tell qtlab to stop background tasks and enable the stop button '''
+        if not nested:
+            qt.mstart()
+            try:
+                yield
+            finally:
+                qt.mend()
+        else:
+            yield
+    
+    @contextlib.contextmanager
+    def _setup_ctx(self, nested):
+        ''' call setup/teardown pair. creates directories and data files '''
+        # top-level measurements must never be set up at this point
+        if self._setup_done and not nested:
+            logging.warning(__name__+': top-level measurement was already set up. performing automatic tear down.')
+            self._teardown()
+        # create data files etd.
+        if not self._setup_done:
+            self._setup()
+        try:
+            # run measurement
+            yield
+        finally:
+            # close data files etc if this is a top-level measurement
+            if not nested:
+                self._teardown()
+            pass
+    
+    @contextlib.contextmanager
+    def _local_log_ctx(self, nested):
+        ''' redirect log output to the data directory '''
+        if not nested:
+            self._create_data_directory()
+            local_log_fn = os.path.join(self.get_data_directory(), 'qtlab.log')
+            local_log = logging.FileHandler(local_log_fn)
+            local_log.setLevel(self.log_level)
+            local_log_format = '%(asctime)s %(levelname)-8s: %(message)s (%(filename)s:%(lineno)d)'
+            local_log.setFormatter(logging.Formatter(local_log_format))
+            logging.getLogger('').addHandler(local_log)
+            try:
+                yield
+            finally:
+                logging.getLogger('').removeHandler(local_log)
+        else:
+            yield
+    
+    #@_nested_context_decorator
     def __call__(self, comment=None, nested=False, *args, **kwargs):
         '''
             perform a measurement.
@@ -447,38 +497,22 @@ class MeasurementBase(object):
                 comment (str, optional) - comment to be saved in a separate file 
                 in the measurment directory.
         '''
-        # initialize measurement, create data files etc.
-        if self._setup_done and not nested:
-            # top-level measurements must never be set up at this point
-            self._teardown()
-        if not self._setup_done:
-            self._setup()
-        # redirect log output to the data directory
-        if not nested:
-            self._create_data_directory()
-            local_log_fn = os.path.join(self.get_data_directory(), 'qtlab.log')
-            local_log = logging.FileHandler(local_log_fn)
-            local_log.setLevel(self.log_level)
-            local_log_format = '%(asctime)s %(levelname)-8s: %(message)s (%(filename)s:%(lineno)d)'
-            local_log.setFormatter(logging.Formatter(local_log_format))
-            logging.getLogger('').addHandler(local_log)
-        # write comment to file
-        if comment is not None:
-            self._create_data_directory()
-            with open(os.path.join(self.get_data_directory(), 'comment.txt'), 'w+') as cfile:
-                cfile.write(comment)
-        # tell qtlab to stop background tasks and enable stop button
-        qt.mstart()
-        # measure
-        try:
-            result = self._measure(*args, **kwargs)
-        finally:
-            # close data files etc if this is a top-level measurement
-            if not nested:
-                self._teardown()
-                logging.getLogger('').removeHandler(local_log)
-            qt.mend()
-        return result
+        # context managers perform setup/cleanup
+        # _mstart_ctx: stop/start background tasks, stop button
+        # self._context: user-defined context managers
+        # _setup_ctx: call setup/teardown methods
+        # _local_log_ctx: create local log file in the measurement dir
+        with self._mstart_ctx(nested), \
+             contextlib.nested(*self._context), \
+             self._setup_ctx(nested), \
+             self._local_log_ctx(nested):
+            # write comment to file
+            if comment is not None:
+                self._create_data_directory()
+                with open(os.path.join(self.get_data_directory(), 'comment.txt'), 'w+') as cfile:
+                    cfile.write(comment)
+            # measure
+            return self._measure(*args, **kwargs)
     
     def _setup(self):
         '''
