@@ -3,6 +3,7 @@ import re
 import logging
 import csv
 import copy
+import os
 
 from parameter import Parameter
 from basics import coordinate_concat
@@ -97,7 +98,16 @@ class DatReader(Measurement):
         '''
         super(DatReader, self).__init__(**kwargs)
         # load and reshape data file
-        self._cs, self._d = self._load(filepath)
+        self._cs, self._d = self._load_data(filepath)
+        # load settings file
+        self.settings = {}
+        if filepath.endswith('.dat'):
+            setfile = filepath[:-4] + '.set'
+            if os.path.exists(setfile):
+                self.settings = self._load_settings(setfile)
+            else:
+                logging.warning(__name__+': no settings file found')
+        
         # add coordinates and values from data file to self
         for p in self._cs.keys():
             self.add_coordinates(p)
@@ -105,7 +115,7 @@ class DatReader(Measurement):
             self.add_values(p)
         
     
-    def _load(self, filepath):
+    def _load_data(self, filepath):
         '''
         Read .dat file.
         
@@ -132,7 +142,7 @@ class DatReader(Measurement):
                 m = re.match(' Column ([0-9]+):', line)
                 if m:
                     # start of a new column
-                    column = {}
+                    column = {'id': int(m.group(1))-1}
                     columns.append(column)
                     if len(columns) != int(m.group(1)):
                         logging.warning(__name__+': got column #{0}, expected #{1}'.
@@ -157,7 +167,7 @@ class DatReader(Measurement):
             #reader = csv.reader(f, dialect='excel-tab')
             #data = numpy.array([l for l in reader if len(l) and (l[0][0] != '#')], dtype=numpy.float64).transpose()
         with open(filepath, 'r') as f:
-            data = numpy.loadtxt(f, unpack=False)
+            data = numpy.loadtxt(f, unpack=False, ndmin=2)
         if not data.shape[0]:
             # file is empty
             logging.warning(__name__+': no data found in file "{0}".'.format(filepath))
@@ -167,18 +177,19 @@ class DatReader(Measurement):
         # reassemble complex columns
         data_cols = []
         for col_idx, column in enumerate(columns):
-            if ((col_idx < len(columns)) and 
+            if (col_idx+1 < len(columns) and 
                 column['name'].startswith('real(') and 
                 column['name'].endswith(')') and
                 columns[col_idx+1]['name'].startswith('imag(') and 
                 columns[col_idx+1]['name'].endswith(')') and
                 (column['name'][5:-1] == columns[col_idx+1]['name'][5:-1])
             ):
-                columns.pop(col_idx+1)
                 column['name'] = column['name'][5:-1]
-                data_cols.append(data[:, col_idx]+1j*data[:, col_idx+1])
+                data_cols.append(data[:, column['id']]+
+                                 1j*data[:, columns[col_idx+1]['id']])
+                columns.pop(col_idx+1)
             else:
-                data_cols.append(data[:, col_idx])
+                data_cols.append(data[:, column['id']])
         # separate coordinate from value dimensions
         coord_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='coordinate']
         value_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='value']
@@ -193,7 +204,33 @@ class DatReader(Measurement):
                     rd[k] = numpy.reshape(rd[k][:nrows], shape, order='C').transpose(order)
         return coords, values
 
-
+    def _load_settings(self, fn):
+        '''
+            parse settings file into dictionary of dictionaries
+            
+            scan for parameter: value pairs. 
+            the special parameter "Instrument" starts a new entry in the main dictionary, 
+            all subsequent pairs will be saved into this entry
+            
+            Input:
+                fn - settings file name
+            Output:
+                a dictionary of {instrument: settings} pairs, where settings is a dictionary of {property: value} pairs where value is a string
+        '''
+        instrument = ''
+        result = {}
+        with open(fn) as f:
+            for line in f.readlines():
+                m = re.match('\t*([^:]+): ([^\r\n]+)\r?\n?', line)
+                if(m != None):
+                    g = m.groups()
+                    if(g[0] == 'Instrument'):
+                        instrument = g[1]
+                        continue
+                    if(not result.has_key(instrument)): result[instrument] = {}
+                    result[instrument][g[0]] = g[1]
+        return result
+    
     def _detect_dimensions_size(self, coords):
         '''
         Detect shape of data and return results
