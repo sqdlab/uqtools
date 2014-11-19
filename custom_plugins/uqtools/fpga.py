@@ -12,15 +12,20 @@ class FPGAMeasurement(Measurement):
         currently assumes an arbitrary number of independent variables
         and a single dependent variable to be provided by the FPGA
     '''
-    def __init__(self, fpga, **kwargs):
+    def __init__(self, fpga, overlapped=False, **kwargs):
         '''
             Create a new instance of an FPGA Measurement.
         
             Input:
-                fpga - ETH_FPGA device 
+                fpga - ETH_FPGA device
+                overlapped - if True, a new measurement is started before 
+                    writing data. The user must manually restart the fpga
+                    when changing parameters between two measurements that
+                    have the overlapped flag enabled. 
         '''
         super(FPGAMeasurement, self).__init__(**kwargs)
         self._fpga = fpga
+        self.overlapped = overlapped
         with contextlib.nested(*self._context):
             self._check_mode()
             dims = self._fpga.get_data_dimensions()
@@ -40,6 +45,8 @@ class FPGAMeasurement(Measurement):
         #dims = self._fpga.get_data_dimensions()
         #self.set_coordinates(dims[:-1])
         #self.set_values(dims[-1])
+        if self.overlapped:
+            self._fpga.stop()
         super(FPGAMeasurement, self)._setup()
         
     def _measure(self, **kwargs):
@@ -53,9 +60,16 @@ class FPGAMeasurement(Measurement):
         indices = numpy.mgrid[[slice(len(c)) for c in points]]
         # and index into the coordinate lists
         coordinate_matrices = [numpy.array(c)[i] for c, i in zip(points, indices)]
+        # in non-overlapped mode, we always start a new measurement before
+        # retrieving data. in overlapped mode, we assume that the current
+        # measurement was started by us in the previous iteration
+        if not self.overlapped:
+            self._fpga.stop()
         # retrieve measured data
-        self._fpga.stop()
         data = self._fpga.get_data_blocking()
+        # start a new measurement in overlapped mode
+        if self.overlapped:
+            self._fpga.start()
         # concatenate coordinate and data matrices and make them into a 2d table
         table = [numpy.ravel(m) for m in coordinate_matrices+[data]]
         # save to file & return
@@ -65,6 +79,21 @@ class FPGAMeasurement(Measurement):
             ResultDict(zip(self.get_values(), (data,)))
         )
 
+class FPGAStart(Measurement):
+    def __init__(self, fpga, **kwargs):
+        super(FPGAStart, self).__init__(**kwargs)
+        self._fpga = fpga
+        
+    def _measure(self, **kwargs):
+        self._fpga.start()
+
+class FPGAStop(Measurement):
+    def __init__(self, fpga, **kwargs):
+        super(FPGAStart, self).__init__(**kwargs)
+        self._fpga = fpga
+        
+    def _measure(self, **kwargs):
+        self._fpga.stop()
 
 class TvModeMeasurement(FPGAMeasurement):
     '''

@@ -41,6 +41,7 @@ from buffer import Buffer
 from process import apply_decorator, Apply, Add, Multiply, Divide
 from process import Reshape, Integrate, Accumulate
 from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
+from fpga import FPGAStart, FPGAStop
 from fpga import AveragedTvModeMeasurement 
 from fsv import FSVTrace, FSVMeasurement as FSVWait
 from calibrate import FittingMeasurement, CalibrateResonator, Minimize, MinimizeIterative
