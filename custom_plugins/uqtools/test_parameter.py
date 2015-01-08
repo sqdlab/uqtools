@@ -3,11 +3,6 @@ import numpy
 
 from parameter import Parameter, ParameterList
 
-def test_as_buffer():
-    p = Parameter('test')
-    p.set(-1)
-    assert p.get() == -1
-
 class TestParameter:
     def test_as_buffer(self):
         p = Parameter('test')
@@ -30,19 +25,13 @@ class TestParameter:
         p.set(-1)
         assert self.set_val == -1
 
-    def test_iscomplex1(self):
+    def test_iscomplex(self):
         p = Parameter('test')
         assert not p.iscomplex()
-        
-    def test_iscomplex2(self):
         p = Parameter('test', dtype=float)
         assert not p.iscomplex()
-    
-    def test_iscomplex3(self):
         p = Parameter('test', dtype=complex)
         assert p.iscomplex()
-        
-    def test_iscomplex4(self):
         p = Parameter('test', dtype=numpy.complex128)
         assert p.iscomplex()
         
