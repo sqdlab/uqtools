@@ -69,6 +69,10 @@ class FSVTrace(FSVMeasurement):
             self.add_coordinates(Parameter('frequency'))
             self.add_values(Parameter('data', unit=fsv.get_unit()))
 
+    def _create_data_files(self):
+        ''' never creates data files '''
+        super(FSVMeasurement, self)._create_data_files()
+
     def _measure(self, **kwargs):
         # start a new measurement
         self._start()
