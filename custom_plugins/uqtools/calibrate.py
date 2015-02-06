@@ -125,7 +125,7 @@ class FittingMeasurement(ProgressReporting, Measurement):
             except:
                 logging.warning(__name__ + ': parameter guesser failed.')
                 p_est = {}
-            p_opts, p_covs = self.fitter.fit(xs, ys, **p_est)
+            p_opts, p_covs = self.fitter.fit(xs, ys, guess=p_est)
             if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
                 # for multi-fitters, progress bar shows result set id
                 self._reporting_state.iterations = 1+len(p_opts)
