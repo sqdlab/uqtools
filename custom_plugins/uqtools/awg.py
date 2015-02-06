@@ -124,9 +124,6 @@ class ProgramAWGParametric(ProgramAWG):
         self._seq_kwargs = seq_kwargs
         self.wait = wait
 
-        self._prev_seq_kwargss = []
-        self._prev_seq_lengths = []
-
         # add function arguments as parameters
         for key, arg in seq_kwargs.iteritems():
             if hasattr(arg, 'get'):
@@ -136,7 +133,10 @@ class ProgramAWGParametric(ProgramAWG):
     def _setup(self):
         # create data files etc.
         super(ProgramAWG, self)._setup()
+        # initialize sequence cache
         self._host_dir = self.get_data_directory()
+        self._prev_seq_kwargss = []
+        self._prev_seq_lengths = []
         # store fixed parameters as comments
         self._data.add_comment('Constant sequence arguments:')
         has_constants = False
@@ -152,9 +152,6 @@ class ProgramAWGParametric(ProgramAWG):
         # sequence directory and filename
         host_dir = self.get_data_directory()
         host_file = lambda idx: '{0}{1}'.format(self.name, idx)
-        if(self._host_dir != host_dir) and len(self._seq_kwargs):
-            logging.info(__name__ + ': data directory has changed. clearing sequence cache.')
-            self._prev_seq_kwargs = []
 
         # evaluate arguments
         seq_kwargs = {}
@@ -277,10 +274,6 @@ class ProgramAWGSweep(ProgramAWG):
         # save patterns in patterns subdirectory
         Measurement.__init__(self, **kwargs)
         self._data_directory = kwargs.pop('data_directory', self.name)
-        # sequence cache indices
-        self._prev_rangess = []
-        self._prev_user_kwargss = []
-        self._prev_seq_lengths = []
         # add variable pulse and marker function arguments as parameters
         # sweep ranges are stored as comments to save space 
         # (they will show up in the measured data files anyway)
@@ -292,7 +285,11 @@ class ProgramAWGSweep(ProgramAWG):
     def _setup(self):
         # create data files etc.
         super(ProgramAWG, self)._setup()
+        # initialize sequence cache
         self._host_dir = self.get_data_directory()
+        self._prev_rangess = []
+        self._prev_user_kwargss = []
+        self._prev_seq_lengths = []
         # store fixed parameters as comments
         self._data.add_comment('Constant sequence arguments:')
         has_constants = False
@@ -314,11 +311,6 @@ class ProgramAWGSweep(ProgramAWG):
         # sequence directory and filename
         host_dir = self.get_data_directory()
         host_file = lambda idx: '{0}{1}'.format(self.name, idx)
-        if(self._host_dir != host_dir):
-            logging.info(__name__ + ': data directory has changed. clearing sequence cache.')
-            self._prev_rangess = []
-            self._prev_user_kwargss = []
-            self._prev_seq_lengths = []
         # evaluate ranges
         ranges = self.cur_ranges()
         # evaluate pulse function keyword arguments
@@ -331,7 +323,9 @@ class ProgramAWGSweep(ProgramAWG):
         # check if the parameter set is in the cache
         for cache_idx in range(len(self._prev_rangess)):
             if (
-                (self._prev_rangess[cache_idx] == ranges) and
+                numpy.all([numpy.all(rl==rr) 
+                           for rr, rl 
+                           in zip(self._prev_rangess[cache_idx], ranges)]) and
                 (self._prev_user_kwargss[cache_idx] == user_kwargs)
             ):
                 # program previously sampled sequence
