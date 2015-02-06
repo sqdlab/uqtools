@@ -97,6 +97,9 @@ class DatReader(Measurement):
             filepath - path to the file to read
         '''
         super(DatReader, self).__init__(**kwargs)
+        # support file:// urls
+        if filepath.startswith('file:///'):
+            filepath = filepath[8:]
         # load and reshape data file
         self._cs, self._d = self._load_data(filepath)
         # load settings file
@@ -122,9 +125,6 @@ class DatReader(Measurement):
         Input:
             filepath - path to the file to read
         '''
-        # support file:// urls
-        if filepath.startswith('file:///'):
-            filepath = filepath[8:]
         # parse comments
         comments = []
         column = None
@@ -160,20 +160,24 @@ class DatReader(Measurement):
                 else:
                     # regular comment
                     comments.append(line)
-            
+        # build data type
+        dtypes = []
+        for column in columns:
+            try:
+                dtypes.append(numpy.dtype(column['dtype']))
+            except:
+                dtypes.append(numpy.float)
+        dtype = numpy.dtype([('c{0:d}'.format(idx), dt) for idx, dt in enumerate(dtypes)])
         # read data
-        #data = numpy.loadtxt(filepath, unpack=True, ndmin=2)
-        #with open(filepath, 'r') as f:
-            #reader = csv.reader(f, dialect='excel-tab')
-            #data = numpy.array([l for l in reader if len(l) and (l[0][0] != '#')], dtype=numpy.float64).transpose()
+        #data = numpy.loadtxt(filepath, unpack=True, dtype=dtype, ndmin=2)
         with open(filepath, 'r') as f:
-            data = numpy.loadtxt(f, unpack=False, ndmin=2)
+            data = numpy.loadtxt(f, unpack=False, dtype=dtype, ndmin=2)
         if not data.shape[0]:
             # file is empty
             logging.warning(__name__+': no data found in file "{0}".'.format(filepath))
-        if data.shape[1] != len(columns):
-            logging.warning(__name__+': number of columns does not match the '+
-                'definition in the file header of file #{0}.'.format(filepath))
+        #if data.shape[1] != len(columns):
+        #    logging.warning(__name__+': number of columns does not match the '+
+        #        'definition in the file header of file #{0}.'.format(filepath))
         # reassemble complex columns
         data_cols = []
         for col_idx, column in enumerate(columns):
@@ -184,12 +188,12 @@ class DatReader(Measurement):
                 columns[col_idx+1]['name'].endswith(')') and
                 (column['name'][5:-1] == columns[col_idx+1]['name'][5:-1])
             ):
-                column['name'] = column['name'][5:-1]
-                data_cols.append(data[:, column['id']]+
-                                 1j*data[:, columns[col_idx+1]['id']])
                 columns.pop(col_idx+1)
+                column['name'] = column['name'][5:-1]
+                data_cols.append(data['c{0:d}'.format(col_idx)]+
+                                 1j*data['c{0:d}'.format(col_idx+1)])
             else:
-                data_cols.append(data[:, column['id']])
+                data_cols.append(data['c{0:d}'.format(col_idx)])
         # separate coordinate from value dimensions
         coord_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='coordinate']
         value_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='value']
