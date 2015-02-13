@@ -187,7 +187,6 @@ class Multiply(Apply):
     def f(self, *factors):
         return numpy.prod(factors, axis=0)
 
-
 class Divide(Apply):
     def __init__(self, num, denom, **kwargs):
         '''
@@ -303,8 +302,9 @@ class Accumulate(ProgressReporting, Measurement):
         Input:
             source (Measurement) - data source
             range 
-            average (bool) - if True, output the average of all measured data 
-                instead of the sum.
+            average (bool or list) - if True, output the average of all measured data 
+                instead of the sum. If average is a list of Parameter objects, the data
+                columns listed will be averaged.
         '''
         super(Accumulate, self).__init__(**kwargs)
         self.average = average
@@ -351,7 +351,10 @@ class Accumulate(ProgressReporting, Measurement):
                 # first iteration: initialize accumulator
                 file_position = self._data._file.tell()
                 acc_cs = cs
-                acc_ds = ds
+                # copy data arrays
+                ds_keys = ds.keys()
+                ds_values = [numpy.copy(val) for val in ds.values()]
+                acc_ds = ResultDict(zip(ds_keys, ds_values))
             else:
                 # other iterations: accumulate data
                 if (acc_cs.keys() != cs.keys()) or (acc_ds.keys() != ds.keys()):
@@ -361,7 +364,10 @@ class Accumulate(ProgressReporting, Measurement):
                 for k, d in ds.iteritems():
                     acc_ds[k] += d
                 # transfer accumulated data to local var
-                if self.average:
+                if isinstance(self.average, list) or isinstance(self.average, tuple):
+                    ds = ResultDict([(k, d/float(traces) if k in self.average else d) 
+                                     for k, d in acc_ds.iteritems()])
+                elif self.average:
                     ds = ResultDict([(k, d/float(traces)) for k, d in acc_ds.iteritems()])
                 else:
                     ds = acc_ds
@@ -527,3 +533,15 @@ class Integrate(Measurement):
         self._data.add_data_point(*points, newblock=True)
         # return data
         return cs, d_int
+        
+class Classify(Apply):
+    def __init__(self, *factors, **kwargs):
+        '''
+        Input:
+            *args - measurements to be added
+        '''
+        super(Classify, self).__init__(factors, **kwargs)
+    
+    @apply_decorator
+    def f(self, *factors):
+        return numpy.prod(factors, axis=0)
