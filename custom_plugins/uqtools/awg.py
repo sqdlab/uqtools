@@ -1,6 +1,7 @@
 import logging
 import os
 import numpy
+import time
 from collections import OrderedDict
 
 from parameter import Parameter
@@ -66,18 +67,32 @@ class ProgramAWG(Measurement):
         host_file += '.seq'
         logging.info(__name__ + ': programming awgs.')
         for idx, awg in enumerate(self.awgs):
+            if hasattr(awg, 'abort_generation'):
+                awg.abort_generation()
             if awg is None:
                 logging.info(__name__+': programming of awg #{0:d} skipped.'.format(idx))
             else:
                 logging.info(__name__+': programming awg #{0:d} with file {1:s}'.format(idx, host_file))
             if hasattr(awg, 'clear_waveforms'):
                 awg.clear_waveforms()
+        if hasattr(self.awgs[0], 'set_marker4_source'):
+            self.awgs[0].set_marker4_source('Off')
+        for idx, awg in enumerate(self.awgs):
             host_path = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx))
             host_fullpath = os.path.join(host_path, host_file)
             if os.path.exists(host_fullpath):
                 awg.load_sequence(host_path, host_file)
             else:
                 logging.warning(__name__ + ': no sequence file found for AWG #{0}.'.format(idx))
+        for awg in reversed(self.awgs):
+            if hasattr(awg, 'initiate_generation'):
+                awg.initiate_generation()
+        if hasattr(self.awgs[0], 'set_marker4_source'):
+            time.sleep(1000e-3)
+            if len(self.awgs)==3:
+                self.awgs[1].get_marker4_source()
+                self.awgs[2].get_marker4_source()
+            self.awgs[0].set_marker4_source('Hardware Trigger 1')
         if wait:
             # wait for all AWGs to finish loading
             for idx, awg in enumerate(self.awgs):
