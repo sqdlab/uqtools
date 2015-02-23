@@ -9,41 +9,77 @@
 
 # reload sub-modules in fixed order
 import logging
-for k in ('parameter', 'context', 'data', 'progress', 'measurement', 'basics', 
-          'buffer', 'process', 'fpga', 'simulation', 'calibrate', 'pulselib', 'awg', 
-          'fsv'):
-    if k in locals():
-        logging.debug(__name__ + ': reloading {0}'.format(k))
-        reload(locals()[k])
-del k
+import sys
+for key in ('config', 'helpers', 'parameter', 'context', 'data', 'progress', 
+            'measurement', 'basics', 'buffer', 'process', 'fpga', 'fsv',
+            'simulation', 'calibrate', 'pulselib', 'awg', 'plot'):
+    #if key in locals():
+    key = 'uqtools.'+key
+    if key in sys.modules:
+        logging.debug(__name__ + ': forcing reload of {0}'.format(key))
+        del(sys.modules[key])
+        #reload(locals()[key])
+del key
 
-from parameter import Parameter
-from context import NullContextManager, SimpleContextManager
-from context import SetInstrument, RevertInstrument, SetParameter, RevertParameter
-import data
-from measurement import Measurement, ResultDict
-from progress import ProgressReporting
-from basics import Delay, ParameterMeasurement 
-from basics import MeasurementArray, ReportingMeasurementArray, Sweep, MultiSweep
-from basics import ContinueIteration, BreakIteration
-from buffer import Buffer
-from process import apply_decorator, Apply, Add, Multiply, Divide
-from process import Reshape, Integrate, Accumulate
-from fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
-from fpga import FPGAStart, FPGAStop
-from fpga import AveragedTvModeMeasurement 
-from fsv import FSVTrace, FSVMeasurement as FSVWait
-from calibrate import FittingMeasurement, CalibrateResonator, Minimize, MinimizeIterative
-from calibrate import Interpolate
-from simulation import Constant, Function, DatReader
+
+from . import config
+from . import helpers
+
+from . import parameter
+from .parameter import (Parameter, OffsetParameter, ScaledParameter, LinkedParameter,
+                        TypedList, ParameterList, ParameterDict)
+
+from . import context
+from .context import NullContextManager, SimpleContextManager
+from .context import SetInstrument, RevertInstrument, SetParameter, RevertParameter
+
+from . import data
+
+from . import progress
+from .progress import ContinueIteration, BreakIteration, Flow
+
+from . import measurement
+from .measurement import Measurement
+
+from . import basics
+from .basics import Delay, ParameterMeasurement 
+from .basics import MeasurementArray, Sweep, MultiSweep
+
+from . import buffer
+from .buffer import Buffer
+
+from . import process
+from .process import apply_decorator, Apply, Add, Multiply, Divide
+from .process import Reshape, Integrate, Accumulate
+
+from . import fpga
+from .fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
+from .fpga import FPGAStart, FPGAStop
+from .fpga import AveragedTvModeMeasurement
+
+from . import fsv 
+from .fsv import FSVTrace, FSVMeasurement as FSVWait
+
+from . import simulation
+from .simulation import Constant, Function, DatReader
+
+from . import calibrate
+from .calibrate import FittingMeasurement, CalibrateResonator, Minimize, MinimizeIterative
+from .calibrate import Interpolate
+
+from . import plot
+from .plot import Plot, FigureWidget
+
 try:
     import pulselib
 except ImportError:
     # pulselib already generates a log entry
     pass
+
 try:
-    from awg import ProgramAWG, ProgramAWGParametric
-    from awg import ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep
+    from . import awg
+    from .awg import ProgramAWG, ProgramAWGParametric
+    from .awg import ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep
 except ImportError:
     # awg already generates a log entry
     pass

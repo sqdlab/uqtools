@@ -4,10 +4,10 @@ import logging
 import csv
 import copy
 import os
+import gzip
 
-from parameter import Parameter
-from basics import coordinate_concat
-from measurement import Measurement, ResultDict
+from .parameter import Parameter, ParameterDict, coordinate_concat
+from .measurement import Measurement
 
 class Constant(Measurement):
     '''
@@ -26,12 +26,12 @@ class Constant(Measurement):
         self.data = numpy.array(data)
         # generate coordinate and value dimensions
         if coordinates is None:
-            coordinates = [Parameter(name='dim{0}'.format(i)) for i in range(data.ndim)]
+            coordinates = [Parameter(name='dim{0}'.format(i)) for i in range(self.data.ndim)]
         if len(coordinates) != self.data.ndim:
             raise ValueError('number of dimensions of data must be equal '+
                              'to the number of coordinates passed')
-        self.add_coordinates(coordinates)
-        self.add_values(value if value is not None else Parameter('val'))
+        self.coordinates = coordinates
+        self.values = [value if value is not None else Parameter('val')]
         # determine range of each coordinate
         self.ranges = []
         for i, n in enumerate(self.data.shape):
@@ -45,11 +45,11 @@ class Constant(Measurement):
                 self.ranges.append(cv)
         
     def _measure(self, **kwargs):
-        cs = [ResultDict([(c, self.ranges[i])]) 
-              for i, c in enumerate(self.get_coordinates())]
+        cs = [ParameterDict([(c, self.ranges[i])]) 
+              for i, c in enumerate(self.coordinates)]
         return (
             coordinate_concat(*cs),
-            ResultDict(zip(self.get_values(), (self.data,)))
+            ParameterDict(zip(self.values, (self.data,)))
         )
 
     def _create_data_files(self):
@@ -71,13 +71,13 @@ class Function(Measurement):
         '''
         super(Function, self).__init__(**kwargs)
         self.f = f
-        self.add_coordinates(coordinates)
-        self.add_values(Parameter('val'))
+        self.coordinates = coordinates
+        self.values = (Parameter('val'),)
     
     def _measure(self, **kwargs):
-        cs = coordinate_concat(*[ResultDict([(c, c.get())]) for c in self.get_coordinates()])
+        cs = coordinate_concat(*[ParameterDict([(c, c.get())]) for c in self.coordinates])
         d = self.f(*cs.values())
-        return cs, ResultDict(zip(self.get_values(), (d,)))
+        return cs, ParameterDict(zip(self.values, (d,)))
 
     def _create_data_files(self):
         ''' Function never creates data files '''
@@ -104,18 +104,21 @@ class DatReader(Measurement):
         self._cs, self._d = self._load_data(filepath)
         # load settings file
         self.settings = {}
-        if filepath.endswith('.dat'):
-            setfile = filepath[:-4] + '.set'
+        # support file:// urls
+        if filepath.startswith('file:///'):
+            filepath = filepath[8:]
+        # load setfile
+        m = re.match(r'(.*)\.dat(\.gz)?', filepath)
+        if m is not None:
+            setfile = m.groups()[0]+'.set'
             if os.path.exists(setfile):
                 self.settings = self._load_settings(setfile)
             else:
                 logging.warning(__name__+': no settings file found')
         
         # add coordinates and values from data file to self
-        for p in self._cs.keys():
-            self.add_coordinates(p)
-        for p in self._d.keys():
-            self.add_values(p)
+        self.coordinates = self._cs.keys()
+        self.values = self._d.keys()
         
     
     def _load_data(self, filepath):
@@ -129,7 +132,8 @@ class DatReader(Measurement):
         comments = []
         column = None
         columns = []
-        with open(filepath, 'r') as f:
+        opener = gzip.open if filepath.endswith('.gz') else open
+        with opener(filepath, 'r') as f:
             for line in f:
                 # filter everything that is not a comment, stop parsing when data starts
                 if line.startswith('\n'):
@@ -170,7 +174,7 @@ class DatReader(Measurement):
         dtype = numpy.dtype([('c{0:d}'.format(idx), dt) for idx, dt in enumerate(dtypes)])
         # read data
         #data = numpy.loadtxt(filepath, unpack=True, dtype=dtype, ndmin=2)
-        with open(filepath, 'r') as f:
+        with opener(filepath, 'r') as f:
             data = numpy.loadtxt(f, unpack=False, dtype=dtype, ndmin=2)
         if not data.shape[0]:
             # file is empty
@@ -197,8 +201,8 @@ class DatReader(Measurement):
         # separate coordinate from value dimensions
         coord_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='coordinate']
         value_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='value']
-        coords = ResultDict(zip([Parameter(**c) for _, c in coord_dims], [data_cols[i] for i, _ in coord_dims]))
-        values = ResultDict(zip([Parameter(**c) for _, c in value_dims], [data_cols[i] for i, _ in value_dims]))
+        coords = ParameterDict(zip([Parameter(**c) for _, c in coord_dims], [data_cols[i] for i, _ in coord_dims]))
+        values = ParameterDict(zip([Parameter(**c) for _, c in value_dims], [data_cols[i] for i, _ in value_dims]))
         # reshape data
         shape, order = self._detect_dimensions_size(coords)
         if (shape is not None) and (order is not None):
@@ -303,10 +307,6 @@ class DatReader(Measurement):
                 #c_blocklenidxs[numpy.argmin(c_blocklen)]
                 pass
 
-    def set_parent_coordinates(self, dimensions = []):
-        if len(dimensions):
-            logging.warning(__name__+': DatReader does not honour inherited coordinates.')
-            
     def _create_data_files(self):
         ''' DatReader never creates data files '''
         pass

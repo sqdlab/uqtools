@@ -1,7 +1,7 @@
 import numpy
 import logging
 
-from measurement import Measurement
+from .measurement import Measurement
 
 class Buffer(object):
     '''
@@ -9,7 +9,16 @@ class Buffer(object):
     '''
     def __init__(self, source, **kwargs):
         '''
-        Create BufferWrite and BufferRead objects for source
+        A data buffer for source.
+        
+        Buffer.writer provides a BufferWrite object that runs source and stores
+        its output in the buffer.
+        Buffer.reader provides a BufferRead object that imitates source but
+        returns the stored data.
+        
+        Input:
+            source (Measurement) - source for data stored in the buffer.
+            **kwargs - are passed to the BufferWrite constructor
         '''
         # initialize buffer with multidimensional zeros :)
         self.cs = None
@@ -18,23 +27,25 @@ class Buffer(object):
         self.kwargs = kwargs
         self.source = source
     
-    def _gen_writer(self):
+    @property
+    def writer(self):
         return BufferWrite(self.source, self, **self.kwargs)
-    writer = property(_gen_writer)
     
-    def _gen_reader(self):
+    @property
+    def reader(self):
         return BufferRead(self.source, self)
-    reader = property(_gen_reader)
     
     def __call__(self, **kwargs):
-        raise NotImplementedError('Buffer is no longer a subclass of Measurement. Use buffer.writer and buffer.reader to store/recall data.')
+        raise NotImplementedError('Buffer is no longer a subclass of ' +
+                                  'Measurement. Use buffer.writer and ' +
+                                  'buffer.reader to store/recall data.')
 
     
 class BufferWrite(Measurement):
     '''
     Update a Buffer from a Measurement
     '''
-    _propagate_name = True
+    PROPAGATE_NAME = True
     
     def __init__(self, source, buf, **kwargs):
         '''
@@ -46,14 +57,14 @@ class BufferWrite(Measurement):
         super(BufferWrite, self).__init__(name=name, **kwargs)
         self.buf = buf
         # add and imitate source
-        self.add_measurement(source, inherit_local_coords=False)
-        self.add_coordinates(source.get_coordinates())
-        self.add_values(source.get_values())
+        self.measurements.append(source, inherit_local_coords=False)
+        self.coordinates = source.coordinates
+        self.values = source.values
         
     def _measure(self, **kwargs):
         ''' Measure data and store it in self.buffer '''
         # measure
-        cs, d = self.get_measurements()[0](nested=True, **kwargs)
+        cs, d = self.measurements[0](nested=True, **kwargs)
         # store data in buffer
         self.buf.cs = cs
         self.buf.d = d
@@ -72,15 +83,15 @@ class BufferRead(Measurement):
         '''
         Input:
             source (Measurement) - data source of to imitate.
-                may be either the associated BufferWrite object or the source 
+                may either be the associated BufferWrite object or the source 
                 object that was/will be passed to the associated BufferWrite.
             buffer (Buffer) - data storage
         '''
         super(BufferRead, self).__init__(**kwargs)
         self.buf = buf
         # imitate source
-        self.add_coordinates(source.get_coordinates())
-        self.add_values(source.get_values())
+        self.coordinates = source.coordinates
+        self.values = source.values
 
     def _measure(self, **kwargs):
         ''' return buffered data '''

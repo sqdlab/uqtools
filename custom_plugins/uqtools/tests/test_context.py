@@ -1,7 +1,7 @@
 from pytest import fixture, raises 
 
-from context import RevertInstrument, SetInstrument, RevertParameter, SetParameter
-from context import NullContextManager, SimpleContextManager
+from uqtools import RevertInstrument, SetInstrument, RevertParameter, SetParameter
+from uqtools import NullContextManager, SimpleContextManager
 from parameter import Parameter
 
 class Instrument:
@@ -24,6 +24,7 @@ def instrument():
     ins = Instrument()
     ins.set('frequency', 1e9)
     ins.set('power', 0)
+    ins.set('power2', 10)
     return ins
 
 class TestSetInstrument:
@@ -34,13 +35,24 @@ class TestSetInstrument:
             SetInstrument(None, power=10)
         with raises(KeyError):
             SetInstrument(instrument, voltage=0, frequency=2e9)
+        with raises(KeyError):
+            SetInstrument(instrument, 'voltage', 0, 'frequency', 2e9)
             
     def test_operation(self, instrument):
         ctx = SetInstrument(instrument, power=10)
         with ctx:
             assert instrument.get('power') == 10
         assert instrument.get('power') == 10
-            
+     
+    def test_order(self, instrument):
+        p = Parameter('p', get_func=lambda: instrument.get('power'))
+        ctx = SetInstrument(instrument, 'power2', p, 'power', 10)
+        with ctx:
+            assert instrument.get('power2') == 0
+        ctx = SetInstrument(instrument, 'power', 0, 'power2', p)
+        with ctx:
+            assert instrument.get('power2') == 0
+    
     def test_call(self, instrument):
         ctx = SetInstrument(instrument, power=10)
         ctx()

@@ -2,15 +2,14 @@ import numpy
 import logging
 import scipy.interpolate
 import scipy.optimize
-import time
 
-from parameter import Parameter
-from measurement import Measurement, ResultDict
-from basics import Sweep, ContinueIteration
-from progress import ProgressReporting
-from simulation import DatReader
+from .parameter import Parameter, ParameterDict
+from .measurement import Measurement
+from .simulation import DatReader
+from .basics import Sweep
+from .progress import Flow, ContinueIteration
 
-class FittingMeasurement(ProgressReporting, Measurement):
+class FittingMeasurement(Measurement):
     '''
         Generic fitting of one-dimensional data via the fitting library
     '''
@@ -41,27 +40,36 @@ class FittingMeasurement(ProgressReporting, Measurement):
             handles ContinueIteration in nested measurements
         '''
         super(FittingMeasurement, self).__init__(**kwargs)
-        self.add_measurement(source, inherit_local_coords=False)
-        self.indep = indep
-        self.dep = dep
+        self.measurements.append(source, inherit_local_coords=False)
+        self.indep = indep if indep is not None else source.coordinates[0]
+        self.dep = dep if dep is not None else source.values[0]
         self.popt_out = popt_out if popt_out is not None else {}
-        # add parameters returned by the fitter
-        for pname in fitter.PARAMETERS:
-            self.add_values(Parameter(pname))
-        for pname in fitter.PARAMETERS:
-            self.add_values(Parameter(pname+'_std'))
-        self.add_values(Parameter('fit_ok'))
+        # check inputs
+        if self.dep not in source.values:
+            raise ValueError(('Dependent variable {0:s} not found in source '+
+                              'measurement.').format(self.dep.name))
+        if self.indep not in source.coordinates:
+            raise ValueError(('Independent variable {0:s} not found in source '+
+                              'measurement.').format(self.indep.name))
+        # support n-dimensional inputs
+        #self.coordinates = [c for c in source.coordinates if c != self.indep]
         # support fitters with multiple outputs
         self.fitter = fitter
         if fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
-            self.add_coordinates(Parameter('fit_id'))
+            self.coordinates.append(Parameter('fit_id'))
+        # add parameters returned by the fitter
+        for pname in fitter.PARAMETERS:
+            self.values.append(Parameter(pname))
+        for pname in fitter.PARAMETERS:
+            self.values.append(Parameter(pname+'_std'))
+        self.values.append(Parameter('fit_ok'))
         # fail_func defaults to ContinueIteration if no nested measurements are given
         self.fail_func = fail_func
         # add measurements
         if measurements is not None:
             self.fail_func = None
             for m in measurements if numpy.iterable(measurements) else (measurements,):
-                self.add_measurement(m)
+                self.measurements.append(m)
         # test function
         if test is not None:
             if callable(test):
@@ -70,40 +78,34 @@ class FittingMeasurement(ProgressReporting, Measurement):
                 raise TypeError('test must be a function.')
         else:
             self.test = lambda xs, ys, p_opt, p_std, p_est: numpy.all(numpy.isfinite(p_opt))
+        # 
+        self.flow = Flow(self, iterations=1)
     
     def _measure(self, *args, **kwargs):
         # reset progress bar
-        self._reporting_start()
         # for standard fitters, progress bar shows measurement id including calibration
         if not self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
-            self._reporting_state.iterations = len(self.get_measurements())
+            self.flow.iterations = len(self.measurements)
         # run data source
-        source = self.get_measurements()[0]
+        source = self.measurements[0]
         kwargs['output_data'] = True
         cs, d = source(nested=True, **kwargs)
-        # pick dependent variable
-        if self.dep is not None:
-            ys = d[self.dep]
-        else:
-            # use first value by default
-            ys = d.values()[0]
-        # make sure ys is a ndarray
+        # pick coordinate and data arrays
+        xs = cs[self.indep]
+        if not isinstance(xs, numpy.ndarray):
+            xs = numpy.array(xs, copy=False)
+        ys = d[self.dep]
         if not isinstance(ys, numpy.ndarray):
             ys = numpy.array(ys, copy=False)
-        # pick independent variable
-        if self.indep is not None:
-            # roll independent variable into first position
-            indep_idx = cs.keys().index(self.indep)
-            xs = numpy.rollaxis(cs[self.indep], indep_idx)
-            ys = numpy.rollaxis(ys, indep_idx)
-        else:
-            xs = cs.values()[0]
         # convert multi-dimensional coordinate and data arrays to 1d
         if numpy.prod(ys.shape[1:])>1:
             logging.warning(__name__ + ': data measured has at least one ' + 
                 'non-singleton dimension. using the mean of all points.')
-            xs = xs[tuple([slice(None)]+[0]*(ys.ndim-1))]
-            ys = [numpy.mean(y) for y in ys]
+            indep_idx = cs.keys().index(self.indep)
+            slice_ = [0]*ys.ndim
+            slice_[indep_idx] = slice(None)
+            xs = xs[slice_]
+            ys = numpy.mean(y, axis=indep_idx)
         else:
             xs = numpy.ravel(xs)
             ys = numpy.ravel(ys)
@@ -128,27 +130,28 @@ class FittingMeasurement(ProgressReporting, Measurement):
             p_opts, p_covs = self.fitter.fit(xs, ys, guess=p_est)
             if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
                 # for multi-fitters, progress bar shows result set id
-                self._reporting_state.iterations = 1+len(p_opts)
+                self.flow.iterations = 1+len(p_opts)
             else:
                 # unify output of multi- and non-multi fitters
                 p_opts = (p_opts,)
                 p_covs = (p_covs,)
-        self._reporting_next()
+        self.flow.next()
         # loop over parameter sets returned by fit
-        return_buf = ResultDict()
-        for v in self.get_coordinates()+self.get_values():
+        return_buf = ParameterDict()
+        for v in self.coordinates+self.values:
             return_buf[v] = numpy.empty((len(p_opts),))
         for idx, p_opt, p_cov in zip(range(len(p_opts)), p_opts, p_covs):
             p_std = numpy.sqrt(p_cov.diagonal())
             p_test = self.test(xs, ys, p_opt, p_std, p_est.values())
             # save fit to: file
+            #result = self.coordinates.values()
             result = [idx] if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS else []
             result += list(p_opt) + list(p_std) + [1 if p_test else 0]
             self._data.add_data_point(*result)
             # save fit to: internal values & return buffer
-            for p, v in zip(self.get_coordinates()+self.get_values(), result):
+            for p, v in zip(self.coordinates+self.values, result):
                 p.set(v)
-                if p not in self.get_coordinates():
+                if p not in self.coordinates:
                     return_buf[p][idx] = v
             # update user-provided parameters and run nested measurements
             # only if fit was successful
@@ -159,16 +162,16 @@ class FittingMeasurement(ProgressReporting, Measurement):
                 # run nested measurements
                 try:
                     kwargs['output_data'] = False
-                    for m in self.get_measurements()[1:]:
+                    for m in self.measurements[1:]:
                         m(nested=True, **kwargs)
                         # update progress bar indicating measurement id
                         if not self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
-                            self._reporting_next()
+                            self.flow.next()
                 except ContinueIteration:
                     pass
             # update progress bar indicating result set
             if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
-                self._reporting_next()
+                self.flow.next()
         # raise ContinueIteration only if all fits have failed or zero parameter sets were returned
         if not numpy.any(return_buf[self.values['fit_ok']]):
             if self.fail_func is not None: 
@@ -177,15 +180,14 @@ class FittingMeasurement(ProgressReporting, Measurement):
                 else:
                     self.fail_func()
         # set progress bar to 100% 
-        self._reporting_finish()
         # return fit result
         if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
             return (
-                ResultDict([(self.get_coordinates()[0],numpy.arange(len(p_opts)))]), 
+                ParameterDict([(self.coordinates[0],numpy.arange(len(p_opts)))]), 
                 return_buf
             )
         else:
-            return {}, ResultDict(zip(self.get_values(), self.get_value_values()))
+            return {}, ParameterDict(zip(self.values, self.values.values()))
 
         
 try:
@@ -271,17 +273,17 @@ class Minimize(Measurement):
         # add coordinates and values
         for name, c in (('c0', c0), ('c1', c1)):
             if c is None:
-                self.add_values(Parameter(name))
+                self.values.append(Parameter(name))
             elif isinstance(c, str):
-                self.add_values(Parameter(c))
+                self.values.append(Parameter(c))
             elif hasattr(c, 'name'):
-                self.add_values(Parameter(c.name))
+                self.values.append(Parameter(c.name))
             else:
                 raise TypeError('if given, c0 and c1 must be str or Parameter objects.')
-        self.add_values(Parameter('min'))
-        self.add_values(Parameter('fit_ok'))
+        self.values.append(Parameter('min'))
+        self.values.append(Parameter('fit_ok'))
         # add source
-        self.add_measurement(source)
+        self.measurements.append(source)
             
     def preprocess(self, xs, ys, zs):
         ''' default preprocessing function (unity) '''
@@ -290,7 +292,7 @@ class Minimize(Measurement):
     def _measure(self, **kwargs):
         # acquire data
         kwargs['output_data'] = True
-        cs, d = self.get_measurements()[0](nested=True, **kwargs)
+        cs, d = self.measurements[0](nested=True, **kwargs)
         # pick independent variables
         # pick dependent variable, using first value as the default
         xs = cs[self.c0] if (self.c0 is not None) else cs.values()[0]
@@ -353,15 +355,15 @@ class Minimize(Measurement):
             # save global minimum of data points in local values
             results = (xmin, ymin, zmin, 1)
         # save fit to: own Parameters
-        for k, v in zip(self.get_values(), results):
+        for k, v in zip(self.values, results):
             k.set(v)
         # save fit to: user-provided Parameters (set instruments)
         for p, k in self.popt_out.iteritems():
-            popt_out_map = dict(zip(('c0','c1','min','fit_ok'), self.get_values()))
+            popt_out_map = dict(zip(('c0','c1','min','fit_ok'), self.values))
             p.set(popt_out_map[k].get())
         # save fit to: file
         cs = {}
-        d = ResultDict(zip(self.get_values(), self.get_value_values()))
+        d = ParameterDict(zip(self.values, self.values.values()))
         points = [numpy.ravel(m) for m in cs.values()+d.values()]
         self._data.add_data_point(*points)
         # return values
@@ -409,7 +411,7 @@ class MinimizeIterative(Sweep):
         minimizer = Minimize(coord_sweep, c0, c1, dep=dep, preprocess=preprocess, 
                              popt_out=popt_out, smoothing=smoothing, name='')
         # save arguments
-        self.c0, self.c1 = minimizer.get_values()[:2]
+        self.c0, self.c1 = minimizer.values[:2]
         self.l0, self.n0, self.z0 = (l0, n0, z0)
         self.l1, self.n1, self.z1 = (l1, n1, z1)
         # generate iteration sweep
@@ -497,13 +499,13 @@ class Interpolate(Measurement):
             additional keyword arguments are passed to Measurement
         '''
         super(Interpolate, self).__init__(**kwargs)
-        self.add_coordinates(indeps)
-        self.add_values(deps)
-        #self.add_values(Parameter('timestamp', get_func=time.time))
+        self.coordinates = indeps
+        self.values = deps
+        #self.values.append(Parameter('timestamp', get_func=time.time))
         if calibrator is not None:
-            self.add_measurement(calibrator)
+            self.measurements.append(calibrator)
         if isinstance(test, Measurement):
-            self.add_measurement(test)
+            self.measurements.append(test)
         self.calibrator = calibrator
         self.test = test if test is not None else lambda *args, **kwargs: True
         self.cal_file = cal_file
@@ -519,7 +521,7 @@ class Interpolate(Measurement):
     
     def _measure(self, **kwargs):
         # determine values of independent variables
-        indep_dict = ResultDict(zip(self.get_coordinates(), self.get_coordinate_values()))
+        indep_dict = ParameterDict(zip(self.coordinates, self.coordinates.values()))
         # determine values of the dependent variables
         for step in ['interpolate', 'calibrate', 'fail']:
             if step=='interpolate':
@@ -533,7 +535,7 @@ class Interpolate(Measurement):
                 dep_dict = self.calibrate()
             elif step=='fail':
                 # fail if the result is still not good enough
-                dep_dict = ResultDict([(v, numpy.NaN) for v in self.get_values()])
+                dep_dict = ParameterDict([(v, numpy.NaN) for v in self.values])
                 self._fail()
                 break
             if numpy.any(numpy.isnan(dep_dict.values())):
@@ -576,12 +578,12 @@ class Interpolate(Measurement):
         
     def interpolate(self):
         ''' calculate interpolated values at the current coordinates '''
-        indep_values = self.get_coordinate_values(parent=False)
+        indep_values = self.coordinates.values()
         if None in indep_values:
             raise ValueError('Not all independent coordinates have a value assigned.')
-        deps = self.get_values()
+        deps = self.values
         dep_values = [self._interpolators[dep](*indep_values) for dep in deps]
-        return ResultDict(zip(deps, dep_values))
+        return ParameterDict(zip(deps, dep_values))
         
     def calibrate(self):
         ''' perform a calibration at the current coordinates '''
@@ -590,15 +592,15 @@ class Interpolate(Measurement):
         # run calibration routine 
         _, d = self.calibrator(nested=True)
         # return only the relevant values
-        return ResultDict([(v, d[v]) for v in self.get_values()])
+        return ParameterDict([(v, d[v]) for v in self.values])
     
     def _create_interpolators(self):
         ''' generate an interpolator object for every dependent parameter '''
-        indep_names = [c.name for c in self.get_coordinates(parent=False)]
+        indep_names = [c.name for c in self.coordinates]
         indep_arrs = [getattr(self.table.cols, indep_name) for indep_name in indep_names]
         indep_arr = numpy.vstack(indep_arrs).transpose()
         self._interpolators = {}
-        for dep in self.get_values():
+        for dep in self.values:
             dep_arr = getattr(self.table.cols, dep.name)
             self._interpolators[dep] = self.interpolator(indep_arr, dep_arr)
     
@@ -610,10 +612,10 @@ class Interpolate(Measurement):
         # load data from disk
         df_cs, df_ds = DatReader(fn)()
         # check if all variables are present
-        for c in self.get_coordinates(parent=False):
+        for c in self.coordinates:
             if c.name not in [df_c.name for df_c in df_cs.keys()]:
                 raise ValueError('Coordinate {0} is missing in the calibration file.'.format(c.name))
-        for c in self.get_values():
+        for c in self.values:
             if c.name not in [df_c.name for df_c in df_ds.keys()]:
                 raise ValueError('Value {0} is missing in the calibration file.'.format(c.name))
         # create a pytables-like object hierarchy

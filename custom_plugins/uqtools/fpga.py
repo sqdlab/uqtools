@@ -2,8 +2,9 @@ import numpy
 import logging
 import contextlib
 
-from measurement import Measurement, ResultDict 
-from process import Integrate
+from .parameter import ParameterDict
+from .measurement import Measurement
+from .process import Integrate
 
 class FPGAMeasurement(Measurement):
     '''
@@ -26,11 +27,11 @@ class FPGAMeasurement(Measurement):
         super(FPGAMeasurement, self).__init__(**kwargs)
         self._fpga = fpga
         self.overlapped = overlapped
-        with contextlib.nested(*self._context):
+        with self.context:
             self._check_mode()
             dims = self._fpga.get_data_dimensions()
-            self.set_coordinates(dims[:-1])
-            self.set_values(dims[-1])
+            self.coordinates = dims[:-1]
+            self.values.append(dims[-1])
 
     def _check_mode(self):
         ''' 
@@ -43,8 +44,8 @@ class FPGAMeasurement(Measurement):
     def _setup(self):
         # fix dimensions before the first measurement, not at create-time
         #dims = self._fpga.get_data_dimensions()
-        #self.set_coordinates(dims[:-1])
-        #self.set_values(dims[-1])
+        #self.coordinates = dims[:-1]
+        #self.values = (dims[-1],)
         if self.overlapped:
             self._fpga.stop()
         super(FPGAMeasurement, self)._setup()
@@ -75,8 +76,8 @@ class FPGAMeasurement(Measurement):
         # save to file & return
         self._data.add_data_point(*table, newblock = True)
         return (
-            ResultDict(zip(self.get_coordinates(), coordinate_matrices)), 
-            ResultDict(zip(self.get_values(), (data,)))
+            ParameterDict(zip(self.coordinates, coordinate_matrices)), 
+            ParameterDict(zip(self.values, (data,)))
         )
 
 class FPGAStart(Measurement):
@@ -128,6 +129,6 @@ def AveragedTvModeMeasurement(fpga, **kwargs):
         integrate TvModeMeasurement over time
     '''
     tv = TvModeMeasurement(fpga, data_save=False)
-    time = tv.get_coordinates()[-1]
+    time = tv.coordinates[-1]
     name = kwargs.pop('name', 'AveragedTvMode')
     return Integrate(tv, time, average=True, name=name, **kwargs)

@@ -3,12 +3,9 @@ import logging
 from collections import defaultdict
 import functools
 
-import qt
-
-from measurement import Measurement, ResultDict
-from basics import coordinate_concat, ContinueIteration, BreakIteration
-from parameter import Parameter
-from progress import ProgressReporting
+from .parameter import Parameter, ParameterList, ParameterDict, coordinate_concat
+from .measurement import Measurement
+from .progress import Flow, ContinueIteration, BreakIteration
 
 
 def apply_decorator(f, name=None):
@@ -55,7 +52,7 @@ def apply_decorator(f, name=None):
                 # write data back
                 ds[k] = d
         # call wrapped function
-        result = ResultDict()
+        result = ParameterDict()
         if(
            numpy.all([dss[0].keys() == ds.keys() for ds in dss]) or
            numpy.all([[k.name for k in dss[0].keys()] == [k.name for k in ds.keys()] for ds in dss])
@@ -66,8 +63,8 @@ def apply_decorator(f, name=None):
                 args = [ds[k] for ds in dss]
                 result[k] = f(*args) if self is None else f(self, *args)
         else:
-            # otherwise, execute f for each key of the first ResultDict
-            # and pass all elements of the other ResultDicts
+            # otherwise, execute f for each key of the first ParameterDict
+            # and pass all elements of the other ParameterDicts
             xargs = [arr for ds in dss[1:] for arr in ds.values()]
             for k in dss[0].keys():
                 args = [dss[0][k]] + xargs
@@ -82,7 +79,7 @@ class Apply(Measurement):
     '''
     Apply an arbitrary non-reducing function to measured data 
     '''
-    _propagate_name = True
+    PROPAGATE_NAME = True
     
     def __init__(self, measurements, f=None, **kwargs):
         '''
@@ -92,9 +89,9 @@ class Apply(Measurement):
                 first measurement in measurements.
             f - Function applied to the data, transforming 
                 cs0, ds0 -> f(cs0, ds0, [cs1, ds1, ...]).
-                The cs and ds are ResultDict objects containing the coordinate
+                The cs and ds are ParameterDict objects containing the coordinate
                 and value matrices, respectively. f is expected to return two
-                ResultDicts that have the same keys (in the same order) as cs0
+                ParameterDicts that have the same keys (in the same order) as cs0
                 and ds0 and thus elements that have the same number of dimensions
                 as the elements of ds0.
         '''
@@ -112,15 +109,15 @@ class Apply(Measurement):
         if not len(measurements):
             raise ValueError('at least one measurement must be given.')
         for m in measurements:
-            self.add_measurement(m, inherit_local_coords=False)
+            self.measurements.append(m, inherit_local_coords=False)
         # copy local coordinates and values from first measurement
-        self.add_coordinates(measurements[0].get_coordinates())
-        self.add_values(measurements[0].get_values())
+        self.coordinates = measurements[0].coordinates
+        self.values = measurements[0].values
     
     def _measure(self, **kwargs):
         # perform all nested measurements
         kwargs['output_data'] = True
-        results = [m(nested=True, **kwargs) for m in self.get_measurements()]
+        results = [m(nested=True, **kwargs) for m in self.measurements]
         # inform user when measurements return no data
         for cs, ds in results:
             if (cs is None) and (ds is None):
@@ -133,8 +130,8 @@ class Apply(Measurement):
         # call function
         cs, ds = self.f(*results)
         # check d for consistency
-        if not isinstance(ds, ResultDict):
-            raise TypeError('f must return a ResultDict object.')
+        if not isinstance(ds, ParameterDict):
+            raise TypeError('f must return a ParameterDict object.')
         if(ds.keys() != results[1].keys()):
             logging.warning(__name__+': dict keys returned by f differ from the input keys.')
         for k in ds.keys():
@@ -174,6 +171,9 @@ class Add(Apply):
             else:
                 return summands[1]-summands[0]
 
+def Subtract(*summands, **kwargs):
+    kwargs['subtract'] = True
+    return Add(*summands, **kwargs)
         
 class Multiply(Apply):
     def __init__(self, *factors, **kwargs):
@@ -215,7 +215,7 @@ class Reshape(Measurement):
     '''
     Reshape measured data.
     '''
-    _propagate_name = True
+    PROPAGATE_NAME = True
 
     def __init__(self, source, coords_del, ranges_ins, **kwargs):
         '''
@@ -229,21 +229,21 @@ class Reshape(Measurement):
             of points in the ranges during a measurement is not recommended.
         '''
         super(Reshape, self).__init__(**kwargs)
-        self.add_measurement(source, inherit_local_coords=False)
+        self.measurements.append(source, inherit_local_coords=False)
         self.coords_del = coords_del
         self.ranges_ins = ranges_ins
         # remove input coordinates, prepend output coordinates
-        cs = source.get_coordinates()
+        cs = ParameterList(source.coordinates)
         for c in coords_del:
             cs.remove(c)
         cs = ranges_ins.keys()+cs
-        self.add_coordinates(cs)
-        self.add_values(source.get_values())
+        self.coordinates = cs
+        self.values = source.values
         
     def _measure(self, **kwargs):
         # call source
         kwargs['output_data'] = True
-        cs, d = self.get_measurements()[0](nested=True, **kwargs)
+        cs, d = self.measurements[0](nested=True, **kwargs)
         # check if the new shape is compatible with the shape of data
         # also checks if all relevant keys are present
         del_shape = [cs[k].shape[cs.keys().index(k)] for k in self.coords_del]
@@ -276,9 +276,9 @@ class Reshape(Measurement):
         out_slice = [0]*len(ins_shape)+[Ellipsis]
         cs_out = coordinate_concat(*(
             # build outer product of ranges_ins shapes
-            [ResultDict([(k, v)]) for k, v in zip(self.ranges_ins.keys(), ranges_ins)]+
+            [ParameterDict([(k, v)]) for k, v in zip(self.ranges_ins.keys(), ranges_ins)]+
             # these would be the correct coordinates if we removed coords_del
-            [ResultDict([(k, v[out_slice]) for k,v in cs.iteritems()])]
+            [ParameterDict([(k, v[out_slice]) for k,v in cs.iteritems()])]
         ))
         # we've already reshaped these above... 
         for k in cs_out.keys():
@@ -291,7 +291,7 @@ class Reshape(Measurement):
         return cs_out, d
 
 
-class Accumulate(ProgressReporting, Measurement):
+class Accumulate(Measurement):
     '''
     Accumulate data measured over several iterations
     
@@ -311,50 +311,48 @@ class Accumulate(ProgressReporting, Measurement):
         # iterations may be a function
         self.iterations = iterations if callable(iterations) else (lambda: iterations)
         # imitate source
-        self.coordinate = Parameter('iteration')
-        self.add_coordinates(self.coordinate)
-        self.add_coordinates(source.get_coordinates())
-        self.add_values(source.get_values())
-        self.add_measurement(source, inherit_local_coords=False)
+        self.coordinate = Parameter('iteration', dtype=int)
+        self.coordinates.append(self.coordinate, inheritable=True)
+        self.coordinates.extend(source.coordinates, inheritable=False)
+        self.values = source.values
+        self.measurements.append(source)
+        self.flow = Flow(self, iterations=iterations)
     
-    @functools.wraps(Measurement.get_coordinates)
-    def get_coordinates(self, parent=False, local=True, inheritable=False):
-        return (
-            (self._parent_coordinates if parent else []) + 
-            (self.coordinates[:1] if inheritable else []) +
-            (self.coordinates[1:] if local else [])
-        )
-            
+    def get_coordinates(self):
+        # does not return or save iteration
+        # relies on undocumented feature of DataManager taking self.coordinates
+        # to calculate inherited coordinates but self.get_coordinates for saved
+        # coordinates
+        # TODO: will break soon
+        return self.coordinates[1:]
+        
     def _measure(self, **kwargs):
         iterations = self.iterations()
-        self._reporting_state.iterations = iterations
+        self.flow.iterations = iterations
         traces = 0
         for iteration in range(iterations):
-            self._reporting_start_iteration()
+            #self._reporting_start_iteration()
             # run background tasks (e.g. progress reporter)
-            qt.msleep()
+            self.flow.sleep()
             # set iteration number
             self.coordinate.set(iteration)
             # acquire data, support the same control flow exceptions as Sweep
             try:
                 kwargs['output_data'] = True
-                cs, ds = self.get_measurements()[0](nested=True, **kwargs)
+                cs, ds = self.measurements[0](nested=True, **kwargs)
             except ContinueIteration:
                 continue
             except BreakIteration:
                 break
             finally:
-                self._reporting_next()
+                self.flow.next()
             traces += 1
             # accumulate data
             if traces==1:
                 # first iteration: initialize accumulator
                 file_position = self._data._file.tell()
                 acc_cs = cs
-                # copy data arrays
-                ds_keys = ds.keys()
-                ds_values = [numpy.copy(val) for val in ds.values()]
-                acc_ds = ResultDict(zip(ds_keys, ds_values))
+                acc_ds = ParameterDict([(k, numpy.copy(d)) for k, d in ds.iteritems()])
             else:
                 # other iterations: accumulate data
                 if (acc_cs.keys() != cs.keys()) or (acc_ds.keys() != ds.keys()):
@@ -365,14 +363,14 @@ class Accumulate(ProgressReporting, Measurement):
                     acc_ds[k] += d
                 # transfer accumulated data to local var
                 if isinstance(self.average, list) or isinstance(self.average, tuple):
-                    ds = ResultDict([(k, d/float(traces) if k in self.average else d) 
+                    ds = ParameterDict([(k, d/float(traces) if k in self.average else d) 
                                      for k, d in acc_ds.iteritems()])
                 elif self.average:
-                    ds = ResultDict([(k, d/float(traces)) for k, d in acc_ds.iteritems()])
+                    ds = ParameterDict([(k, d/float(traces)) for k, d in acc_ds.iteritems()])
                 else:
                     ds = acc_ds
             # truncate data file
-            if len(self.get_coordinates(parent=True, local=False)):
+            if len(self.data_manager.get_inherited_coordinates(self)):
                 # if the measurement is swept over external coordinates,
                 # truncate the file at the start of the data set corresponding
                 # to the current coordinates
@@ -388,6 +386,7 @@ class Accumulate(ProgressReporting, Measurement):
                 self._data.create_file(filepath=self._data.get_filepath(), settings_file=False)
             # write accumulated data to file
             points = [numpy.ravel(m) for m in cs.values()+ds.values()]
+            #points.insert(0, iteration*numpy.ones_like(points[0], self.coordinate.dtype))
             self._data.add_data_point(*points, newblock=True)
         # return data
         return cs, ds
@@ -415,7 +414,7 @@ class AddMonolithic(Measurement):
             subtract - if True, subtract summand instead of adding it
         '''
         super(Add, self).__init__(**kwargs)
-        m = self.add_measurement(m, inherit_local_coords=False)
+        self.measurements.append(m, inherit_local_coords=False)
         # unify different formats of summands
         if isinstance(summand, Measurement):
             self._summand = lambda: summand()[1]
@@ -426,11 +425,11 @@ class AddMonolithic(Measurement):
         # determine summand and measurement coordinates
         if (
             (coordinates is None) and 
-            not hasattr(summand, 'get_coordinates')
+            not hasattr(summand, 'coordinates')
         ):
             raise ValueError('coordinates must be specified if summand is not a Measurement.')
-        l_cs = coordinates if (coordinates is not None) else summand.get_coordinates()
-        m_cs = m.get_coordinates()
+        l_cs = coordinates if (coordinates is not None) else summand.coordinates
+        m_cs = m.coordinates
         # make sure all provided coordinates are present in the measurement
         for l_c in l_cs:
             if not l_c in m_cs:
@@ -440,13 +439,13 @@ class AddMonolithic(Measurement):
         self._transpose = [l_cs.index(m_c) if (m_c in l_cs) else dims_add.pop() for m_c in m_cs]
         self.subtract = subtract
         # add child dimensions to self
-        self.add_coordinates(m.get_coordinates())
-        self.add_values(m.get_values())
+        self.coordinates = m.coordinates
+        self.values = m.values
 
     def _measure(self, **kwargs):
         # retrieve first summand: measured data
         kwargs['output_data'] = True
-        cs, d = self.get_measurements()[0](nested=True, **kwargs)
+        cs, d = self.measurements[0](nested=True, **kwargs)
         # retrieve second summand: calibration data
         s1s = self._summand()
         if s1s is None:
@@ -480,7 +479,7 @@ class Integrate(Measurement):
     '''
     Integrate measurement data
     '''
-    _propagate_name = True
+    PROPAGATE_NAME = True
 
     def __init__(self, m, coordinate, range=None, average=False, **kwargs):
         '''
@@ -497,19 +496,19 @@ class Integrate(Measurement):
         self._coordinate = coordinate
         self.range = range
         self.average=average
-        m = self.add_measurement(m, inherit_local_coords=False)
+        self.measurements.append(m, inherit_local_coords=False)
         # add child coordinates to self, ignoring the coordinate integrated over
-        cs = m.get_coordinates()
+        cs = ParameterList(m.coordinates)
         self._axis = cs.index(coordinate)
         cs.pop(self._axis)
-        self.add_coordinates(cs)
-        self.add_values(m.get_values())
+        self.coordinates = cs
+        self.values = m.values
     
     def _measure(self, **kwargs):
         # retrieve data
         kwargs['output_data'] = True
-        cs, d = self.get_measurements()[0](nested=True, **kwargs)
-        d_int = ResultDict()
+        cs, d = self.measurements[0](nested=True, **kwargs)
+        d_int = ParameterDict()
         if self.range is not None:
             # select values to be integrated
             c_mask = numpy.all((cs[self._coordinate]>=self.range[0], cs[self._coordinate]<self.range[1]), axis=0)

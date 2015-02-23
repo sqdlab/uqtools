@@ -4,7 +4,7 @@
 import numpy
 import logging
 
-from basics import ContinueIteration
+from .progress import ContinueIteration
 try:
     from pulsegen import MultiAWGSequence, Pulse, pattern_start_marker, meas_marker, mwspacer, ZeroPulse
 except ImportError:

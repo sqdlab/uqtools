@@ -1,38 +1,42 @@
-import time
-import types
 import numpy
-import functools
-
-import qt
 from collections import deque
-from parameter import Parameter
-from measurement import Measurement, ResultDict
-from progress import ProgressReporting
+from time import sleep
+
+from .parameter import Parameter, ParameterDict
+from .measurement import Measurement
+from .progress import Flow, BreakIteration, ContinueIteration
+from .parameter import coordinate_concat
 
 class Delay(Measurement):
     '''
-        a delay
+    A Delay
     '''
-    def __init__(self, delay=0, **kwargs):
-        self._delay = delay
+    def __init__(self, delay=0., **kwargs):
+        '''
+        Input:
+            delay (float) - Delay in seconds.
+        '''
+        self.delay = delay
         super(Delay, self).__init__(**kwargs)
     
     def _measure(self, **kwargs):
-        if self._delay is not None:
-            if self._delay >= 50e-3:
-                qt.msleep(self._delay)
-            else:
-                time.sleep(self._delay)
+        if self.delay >= 50e-3:
+            self.flow.sleep(self.delay)
+        else:
+            sleep(self.delay)
+        return None, None
+
+
     
 class ParameterMeasurement(Measurement):
     '''
-        0d measurement
-        Retrieve values of all elements of values and save them to a single file.
+    Measure the value of Parameters.
+    Calls get() on all passed Parameters and saves them to a single table.
     '''
     def __init__(self, *values, **kwargs):
         '''
             Input:
-                *values - one or more Parameter objects to query for values
+                *values - Parameter objects to query for values
         '''
         if not len(values):
             raise ValueError('At least one Parameter object must be specified.')
@@ -42,131 +46,116 @@ class ParameterMeasurement(Measurement):
             else:
                 kwargs['name'] = '(%s)'%(','.join([value.name for value in values]))
         super(ParameterMeasurement, self).__init__(**kwargs)
-        self.add_values(values)
+        self.values.extend(values)
     
     def _measure(self, **kwargs):
-        data = self.get_value_values()
+        data = self.values.values()
         self._data.add_data_point(*data)
-        return {}, ResultDict(zip(self.get_values(), data))
+        return (ParameterDict(), 
+                ParameterDict(zip(self.values, data)))
+  
   
     
 class MeasurementArray(Measurement):
     '''
-        A container for measurements that write individual data files.
-        Meant as a demo and for testing of data file handling.
+    A container for measurements that write individual data files.
     '''
     def __init__(self, *measurements, **kwargs):
+        # default value for output_data
+        self.output_data = kwargs.pop('output_data', False)
         super(MeasurementArray, self).__init__(**kwargs)
         for idx, m in enumerate(measurements):
-            self.add_measurement(m)
-            self.add_values(Parameter('nested_{0}'.format(idx)))
+            self.measurements.append(m)
+            self.values.append(Parameter('nested_{0}'.format(idx)))
+        # progress bar flow
+        self.flow = Flow(self, iterations=len(measurements))
 
     def _measure(self, **kwargs):
-        output_data = kwargs.get('output_data', False)
+        output_data = kwargs.get('output_data', self.output_data)
         results = deque(maxlen=None if output_data else 0)
         # ...
-        continueIteration = False
-        for measurement in self.get_measurements():
+        continue_iteration = False
+        for measurement in self.measurements:
+            self.flow.sleep()
             result = None
-            if not continueIteration:
+            if not continue_iteration:
                 try:
                     result = measurement(nested=True, **kwargs)
-                except ContinueIteration, BreakIteration:
-                    continueIteration = True
+                except ContinueIteration:
+                    continue_iteration = True
             results.append(result)
+            self.flow.next()
         if output_data:
-            return {}, ResultDict(zip(self.get_values(), results))
+            return (ParameterDict(), 
+                    ParameterDict(zip(self.values, results)))
+        return None, None
         
     def _create_data_files(self):
-        ''' MeasurementArray does never create data files '''
+        ''' MeasurementArray does not create data files '''
         pass
 
-class ReportingMeasurementArray(ProgressReporting, MeasurementArray):
-    '''
-        MeasurementArray with progress reporting
-    '''
-    def _measure(self, **kwargs):
-        output_data = kwargs.get('output_data', False)
-        results = deque(maxlen=None if output_data else 0)
-        # ...
-        self._reporting_start()
-        self._reporting_state.iterations = len(self.get_measurements())
-        continueIteration = False
-        for measurement in self.get_measurements():
-            result = None
-            if not continueIteration:
-                try:
-                    result = measurement(nested=True, **kwargs)
-                except ContinueIteration, BreakIteration:
-                    continueIteration = True
-            results.append(result)
-            self._reporting_next()
-        self._reporting_finish()
-        if output_data:
-            return {}, ResultDict(zip(self.get_values(), results))
 
 
-class ContinueIteration(Exception):
-    ''' signal Sweep to continue at the next coordinate value '''
-    pass
-
-class BreakIteration(Exception):
-    ''' signal Sweep to continue at the next coordinate value '''
-    pass
-
-class Sweep(ProgressReporting, Measurement):
+class Sweep(Measurement):
     '''
         do a one-dimensional sweep of one or more nested measurements
     '''
-    _propagate_name = True
+    PROPAGATE_NAME = True
     
     def __init__(self, coordinate, range, measurements, output_data=False, **kwargs):
         '''
+            Sweep coordinate over range and run measurements at each point.
+            
+            If an iterable of measurements are passed as the measurements
+            argument, they are wrapped in a MeasurementArray.
+            
+            Basic loop control is supported by raising the BreakIteration or
+            ContinueIteration exceptions. ContinueIteration aborts the remaining
+            measurements at the current point and continues with the next point
+            in range. BreakIteration aborts the sweep completely. 
+            
             Input:
-                coordinate - swept coordinate
-                range - sweep range
-                    If range is a function, it is called with zero arguments at 
+                coordinate (Parameter) - swept coordinate
+                range (iterable) - sweep range
+                    If range is a function, it is called without arguments at 
                     the start of the/each sweep.
-                measurements - nested measurement or measurements. each measurement
-                    is executed once per value in range. A measurement may raise 
-                    a ContinueIteration exception to indicate that the remaining
-                    measurements should be skipped in the current iteration.
-                    If measurements is an iterable, a value parameter is added for
-                    each measurement and _measure will return (coordinates, values)
-                    tuples for each measurement. Otherwise, _measure will return
-                    a single (coordinates, values) pair with the sweep coordinate
-                    added. In other words, it will produce the same output the
-                    nested measurement would if it had an additional internal
-                    coordinate.
-                    
-            Note:
-                ContinueIteration and BreakIteration exceptions can be used by 
-                nested measurements to advance to the next point in the sweep
-                or abort the sweep completely.
+                measurements (Measurement or iterable of Measurement) -
+                    Nested measurement or measurements. If measurements is an
+                    iterable, it is automatically wrapped in a MeasurementArray.
+                output_data (bool) - If True, aggregate measured data and return
+                    coordinate and data matrices with a prepended dimension that
+                    corresponds to the sweep coordinate.
         '''
         if('name' not in kwargs):
             kwargs['name'] = coordinate.name
         super(Sweep, self).__init__(**kwargs)
-        self.add_coordinates(coordinate)
+        self.coordinates = (coordinate,)
         self.coordinate = coordinate
-        # range may be an iterable or a function
-        if callable(range):
-            self.range = range
-        else:
-            self.range = lambda: range
-        # add nested measurements
-        self._values_passthrough = not numpy.iterable(measurements)  
-        if not self._values_passthrough:
-            for idx, m in enumerate(measurements):
-                m = self.add_measurement(m)
-                self.add_values(Parameter('nested_{0}'.format(idx)))
-        else:
-            m = self.add_measurement(measurements)
-            self.add_coordinates(m.get_coordinates())
-            self.add_values(m.get_values())
-        # default value for output_data
+        self.range = range
         self.output_data = output_data
+        # add nested measurements
+        if numpy.iterable(measurements):
+            m = MeasurementArray(*measurements)
+        else:
+            m = measurements
+        self.measurements = (m,)
+        self.coordinates.extend(m.coordinates, inheritable=False)
+        self.values.extend(m.values)
+        # generate progress bar
+        self.flow = Flow(self, iterations=1)
+
+    @property
+    def range(self):
+        ''' call user-provided range if it is a function '''
+        if callable(self._range):
+            return self._range()
+        else:
+            return self._range
         
+    @range.setter
+    def range(self, value):
+        self._range = value
+
     def _measure(self, **kwargs):
         ''' 
             perform a swept measurement.
@@ -183,127 +172,56 @@ class Sweep(ProgressReporting, Measurement):
                     corresponding measurement. 
                 all args and kwargs are passed to the nested measurements
         '''
-        measurements = self.get_measurements()
         # measured range may change on each call; also notify progress reporter
-        _range = self.range()
-        if hasattr(_range, '__len__'):
-            self._reporting_state.iterations = len(_range)
+        if hasattr(self.range, '__len__'):
+            self.flow.iterations = len(self.range)
         # create output buffer if output is requested
-        output_data = kwargs.get('output_data', self.output_data)
-        if output_data:
-            results = [
-                numpy.zeros((len(_range),), numpy.object) 
-                for _ in range(len(measurements))
-            ]
-            for result in results:
-                result.fill(None)
+        if 'output_data' not in kwargs:
+            kwargs['output_data'] = self.output_data
+        output_data = kwargs.get('output_data')
+        points = deque(maxlen=None if output_data else 0)
+        results = deque(maxlen=None if output_data else 0)
         # sweep coordinate
         try:
-            for ridx, x in enumerate(_range):
+            for x in self.range:
                 # reset child progress bars
-                self._reporting_start_iteration()
+                #self._reporting_start_iteration()
                 # set coordinate value
                 self.coordinate.set(x)
-                for midx, measurement in enumerate(measurements):
-                    # run background tasks (e.g. progress reporter)
-                    qt.msleep()
-                    # measure
-                    try:
-                        result = measurement(nested=True, **kwargs)
-                        if output_data:
-                            results[midx][ridx] = result
-                    except ContinueIteration:
-                        # if a ContinueIteration exception is raised, 
-                        # do not execute any more measurements in this iteration
-                        break
+                self.flow.sleep()
+                # measure
+                try:
+                    results.append(self.measurements[0](nested=True, **kwargs))
+                    points.append(x)
+                except ContinueIteration:
+                    pass
                 # indicate that the current data point is complete
-                self._reporting_next()
+                self.flow.next()
         except BreakIteration:
-            # if a BreakIteration exception is raised,
-            # do not measure any additional data points
+            # Do not measure any additional data points.
             pass
         if output_data:
-            if not self._values_passthrough:
-                # the simple case: multiple measurements, no mangling of data
+            # no data measured shortcut
+            if not len(results):
                 return (
-                    ResultDict([(self.coordinate, _range)]), 
-                    ResultDict(zip(self.get_values(), results))
+                    ParameterDict([(self.coordinate, None)]), 
+                    ParameterDict([(dim, None) for dim in self.values])
                 )
-            else:
-                # remove measurement index from results, there is only one item
-                results = results[0]
-                # the complex case: concatenate coordinate and data matrices
-                # skip points that where not measured
-                mask = results.nonzero()
-                if not len(mask[0]):
-                    return (
-                        ResultDict([(self.coordinate,[])]), 
-                        ResultDict(zip(self.get_values(), [[]]*len(self.get_values())))
-                    )
-                _range = numpy.array(_range)[mask]
-                results = results[mask]
-                # expand _range array
-                cs = coordinate_concat(
-                    {self.coordinate: _range},
-                    results[0][0]
-                )
-                # concatenate other coordinate arrays
-                for k in results[0][0].keys():
-                    cs[k] = numpy.concatenate([x[k][numpy.newaxis,...] for x, _ in results])
-                # concatenate data arrays
-                d = ResultDict()
-                for k in results[0][1].keys():
-                    d[k] = numpy.array([y[k] for _, y in results])
-                return cs, d
-
-    @functools.wraps(Measurement.get_coordinates)
-    def get_coordinates(self, parent=False, local=True, inheritable=False):
-        return (
-            (self._parent_coordinates if parent else []) + 
-            (self.coordinates[:1] if local else []) +
-            (self.coordinates[1:] if not inheritable else [])
-        )
+            # concatenate coordinate and data matrices
+            cs = coordinate_concat({self.coordinate: points}, results[0][0])
+            for k in results[0][0].keys():
+                cs[k] = numpy.concatenate([x[k][numpy.newaxis,...] for x, _ in results])
+            ds = ParameterDict()
+            for k in results[0][1].keys():
+                ds[k] = numpy.array([y[k] for _, y in results])
+            return cs, ds
+        return None, None
 
     def _create_data_files(self):
-        ''' Sweep does never create data files '''
+        ''' Sweep does not create data files '''
         pass
 
-def coordinate_concat(*css):
-    '''
-    Concatenate coordinate matrices in a memory-efficient way.
-    
-    Input:
-        *css - any number of ResultDicts with coordinate matrices
-    Output:
-        a single ResultDict of coordinate matrices
-    '''
-    # check inputs
-    for cs in css:
-        for k, c in cs.iteritems():
-            if not isinstance(c, numpy.ndarray):
-                c = numpy.array(c)
-                cs[k] = c
-            if not c.ndim == len(cs):
-                raise ValueError('the number dimensions of each coordinate matrix must be equal to the number of elements in the dictionary that contains it.')
-    # calculate total number of dimensions
-    ndim = sum(len(cs) for cs in css)
-    # make all arrays ndim dimensional with their non-singleton indices in the right place
-    reshaped_cs = []
-    pdim = 0
-    for cs in css:
-        for k, c in cs.iteritems():
-            newshape = numpy.ones(ndim)
-            newshape[pdim:(pdim+c.ndim)] = c.shape
-            reshaped_c = numpy.reshape(c, newshape)
-            reshaped_cs.append(reshaped_c)
-        pdim = pdim + len(cs)
-    # broadcast arrays using numpy.lib.stride_tricks
-    reshaped_cs = numpy.broadcast_arrays(*reshaped_cs)
-    # build output dict
-    ks = []
-    for cs in css:
-        ks.extend(cs.keys())
-    return ResultDict(zip(ks, reshaped_cs))
+
 
 def MultiSweep(*args, **kwargs):
     '''

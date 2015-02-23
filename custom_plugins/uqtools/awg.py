@@ -4,9 +4,9 @@ import numpy
 import time
 from collections import OrderedDict
 
-from parameter import Parameter
-from measurement import Measurement
-from process import Reshape
+from .parameter import Parameter
+from .measurement import Measurement
+from .process import Reshape
 try:
     from pulsegen import MultiAWGSequence
 except ImportError:
@@ -31,7 +31,7 @@ class ProgramAWG(Measurement):
             wait - wait for AWG to finish programming
         '''
         super(ProgramAWG, self).__init__(**kwargs)
-        self._data_directory = kwargs.get('data_directory', self.name)
+        self.data_directory = kwargs.pop('data_directory', self.name)
         self.wait = wait
         self._sequence = sequence
         self.awgs = awgs
@@ -89,9 +89,8 @@ class ProgramAWG(Measurement):
                 awg.initiate_generation()
         if hasattr(self.awgs[0], 'set_marker4_source'):
             time.sleep(1000e-3)
-            if len(self.awgs)==3:
-                self.awgs[1].get_marker4_source()
-                self.awgs[2].get_marker4_source()
+            for awg in self.awgs[1:]:
+                awg.get_marker4_source()
             self.awgs[0].set_marker4_source('Hardware Trigger 1')
         if wait:
             # wait for all AWGs to finish loading
@@ -131,9 +130,8 @@ class ProgramAWGParametric(ProgramAWG):
                 their values are compared to the previous iteration to determine whether
                 a new sequence must be exported to the AWG
         '''
-        super(ProgramAWG, self).__init__(**kwargs)
-        #Measurement.__init__(**kwargs)
-        self._data_directory = kwargs.get('data_directory', self.name)
+        Measurement.__init__(data_directory=data_directory, **kwargs)
+        self.data_directory = kwargs.get('data_directory', self.name)
         self.awgs = awgs
         self._seq_func = seq_func
         self._seq_kwargs = seq_kwargs
@@ -142,8 +140,8 @@ class ProgramAWGParametric(ProgramAWG):
         # add function arguments as parameters
         for key, arg in seq_kwargs.iteritems():
             if hasattr(arg, 'get'):
-                self.add_values(Parameter(key, get_func=arg.get))
-        self.add_values(Parameter('index'))
+                self.values.append(Parameter(key, get_func=arg.get))
+        self.values.append(Parameter('index'))
 
     def _setup(self):
         # create data files etc.
@@ -197,7 +195,7 @@ class ProgramAWGParametric(ProgramAWG):
             self.values['index'].set(idx)
         
         # save evaluated args to file
-        self._data.add_data_point(*self.get_value_values())
+        self._data.add_data_point(*self.values.values())
         
         # program awg
         self._program(host_dir, host_file(idx), wait, self._prev_seq_lengths[idx])
@@ -287,15 +285,16 @@ class ProgramAWGSweep(ProgramAWG):
         self.force_program = kwargs.pop('force_program', False)
         self.wait = kwargs.pop('wait', True)
         # save patterns in patterns subdirectory
-        Measurement.__init__(self, **kwargs)
-        self._data_directory = kwargs.pop('data_directory', self.name)
+        name = kwargs.pop('name', '_'.join(args[::2]))
+        data_directory = kwargs.pop('data_directory', name)
+        Measurement.__init__(self, data_directory=data_directory, name=name, **kwargs)
         # add variable pulse and marker function arguments as parameters
         # sweep ranges are stored as comments to save space 
         # (they will show up in the measured data files anyway)
         for key, arg in self.pulse_kwargs.iteritems():
             if hasattr(arg, 'get'):
-                self.add_values(Parameter(key, get_func=arg.get))
-        self.add_values(Parameter('index'))
+                self.values.append(Parameter(key, get_func=arg.get))
+        self.values.append(Parameter('index'))
 
     def _setup(self):
         # create data files etc.
@@ -367,7 +366,7 @@ class ProgramAWGSweep(ProgramAWG):
             self._program(host_dir, host_file(cache_idx), wait, self._prev_seq_lengths[cache_idx])
         # save evaluated args to file
         self.values['index'].set(cache_idx)
-        self._data.add_data_point(*self.get_value_values())
+        self._data.add_data_point(*self.values.values())
 
     def sequence(self, ranges, kwargs):
         ''' generate a sequence object for the provided parameter values '''
@@ -504,18 +503,18 @@ class MultiAWGSweep(Measurement):
         super(MultiAWGSweep, self).__init__(name=name, **kwargs)
         # create AWG programmer
         self.program = ProgramAWGSweep(*args, **program_kwargs)
-        self.add_measurement(self.program, inherit_local_coords=False)
+        self.measurements.append(self.program, inherit_local_coords=False)
         if hasattr(self.program, 'plot'):
             self.plot = self.program.plot
         # create reshaping source
         self.measure = MeasureAWGSweep(*args, **measure_kwargs)
-        self.add_measurement(self.measure, inherit_local_coords=False)
+        self.measurements.append(self.measure, inherit_local_coords=False)
         # imitate reshaping source
-        self.add_coordinates(self.measure.get_coordinates())
-        self.add_values(self.measure.get_values())
+        self.coordinates = self.measure.coordinates
+        self.values = self.measure.values
         
     def _measure(self, **kwargs):
-        program, rsource = self.get_measurements()
+        program, rsource = self.measurements
         # program waveform generator
         program(nested=True)
         # measure data

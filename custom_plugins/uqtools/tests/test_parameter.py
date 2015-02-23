@@ -1,7 +1,9 @@
-from pytest import fixture, raises
 import numpy
+from pytest import fixture, raises
+from IPython.lib.pretty import pretty
 
-from parameter import Parameter, ParameterList, ParameterDict
+from uqtools import (Parameter, OffsetParameter, ScaledParameter, 
+                     LinkedParameter, ParameterList, ParameterDict)
 
 class TestParameter:
     def test_as_buffer(self):
@@ -42,7 +44,55 @@ class TestParameter:
         assert repr(p)
 
 
+class TestOffsetParameter:
+    @fixture
+    def p(self):
+        return Parameter('base')
+        
+    def test_const_offset(self, p):
+        op = OffsetParameter(p, 1)
+        op.set(2)
+        assert op.get() == 2
+        assert p.get() == 1
+        
+    def test_parameter_offset(self, p):
+        o = Parameter('offset', value=1)
+        op = OffsetParameter(p, o)
+        op.set(2)
+        assert op.get() == 2
+        assert p.get() == 1
 
+
+class TestScaledParameter:
+    @fixture
+    def p(self):
+        return Parameter('base')
+    
+    def test_const_scale(self, p):
+        sp = ScaledParameter(p, 2.)
+        sp.set(1)
+        assert sp.get() == 1
+        assert p.get() == 0.5
+
+    def test_parameter_scale(self, p):
+        s = Parameter('scale', value = 2.)
+        sp = ScaledParameter(p, s)
+        sp.set(1)
+        assert sp.get() == 1
+        assert p.get() == 0.5
+
+
+class TestLinkedParameter:
+    def test_link(self):
+        p1 = Parameter('p1', value=1)
+        p2 = Parameter('p2')
+        lp = LinkedParameter(p1, p2)
+        assert lp.name == p1.name
+        assert lp.get() == 1
+        lp.set(2)
+        assert (p1.get() == 2) and (p2.get() == 2)
+        
+        
 class TestParameterList:
     @fixture
     def def_list(self):
@@ -91,6 +141,17 @@ class TestParameterList:
         def_list.insert(0, Parameter('testN'))
         with raises(TypeError):
             def_list.insert(0, None)
+    
+    def test_eq(self):
+        p = Parameter('p')
+        assert ParameterList([p]) == ParameterList([p])
+        assert ParameterList([p]) == [p]
+    
+    def test_repr(self, def_list):
+        assert repr(def_list)
+        
+    def test_pretty(self, def_list):
+        assert pretty(def_list)
 
 
         
@@ -103,12 +164,14 @@ class TestParametertDict:
         return keys, ParameterDict( zip(keys, range(len(keys))) )
 
     def test_getitem_name(self, keys_and_dict):
+        ''' get value by key.name '''
         _, rd = keys_and_dict
         assert rd['p1'] == 1
         with raises(KeyError):
             rd['pX']
             
     def test_getitem_parameter(self, keys_and_dict):
+        ''' get value by key '''
         keys, rd = keys_and_dict
         pX = Parameter('pX')
         p1 = Parameter(keys[0].name) # object different from keys[0]
@@ -123,7 +186,26 @@ class TestParametertDict:
         for idx, key in enumerate(keys):
             assert key == rd.keys()[idx]
         assert keys[0].name in rd.keys()
+        
+    def test_equals(self):
+        ''' test equals operator (with array data) '''
+        p0 = Parameter('p0')
+        p0b = Parameter('p0')
+        p1 = Parameter('p1')
+        m0 = numpy.arange(50)
+        m1 = numpy.ones((50,))
+        d0 = ParameterDict([(p0, m0)])
+        # different data
+        assert d0 != ParameterDict([(p0, m1)])
+        # different key
+        assert d0 != ParameterDict([(p1, m0)])
+        # different key but with same name
+        assert d0 != ParameterDict([(p0b, m0)])
+        # same keys and values, different object
+        assert d0 == ParameterDict([(p0, m0)])
     
-    def test_repr(self, keys_and_dict):
+    def test_pretty(self, keys_and_dict):
+        ''' check IPython pretty printing '''
         _, rd = keys_and_dict
-        assert repr(rd)
+        assert pretty(rd)
+        

@@ -1,6 +1,7 @@
 import logging 
 from collections import deque
 from abc import ABCMeta, abstractmethod
+import warnings
 
 class NullContextManager(object):
     ''' A do-nothing context manager template '''
@@ -108,13 +109,16 @@ class ParameterHandler(object):
 class InstrumentHandler(object):
     ''' Instrument backend for Set/Revert context managers '''
     
-    def __init__(self, ins, **parameter_dict):
+    def __init__(self, ins, *pv_pairs, **parameter_dict):
         '''
         Input:
             ins (Instrument) - instrument to be updated
-            **parameter_dict - An arbitrary number of parameter=value pairs.
+            p0, v0, [p1, v1, ...] - parameter, value pairs.
+            **parameter_dict (dict) - parameter:value pairs.
                 for every pair, ins.set(parameter, value) is called if
                 ins.get(parameter) != value when the context is entered
+                parameter_tuples is always applied before parameter_dict, 
+                preserving the order of the tuples.
                  
         '''
         super(InstrumentHandler, self).__init__()
@@ -123,11 +127,12 @@ class InstrumentHandler(object):
             not hasattr(ins, 'get') or 
             not hasattr(ins, 'set')):
             raise TypeError('ins must have get, set and has_parameter methods.')
-        for key in parameter_dict:
+        self._parameters = (zip(pv_pairs[::2], pv_pairs[1::2]))
+        self._parameters.extend(parameter_dict.items())
+        for key, _ in self._parameters:
             if not ins.has_parameter(key):
                 raise KeyError('Instrument does not support parameter {0}'.
                                  format(key))
-        self._parameters = parameter_dict.items()
     
     def _update_value(self, key, value):
         old_value = self._ins.get(key)
@@ -184,12 +189,12 @@ class SimpleContextManager(object):
             restore - whether the previous variable value will be restored on __exit__
                 defaults to True
         '''
-        logging.warning(__name__+': SimpleContextManager is deprecated. '+
-                        'Use SetInstrument, RevertInstrument, SetParameter, '+
-                        'RevertParameter and contextlib.nested instead.')
+        warnings.warn(__name__+': SimpleContextManager is deprecated. '+
+                      'Use SetInstrument, RevertInstrument, SetParameter, '+
+                      'RevertParameter and contextlib.nested instead.',
+                      DeprecationWarning)
         self._parameters = []
         for p in parameters:
-            print p
             if isinstance(p, SimpleContextManager):
                 self._parameters.extend(p._parameters)
             elif isinstance(p, tuple):

@@ -1,130 +1,32 @@
 import os
-import time
 import numpy
-from functools import wraps
 import contextlib
-from collections import OrderedDict
-import string
-import unicodedata
 import logging
+from warnings import warn
 
-import qt
-from data import Data
-from lib.config import get_config
-config = get_config()
-import IPython.display
-import gobject
-
-from context import NullContextManager
-from parameter import ParameterList
-from progress import ProgressReporting, MultiProgressBar, SweepState
-
-make_iterable = lambda obj: obj if isinstance(obj, list) or isinstance(obj, tuple) else (obj,)
+from .parameter import Parameter, TypedList, ParameterList, ParameterDict
+from .progress import Flow
+from .context import NullContextManager
+from .data import DataManagerFactory
 
 
-class ResultDict(OrderedDict):
-    '''
-    An OrderedDict that accepts string keys as well as Parameter keys 
-    for read access.
-    '''
-    def __getitem__(self, key):
-        try:
-            # try key directly
-            return OrderedDict.__getitem__(self, key)
-        except KeyError as err:
-            # compare key to .name property of items
-            if hasattr(key, 'name'): 
-                key=key.name
-            for parameter in self.keys():
-                if parameter.name == key:
-                    return OrderedDict.__getitem__(self, parameter)
-            raise err
-
-    def index(self, key):
-        try:
-            return self.keys().index(key)
-        except ValueError as err:
-            for idx, parameter in enumerate(self.keys()):
-                if parameter.name == key:
-                    return idx
-            raise err
-
-    def __repr__(self):
-        items = ['"{0}":{1}'.format(k.name, v) for k, v in self.iteritems()]
-        return 'ResultDict(' + ', '.join(items) + ')'
-
-class DateTimeGenerator:
-    '''
-    Class to generate filenames / directories based on the date and time.
-    (taken from qtlab.data)
-    '''
-    def __init__(self, basedir = config['datadir'], datesubdir = True, timesubdir = True):
-        '''
-        create a new filename generator
-        
-        Input:
-            basedir (string): base directory
-            datesubdir (bool): whether to create a subdirectory for the date
-            timesubdir (bool): whether to create a subdirectory for the time
-        '''
-        self._basedir = basedir
-        self._datesubdir = datesubdir
-        self._timesubdir = timesubdir
-
-    def generate_directory_name(self, name = None, basedir = None, ts = None):
-        '''
-        Create and return a new data directory.
-
-        Input:
-            name (string): optional name of measurement
-            basedir (string): base directory, use value specified in the constructor
-                if None
-            ts (time.localtime()): timestamp which will be used if timesubdir=True
-
-        Output:
-            The directory to place the new file in
-        '''
-        path = basedir if basedir is not None else self._basedir
-        if ts is None:
-            ts = time.localtime()
-        if self._datesubdir:
-            path = os.path.join(path, time.strftime('%Y%m%d', ts))
-        if self._timesubdir:
-            tsd = time.strftime('%H%M%S', ts)
-            if name is not None:
-                tsd += '_' + self.sanitize(name)
-            path = os.path.join(path, tsd)
-        return path
-    
-    def generate_file_name(self, name = None, ts = None):
-        '''Return a new filename, based on name and timestamp.'''
-        tstr = time.strftime('%H%M%S', time.localtime() if ts is None else ts)
-        if name:
-            return '%s_%s.dat'%(tstr, self.sanitize(name))
-        else:
-            return '%s.dat'%(tstr)
-
-    def sanitize(self, name):
-        ''' sanitize name so it can safely be used as a part of a file name '''
-        # remove accents etc.
-        name = unicodedata.normalize('NFKD',unicode(name)).encode('ASCII','ignore')
-        # retain only whitelisted characters
-        whitelist = '_()' + string.ascii_letters + string.digits
-        name = ''.join([c for c in name if c in whitelist])
-        return name
+def make_iterable(obj):
+    ''' wrap obj in a tuple if it is not a tuple or list '''
+    if isinstance(obj, list) or isinstance(obj, tuple):
+        return obj
+    else:
+        return (obj,)
 
 
-class MeasurementBase(object):
+class Measurement(object):
     '''
         a measurement
         
         allows sharing of code, particularly data file handling,
         between measurement routines
     '''
-    # generate qtlab style directory names
-    _file_name_generator = DateTimeGenerator()
     # pass name as parent name to children
-    _propagate_name = False
+    PROPAGATE_NAME = False
     # what is output to the local log file?
     log_level = logging.INFO
     
@@ -136,537 +38,513 @@ class MeasurementBase(object):
                 name - suffix for directory and file names to make them
                     more easily identifiable
                 data_directory - (sub-)directory the data is saved in.
-                    data_directory is appended as-is to the parent data directory if set
-                    or the directory name returned by Measurement._file_name_generator.
                 data_save - if False, do not save measured data to file
                 context - context manager(s) wrapped around _measure
         '''
         if(name is None):
             name = self.__class__.__name__
             # remove trailing 'Measurement'
-            if name.endswith('Measurement'): name = name[:-11]
-        if(context is None):
-            self._context = [NullContextManager()]
-        else:
-            self._context = make_iterable(context)
+            if name.endswith('Measurement'): 
+                name = name[:-11]
         self.name = name
-        self._parent_name = ''
-        self._parent_data_directory = ''
-        self._data_directory = data_directory
-        self._data_save = data_save
-        self._children = []
-        if not hasattr(self, '_coordinates'):
-            self.coordinates = ParameterList()
-        if not hasattr(self, '_values'):
-            self.values = ParameterList()
-        self._parent_coordinates = []
-        self._setup_done = False
-    
-    def set_parent_name(self, name=''):
-        '''
-            set parent name
-            
-            self.name is concatenated with the parent name when generating data file names
-            parent measurements are not required to propagate their name and should do so
-            only if it adds to the user experience (e.g. a sweep could add a coordinate name)
-            this is controlled by the _propagate_name class property.
-            
-            Input:
-                name - parent name
-        '''
-        self._parent_name = name
+        self.context = context
+        self.data_directory = data_directory
+        self.data_save = data_save
+        self.measurements = []
         
-    def set_parent_coordinates(self, dimensions = []):
+        # show progress bar, allow child classes to override
+        if not hasattr(self, 'flow'):
+            self.flow = Flow(self)
+
+        # coordinate and values lists
+        # self.coordinate_flags is assigned by coordinates setter
+        self.coordinates = () 
+        self.values = ()
+        
+        self._setup_done = False
+        self.last_data_directory = None
+        self.last_data_file = None
+        self.data_manager = None
+
+    #
+    #
+    # Context Managers
+    #
+    #
+    @property
+    def context(self):
+        return contextlib.nested(*self._contexts)
+    
+    @context.setter
+    def context(self, contexts):
+        if contexts is None:
+            self._contexts = []
+        else:
+            self._contexts = make_iterable(contexts)
+    
+    #
+    #
+    # Dimension management 
+    #
+    #
+    
+    @property
+    def coordinates(self):
+        ''' return reference to _coordinates '''
+        return self._coordinates
+    
+    @coordinates.setter
+    def coordinates(self, iterable):
+        ''' allow assignment to coordinates '''
+        self.coordinate_flags = ParameterDict()
+        self._coordinates = CoordinateList(self.coordinate_flags, iterable)
+       
+    @property 
+    def values(self):
+        ''' return reference to _values ''' 
+        return self._values
+    
+    @values.setter
+    def values(self, iterable):
+        ''' allow assignment to values '''
+        self._values = ParameterList(iterable)
+    
+    def set_coordinates(self, dimensions, inheritable=True, **flags):
+        ''' 
+        empty coordinates list before calling add_coordinate
+        DEPRECATED. was never used. 
         '''
-            set *parent* coordinate(s)
-            
-            Input:
-                dimensions - an iterable containing Parameter objects
-        '''
-        if self._setup_done:
-            raise EnvironmentError('unable to add coordinates after the measurement has been setup.')
-        self._parent_coordinates = dimensions
-    
-    def set_parent_data_directory(self, directory=''):
-        self._parent_data_directory = directory
-    
-    def get_data_directory(self):
-        return os.path.join(self._parent_data_directory, self._data_directory)
-    
-    def set_coordinates(self, dimensions):
-        ''' empty coordinates list before calling add_coordinate '''
+        warn('Assign to Measurement.coordinates instead.', DeprecationWarning)
         self.coordinates = ParameterList()
-        self.add_coordinates(dimensions)
+        self.coordinate_flags = ParameterDict()
+        self.add_coordinates(dimensions, inheritable=inheritable, **flags)
     
     def set_values(self, dimensions):
-        ''' empty values list before calling add_value'''
+        ''' 
+        empty values list before calling add_value
+        DEPRECATED. was never used.
+        '''
+        warn('Assign to Measurement.values instead.', DeprecationWarning)
         self.values = ParameterList()
         self.add_values(dimensions)
     
-    def _is_parameter(self, dimension):
-        ''' check if dimension is compatible with Parameter '''
-        return (hasattr(dimension, 'get') and
-                hasattr(dimension, 'name') and
-                hasattr(dimension, 'iscomplex'))
-        
-    def add_coordinates(self, dimension):
-        ''' add one or more Parameter objects to the local coordinates list '''
+    def add_coordinates(self, dimension, inheritable=True, **flags):
+        ''' 
+        add one or more Parameter objects to the local coordinates list
+        DEPRECATED. use coordinates.append or coordinates.extend instead 
+        '''
+        warn('Use Measurement.coordinates append/extend instead.', 
+             DeprecationWarning)
         dimension = make_iterable(dimension)
-        if not numpy.all([self._is_parameter(d) for d in dimension]):
+        if not numpy.all([Parameter.is_compatible(dim) for dim in dimension]):
             raise TypeError('coordinates must be objects of type Parameter.')
-        self.coordinates.extend(dimension)
+        flags['inheritable'] = inheritable
+        for dim in dimension:
+            self.coordinates.append(dim)
+            self.coordinate_flags[dim] = dict(flags)
     
     def add_values(self, dimension):
-        ''' add one or more Parameter objects to the values list '''
+        ''' 
+        add one or more Parameter objects to the values list
+        DEPRECATED. use values.append or values.extend instead. 
+        '''
+        warn('Use Measurement.values append/extend instead.', DeprecationWarning)
         dimension = make_iterable(dimension)
-        if not numpy.all([self._is_parameter(d) for d in dimension]):
+        if not numpy.all([Parameter.is_compatible(dim) for dim in dimension]):
             raise TypeError('values must be objects of type Parameter.')
         self.values.extend(dimension)
     
-    def get_coordinates(self, parent=False, local=True, inheritable=False):
+    def get_coordinates(self):
         ''' 
-        return a list of parent and/or local coordinates
-        
-        Input:
-            parent (bool) - return parent coordinates
-            local (bool) - return local coordinates
-            inheritable (bool) - return only inheritable coordinates
-                inheritable=True is passed when the parent coordinates of child 
-                measurements are set up. It has no effect in the Measurement
-                base class.
+        return a copy of self.coordinates
+        DEPRECATED. use ParameterList(coordinates) instead. 
         '''
-        return (
-            (self._parent_coordinates if parent else []) + 
-            (self.coordinates if local else [])
-        )
+        warn('Use ParameterList(coordinates) instead.', DeprecationWarning)
+        return ParameterList(self.coordinates)
         
-    def get_values(self, key=None):
-        ''' return a list of (local) value dimensions '''
-        if key is None:
-            return list(self.values)
-        else:
-            ''' emulate dictionary access to self.values '''
-            for value in self.values:
-                if value.name == key:
-                    return value
-            raise KeyError(key)
+    def get_coordinate_flags(self, dimension):
+        ''' 
+        return flags of coordinate dimension
+        DEPRECATED. use coordinate_flags directly. 
+        '''
+        warn('Use Measurement.coordinates_flags directly.', DeprecationWarning)
+        return self.coordinate_flags[dimension]
+        
+    def get_values(self):
+        ''' 
+        return a list of (local) value dimensions
+        DEPRECATED. use ParameterList(values) instead. 
+        '''
+        warn('Use ParameterList(values) instead.', DeprecationWarning)
+        return ParameterList(self.values)
     
-    def get_coordinate_values(self, parent = True, local = True):
-        ''' run get() on all coordinates '''
-        return [dimension.get() for dimension in self.get_coordinates(parent, local)]
+    def get_coordinate_values(self):
+        ''' 
+        run get() on all coordinates.
+        DEPRECATED. use coordinates.values() instead 
+        '''
+        warn('Use coordinates.values() instead.', DeprecationWarning)
+        return self.coordinates.values()
     
     def get_value_values(self):
-        ''' run get() on all values '''
-        return [dimension.get() for dimension in self.get_values()]
-    
-    def add_measurement(self, measurement, inherit_local_coords=True):
+        ''' 
+        run get() on all values 
+        DEPRECATED. use values.values() instead 
         '''
-            add a nested measurement to an internal list,
-            so setup and cleanup can be automated
-            #copies the measurement object so it can be embedded in several measurements
+        warn('Use values.values() instead.', DeprecationWarning)
+        return self.values.values()
+
+    #    
+    #
+    # Measurement tree management
+    #
+    #
+    @staticmethod
+    def is_compatible(obj):
+        ''' check if m supports all methods required from a Measurement '''
+        return (hasattr(obj, 'name') and
+                hasattr(obj, 'coordinates') and
+                hasattr(obj, 'values') and
+                callable(obj) and  
+                hasattr(obj, '_setup') and callable(obj._setup) and 
+                hasattr(obj, '_teardown') and callable(obj._teardown))
+    
+    @property
+    def measurements(self):
+        ''' return reference to _measurements '''
+        return self._measurements
+    
+    @measurements.setter
+    def measurements(self, iterable):
+        ''' allow assignment of measurements '''
+        self.measurement_flags = dict()
+        self._measurements = MeasurementList(self.measurement_flags)
+        self._measurements.extend(iterable)
+    
+    def add_measurement(self, measurement, inherit_local_coords=True, **flags):
+        '''
+        add a nested measurement to an internal list,
+        so setup and cleanup can be automated
+        
+        Input:
+            measurement - Measurement object to add
+            inherit_locals - if True, local coordinates are prepended
+                to the measurements own coordinates. saved in flags.
+            **flags - any additional flags to be attached to the measurement
             
-            Input:
-                measurement - Measurement object to add
-                interhit_locals - if True, local coordinates are prepended
-                    to the measurements own coordinates
+        DEPRECATED. Use measurement.append or measurement.extend instead.
         '''
         if self._setup_done:
-            raise EnvironmentError('unable to add nested measurements after the measurement has been setup.')
-        if( 
-           not hasattr(measurement, 'set_parent_data_directory') or 
-           not hasattr(measurement, 'set_parent_coordinates') or
-           not hasattr(measurement, 'set_parent_name') or
-           not hasattr(measurement, '_teardown')
-        ):
-            raise TypeError('parameter measurement must be an instance of Measurement.')
+            raise EnvironmentError('unable to add nested measurements after '+
+                                   'the measurement has been setup.')
+        if(not self.is_compatible(measurement)):
+            raise TypeError('parameter measurement must be an instance of '+
+                            'Measurement.')
         #measurement = copy.copy(measurement)
-        flags = {'inherit_local_coords':inherit_local_coords}
-        self._children.append((measurement, flags))
+        self.measurements.append(measurement)
+        flags['inherit_local_coords'] = inherit_local_coords
+        self.measurement_flags[measurement] = flags
         return measurement
     
-    def get_measurements(self):
-        return [c for c, _ in self._children]
-
-    def get_data_file_paths(self, children=False, return_self=True):
+    def get_measurements(self, recursive=False):
         '''
-            get the full path of the data file last/currently being written.
-            
-            Input:
-                children - if True, include files generated by children.
-                    does a depth first search with the each node being added
-                    before its children.
-                return_self - if False, omit own data file
-            Return:
-                str if children is False, list of (str, str) otherwise
+        Return a copy of self.measurements.
+        
+        Input:
+            recursive (boolean) - if True, return a flat list of all nested
+                measurements instead.
         '''
-        fn = self._data_file_path if hasattr(self, '_data_file_path') else None
-        if not children:
-            return fn
+        if not recursive:
+            return list(self.measurements)
         else:
-            fns = [(self.name, fn)] if (return_self and (fn is not None)) else []
-            for m, _ in self._children:
-                fns.extend(m.get_data_file_paths(True))
-            return fns
+            children = [self]
+            for child in self.measurements:
+                children.extend(child.get_measurements(recursive=True))
+            return children
+        
+    def locate_measurement(self, measurement):
+        '''
+        Return path of measurement in the measurement tree.
+        
+        Input:
+            measurement - measurement object to locate
+        Returns:
+            path to measurement as a list. an empty list indicates that 
+            measurement was not found.
+        '''
+        if self == measurement:
+            return [self]
+        for child in self.measurements:
+            child_result = child.locate_measurement(measurement)
+            if len(child_result):
+                return [self]+child_result
+        return []
 
+
+    #
+    #
+    # Data file handling
+    #
+    #
+    def get_data_directory(self):
+        '''
+        Return output directory of the last run.
+        '''
+        if self.last_data_directory is None:
+            raise ValueError('data directory is only available after a '+
+                             'measurement was started.')
+        return self.last_data_directory
+    
+    def get_data_file_paths(self, recursive=False):
+        '''
+        Return output file name(s) of the last run.
+        This method may not work with DataManager backends that are not 
+        file based.
+
+        Input:
+            recursive - if True, include files generated by children.
+                does a depth first search with the each node being added
+                before its children.
+        Return:
+            str if recursive is False, list of (str, str) otherwise
+        '''
+        #if self.last_data_file is None:
+        #    logging.warning('data file paths are only available after a '+
+        #                    'measurement was started.')
+        if not recursive:
+            return self.last_data_file
+        else:
+            fns = [(self.name, self.last_data_file)]
+            for measurement in self.measurements:
+                fns.extend(measurement.get_data_file_paths(True))
+            return fns
+        
     def _create_data_files(self):
         '''
             create required data files.
             may be replaced in subclasses if a more complex file handling is desired.
         '''
         # create own data files if any value dimensions are present
-        self._data_file_path = None
-        if len(self.get_values()):
-            if self._data_save:
-                self._data = self._create_data_file()
-                self._data_file_path = self._data.get_filepath()
+        self.last_data_file = None
+        if len(self.values):
+            if self.data_save:
+                self._data = self.data_manager.create_table(self)
+                if hasattr(self._data, 'get_filepath'):
+                    self.last_data_file = self._data.get_filepath()
             else:
-                self._data = self._create_data_dummy()
-                
-    
-    def _create_data_directory(self):
-        if not(os.path.exists(self.get_data_directory())):
-            os.makedirs(self.get_data_directory())
+                self._data = self.data_manager.create_dummy_table(self)
 
-    def _create_data_dummy(self, name=None):
-        '''
-            create a dummy data object
-        '''
-        class DummyData:
-            ''' does nothing '''
-            def add_data_point(self, *args, **kwargs):
-                pass
-        return DummyData()
-        
-    def _create_data_file(self, name=None, parent=True):
-        '''
-            create an empty data file
-            if self._data_save is False, it returns a dummy object
-            
-            Input:
-                name (str) - suffix for file name, replaces self.name if set
-                parent (bool) - 
-            Return:
-                a data.Data object or something with a similar interface
-        '''
-        # create empty data file object and add dimensions
-        df = Data(name=self.name)
-        for add_dimension, dimensions in [ 
-            (df.add_coordinate, self.get_coordinates(parent=True)),
-            (df.add_value, self.get_values()) 
-        ]:
-            for dim in dimensions:
-                # filter options dictionary
-                options = dict(dim.options)
-                for k in ('get_func', 'set_func', 'flags', 'value', 'group', 'tags'):
-                    options.pop(k, None)
-                if hasattr(dim.dtype, '__name__'):
-                    options['dtype'] = dim.dtype.__name__
-                # create two columns for complex types
-                if(dim.iscomplex()):
-                    add_dimension('real(%s)'%dim.name, **options)
-                    add_dimension('imag(%s)'%dim.name, **options)
-                else:
-                    add_dimension(dim.name, **options)
-        # calculate file name and create empty data file
-        if(name is None):
-            name = self.name
-        if(self._parent_name):
-            name = self._parent_name + '_' + name
-        file_path = os.path.join(self.get_data_directory(), self._file_name_generator.generate_file_name(name))
-        if os.path.exists(file_path):
-            raise EnvironmentError('data file %s already exists.'%file_path)
-        df.create_file(filepath = file_path)
-        # decorate add_data_point to convert complex arguments to two real arguments
-        complex_dims = numpy.nonzero(
-            [dim.iscomplex() for dim in self.get_coordinates(parent=True)+self.get_values()]
-        )[0]
-        if len(complex_dims):
-            df.add_data_point = self._unpack_complex_decorator(df.add_data_point, complex_dims)
-        # decorate add_data_point to add parent dimensions without user interaction
-        if(len(self.get_coordinates(parent=True, local=False)) != 0):
-            df.add_data_point = self._prepend_coordinates_decorator(df.add_data_point)
-        return df
-    
-    def _prepend_coordinates_decorator(self, function):
-        '''
-            decorate add_data_point function of data to add extra dimensions
-            the only supported calling conventions are
-                add_data_point(scalar, scalar, ...) and
-                add_data_point(ndarray, ndarray, ...)
-        '''
-        @wraps(function)
-        def decorated_function(*args, **kwargs):
-            # fetch parent coordinate values
-            coordinates = tuple([c.get() for c in self.get_coordinates(parent=True, local=False)])
-            # if inputs are arrays, provide coordinates as arrays as well
-            if(len(args) and isinstance(args[0], numpy.ndarray)):
-                coordinates = tuple([c*numpy.ones(args[0].shape) for c in coordinates])
-            # execute add_data_point
-            return function(*(coordinates+args), **kwargs)
-        return decorated_function
-    
-    def _unpack_complex_decorator(self, function, indices):
-        '''
-            decorate a function to convert the argument at index into two arguments,
-            its real and imaginary parts, by calling argument.real and argument.imag
-        '''
-        @wraps(function)
-        def decorated_function(*args, **kwargs):
-            args = list(args)
-            for index in reversed(indices):
-                if index >= len(args):
-                    raise ValueError('number of arguments to add_data_point (%d) is lower than expected.'%len(args))
-                re = args[index].real
-                im = args[index].imag
-                args[index] = im
-                args.insert(index, re)
-            return function(*args, **kwargs)
-        return decorated_function
-    
-    def _nested_context_decorator(function):
-        '''
-            decorate a function call with an arbitrary number of context managers
-        '''
-        @wraps(function)
-        def decorated_function(self, *args, **kwargs):
-            contexts = kwargs.pop('contexts', self._context)
-            contexts, context = contexts[1:], contexts[0]
-            with context:
-                if len(contexts):
-                    return decorated_function(self, *args, contexts=contexts, **kwargs)
-                else:
-                    return function(self, *args, **kwargs)
-        return decorated_function
-    
-    @contextlib.contextmanager
-    def _mstart_ctx(self, nested):
-        ''' tell qtlab to stop background tasks and enable the stop button '''
-        if not nested:
-            qt.mstart()
-            try:
-                yield
-            finally:
-                qt.mend()
-        else:
-            yield
-    
-    @contextlib.contextmanager
-    def _setup_ctx(self, nested):
-        ''' call setup/teardown pair. creates directories and data files '''
-        # top-level measurements must never be set up at this point
-        if self._setup_done and not nested:
-            logging.warning(__name__+': top-level measurement was already set up. performing automatic tear down.')
-            self._teardown()
-        # create data files etd.
-        if not self._setup_done:
-            self._setup()
-        try:
-            # run measurement
-            yield
-        finally:
-            # close data files etc if this is a top-level measurement
-            if not nested:
-                self._teardown()
-            pass
-    
+    #
+    #
+    # Perform a measurement
+    #
+    #
     @contextlib.contextmanager
     def _local_log_ctx(self, nested):
-        ''' redirect log output to the data directory '''
-        if not nested:
-            self._create_data_directory()
+        '''
+        generate a log file in the data directory
+        '''
+        if nested:
+            yield
+        else:
+            if not(os.path.exists(self.get_data_directory())):
+                os.makedirs(self.get_data_directory())
             local_log_fn = os.path.join(self.get_data_directory(), 'qtlab.log')
             local_log = logging.FileHandler(local_log_fn)
             local_log.setLevel(self.log_level)
-            local_log_format = '%(asctime)s %(levelname)-8s: %(message)s (%(filename)s:%(lineno)d)'
+            local_log_format = '%(asctime)s %(levelname)-8s: '+\
+                               '%(message)s (%(filename)s:%(lineno)d)'
             local_log.setFormatter(logging.Formatter(local_log_format))
             logging.getLogger('').addHandler(local_log)
             try:
                 yield
             finally:
                 logging.getLogger('').removeHandler(local_log)
-        else:
-            yield
-    
-    #@_nested_context_decorator
-    def __call__(self, comment=None, nested=False, *args, **kwargs):
+
+    @contextlib.contextmanager
+    def _setup_ctx(self, nested):
         '''
+        setup/tear down measurement tree
+        '''
+        if not nested:
+            # search tree for duplicates
+            mlist = self.get_measurements(recursive=True)
+            mset = set()  
+            for m in mlist:
+                if m in mset:
+                    raise EnvironmentError('Measurement {0:s} appears in '+
+                                           'multiple locations in the '+ 
+                                           'Measurement tree.'.format(str(m)))
+                mset.add(m)
+            # create a data manager
+            self.data_manager = DataManagerFactory.factory(self)
+            # setup all measurements
+            self._setup()
+        try:
+            yield
+        finally:
+            if not nested:
+                # clean up all measurements
+                self._teardown()
+
+    @contextlib.contextmanager
+    def _root_flow_ctx(self, nested):
+        '''
+        create root flow
+        '''
+        if nested:
+            yield
+        else:
+            self.root_flow = Flow()
+            self.root_flow.start()
+            self.root_flow.show(self)
+            try:
+                yield
+            finally:
+                self.root_flow.stop()
+                self.root_flow.hide(self)
+                del self.root_flow
+
+    @contextlib.contextmanager
+    def _start_stop_ctx(self, nested):
+        self.flow.start()
+        try:
+            yield
+        finally:
+            self.flow.stop()
+    
+    def __call__(self, nested=False, **kwargs):
+        '''
+        Perform a measurement.
+        
+        Input:
+            nested (bool) - nested=True indicates that this measurement is nested
+                within another measurement. Set when calling a measurement from 
+                within another Measurement subclass.
+            **kwargs - passed to internal measurement function  
+            
             perform a measurement.
             perform setup, call self._measure, perform cleanup and return output of self._measure
-            
-            Input:
-                comment (str, optional) - comment to be saved in a separate file 
-                in the measurment directory.
         '''
-        # context managers perform setup/cleanup
-        # _mstart_ctx: stop/start background tasks, stop button
-        # self._context: user-defined context managers
-        # _setup_ctx: call setup/teardown methods
-        # _local_log_ctx: create local log file in the measurement dir
-        with self._mstart_ctx(nested), \
-             contextlib.nested(*self._context), \
-             self._setup_ctx(nested), \
-             self._local_log_ctx(nested):
-            # write comment to file
-            if comment is not None:
-                self._create_data_directory()
-                with open(os.path.join(self.get_data_directory(), 'comment.txt'), 'w+') as cfile:
-                    cfile.write(comment)
-            # measure
-            return self._measure(*args, **kwargs)
+        # apply user contexts
+        with self.context:
+            # apply system contexts
+            # - create data files
+            # - create local log file
+            # - stop background tasks and enable the stop button
+            with self._setup_ctx(nested), \
+                 self._local_log_ctx(nested), \
+                 self._root_flow_ctx(nested), \
+                 self._start_stop_ctx(nested):
+                return self._measure(**kwargs)
     
     def _setup(self):
         '''
-            setup measurements.
-            called before the first measurement.
+        setup measurements.
+        called before the first measurement.
         '''
-        # generate a new data directory name
-        if not self._parent_data_directory:
-            self.set_parent_data_directory(self._file_name_generator.generate_directory_name(self.name))
         # create own data files
+        self.last_data_directory = self.data_manager.get_data_directory(self)
         self._create_data_files()
-        # pass coordinates and paths to children
-        for child, flags in self._children:
-            # join parent name and own name with '_' and pass to child
-            child_names = [self._parent_name, self.name if self._propagate_name else '']
-            child_names = [n for n in child_names if n]
-            child.set_parent_name('_'.join(child_names))
-            child.set_parent_data_directory(self.get_data_directory())
-            child.set_parent_coordinates(
-                self.get_coordinates(parent=True, local=flags['inherit_local_coords'], inheritable=True)
-            )
-            #child._setup()
+        # setup children
+        for child in self.measurements:
+            child.data_manager = self.data_manager
+            child._setup()
         # make sure setup is not run again
         self._setup_done = True
     
     def _measure(self, **kwargs):
         '''
-            perform a measurement.
-            this function must be overloaded by subclasses.
-            
-            if the class or instance variable _values is set, a data file object
-            with _dimensions, _values and add_data_point decorated to add the parent coordinates
-            will be available in _data. otherwise, data files must be created manually
-            inside this function by calling _create_data_file.
-            may have *args.
-            **kwargs must be passed on to nested measurements.
-            
-            Return:
-                c - a ResultDict containing a map of Parameter objects to
-                    the values of all local coordinates for all data points. 
-                    Each item must have the same shape as the items in d.
-                d - a ResultDict containing a map of Parameter objects to
-                    the measured data for all value dimensions.
+        perform a measurement.
+        this function must be overloaded by subclasses.
+        
+        if the instance variable values is set, a data file object with 
+        coordinates, values and add_data_point decorated to add the inherited 
+        coordinates will be available in _data. otherwise, data files must 
+        be created manually inside this function by calling _create_data_file.
+        unused **kwargs must be passed on to nested measurements.
+        
+        Return:
+            c - a ParameterDict containing a map of Parameter objects to
+                the values of all local coordinates for all data points. 
+                Each item must have the same shape as the items in d.
+            d - a ParameterDict containing a map of Parameter objects to
+                the measured data for all value dimensions.
         '''
         raise NotImplementedError()
     
     def _teardown(self):
         '''
-            clean-up measurements.
-            called when the top-level measurement has finished. 
+        clean-up measurements.
+        called when the top-level measurement has finished. 
         '''
-        # clean-up of all nested measurements is handled by the top-level measurement
-        for child, _ in self._children:
+        # clean-up of all nested measurements is handled by the 
+        # top-level measurement
+        for child in self.measurements:
             child._teardown()
+        # dispose of data manager
+        #if self.data_manager is not None:
+        #    self.data_manager.close()
+        #    del self.data_manager
         # allow setup to run for the next measurement
         self._setup_done = False
-        # close own data file(s)
-        if hasattr(self, '_data'):
-            for df in make_iterable(self._data):
-                if hasattr(df, 'close_file'):
-                    df.close_file()
-            del self._data
-        # forget data directory and inherited coordinates
-        self.set_parent_data_directory()
-        self.set_parent_coordinates()
-        self.set_parent_name()
 
 
 
-class Measurement(MeasurementBase):
-    progress_interval = 1.
-    '''
-    (float) time between progress bar updates in seconds,
-    None disables progress bar display
-    '''
+
+
+# TODO: Unify CoordinateList and MeasurementList
+# CoordinateList and MeasurementList exist mostly so the user gets nice 
+# doc strings when adding coordinates and measurements. It would be easy
+# to unify both into a new TaggedList, but the names of the optional args 
+# should appear in IPython.
+class CoordinateList(ParameterList):
+    ''' A list of objects compatible with Measurement. '''
     
-    @wraps(MeasurementBase.__call__)
-    def __call__(self, nested=False, *args, **kwargs):
+    def __init__(self, tag_dict, iterable=()):
         '''
         Input:
-            nested (bool) - indicates that the measurement is executed as a child
-                of another measurement. used internally only.
-            remaining arguments are passed to _measure
+            tag_dict (dict) - storage for tags passed to append/insert/extend
         '''
-        # if this is a top-level measurement, it is responsible for generating the progress indicator
-        if not nested:
-            self._reporting_dfs(Measurement._reporting_setup)
-            self._reporting_bar = MultiProgressBar()
-            progress_interval = Measurement.progress_interval
-            if progress_interval is not None:
-                self._reporting_timer = gobject.timeout_add(int(1e3*progress_interval), self._reporting_timer_cb)
-        try:
-            #if not self._reporting_suppress:
-            if isinstance(self, ProgressReporting):
-                self._reporting_start()
-            result = super(Measurement, self).__call__(nested=nested, *args, **kwargs)
-            #if not self._reporting_suppress:
-            if isinstance(self, ProgressReporting):
-                self._reporting_finish()
-        finally:
-            if (not nested) and (progress_interval is not None):
-                gobject.source_remove(self._reporting_timer)
-                self._reporting_timer_cb()
-        return result
-
-    @staticmethod
-    def enable_progress_bar(interval = 1.):
-        '''
-        Enable progress bar display
+        self.tag_dict = tag_dict
+        super(CoordinateList, self).__init__(iterable)
+    
+    def append(self, obj, inheritable=True):
+        super(CoordinateList, self).append(obj)
+        self.tag_dict[obj] = dict(inheritable=inheritable)
         
+    def insert(self, idx, obj, inheritable=True):
+        super(CoordinateList, self).insert(idx, obj)
+        self.tag_dict[obj] = dict(inheritable=inheritable)
+        
+    def extend(self, iterable, inheritable=True):
+        super(CoordinateList, self).extend(iterable)
+        for obj in iterable:
+            self.tag_dict[obj] = dict(inheritable=inheritable)
+
+
+            
+class MeasurementList(TypedList):
+    ''' A list of objects compatible with Measurement. '''
+    
+    def __init__(self, tag_dict, iterable=()):
+        '''
         Input:
-            interval (float) - time between progress bar updates in seconds,
-                None disables progress bar display
+            tag_dict (dict) - storage for tags passed to append/insert/extend
         '''
-        Measurement.progress_interval = interval
+        self.tag_dict = tag_dict
+        is_compatible_func = Measurement.is_compatible
+        super(MeasurementList, self).__init__(is_compatible_func, iterable)
+    
+    def append(self, obj, inherit_local_coords=True):
+        super(MeasurementList, self).append(obj)
+        self.tag_dict[obj] = dict(inherit_local_coords=inherit_local_coords)
         
-    @staticmethod
-    def disable_progress_bar():
-        ''' Disable progress bar display '''
-        Measurement.progress_interval = None
-
-    def _reporting_setup(self):
-        ''' attach SweepState object to self '''
-        #if not hasattr(self, '_reporting_state'):
-        self._reporting_state = SweepState(label=self.name)
-
-    def _reporting_timer_cb(self):
-        ''' output progress bars '''
-        if IPython.version_info > (2,1):
-            IPython.display.clear_output(wait=True)
-        else:
-            IPython.display.clear_output()
-        state_list = self._reporting_dfs(lambda obj: obj._reporting_state)
-        IPython.display.display(IPython.display.HTML(self._reporting_bar.format_html(state_list)))
-        #IPython.display.publish_display_data('ProgressReporting', {
-        #    'text/html': self._reporting_bar.format_html(state_list),
-        #   'text/plain': self._reporting_bar.format_text(state_list),
-        #})
-        return True
-
-    def _reporting_dfs(self, function, level=0, do_self=True, node=None):
-        ''' 
-        do a depth-first search through the subtree of ProgressReporting Measurements
-        function(self) is executed on each Measurement
-        return values are returned as a flat list of tuples (level, self, value),
-            where level is the nesting level
-        '''
-        results = []
-        if node is None:
-            node = self
-        if isinstance(node, ProgressReporting):# and not node._reporting_suppress:
-            if do_self:
-                results.append((level, node, function(node)))
-            level = level+1
-        for m in node.get_measurements():
-            results.extend(self._reporting_dfs(function, level, node=m))
-        return results
+    def insert(self, idx, obj, inherit_local_coords=True):
+        super(MeasurementList, self).insert(idx, obj)
+        self.tag_dict[obj] = dict(inherit_local_coords=inherit_local_coords)
+        
+    def extend(self, iterable, inherit_local_coords=True):
+        super(MeasurementList, self).extend(iterable)
+        for obj in iterable:
+            self.tag_dict[obj] = dict(inherit_local_coords=inherit_local_coords)

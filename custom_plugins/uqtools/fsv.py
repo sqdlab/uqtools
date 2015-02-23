@@ -2,8 +2,8 @@
 import numpy
 import contextlib
 
-from measurement import Measurement, ResultDict
-from parameter import Parameter
+from .parameter import Parameter, ParameterDict
+from .measurement import Measurement
 
 class FSVMeasurement(Measurement):
     def __init__(self, fsv, m=None, timeout=None, **kwargs):
@@ -22,15 +22,15 @@ class FSVMeasurement(Measurement):
         self.timeout = timeout
         if m is not None:
             # imitate m
-            self.add_measurement(m)
-            self.add_coordinates(m.get_coordinates())
-            self.add_values(m.get_values())
+            self.measurements.append(m)
+            self.coordinates = m.coordinates
+            self.values = m.values
         
     def _measure(self, **kwargs):
         self._start()
         self._wait()
         # execute nested measurements if provided
-        ms = self.get_measurements()
+        ms = self.measurements
         if len(ms):
             return ms[0](nested=True, **kwargs)
         else:
@@ -65,9 +65,9 @@ class FSVTrace(FSVMeasurement):
         super(FSVTrace, self).__init__(fsv, timeout, **kwargs)
         self.trace = trace
         # TODO: the axes may be different in some modes
-        with contextlib.nested(*self._context):
-            self.add_coordinates(Parameter('frequency'))
-            self.add_values(Parameter('data', unit=fsv.get_unit()))
+        with self.context:
+            self.coordinates.append(Parameter('frequency'))
+            self.values.append(Parameter('data', unit=fsv.get_unit()))
 
     def _create_data_files(self):
         ''' never creates data files '''
@@ -88,6 +88,6 @@ class FSVTrace(FSVMeasurement):
         ys = self.fsv.get_data(self.trace)
         self._data.add_data_point(xs, ys, newblock=True)
         return (
-            ResultDict(zip(self.get_coordinates(), (xs,))), 
-            ResultDict(zip(self.get_values(), (ys,)))
+            ParameterDict(zip(self.coordinates, (xs,))), 
+            ParameterDict(zip(self.values, (ys,)))
         )    
