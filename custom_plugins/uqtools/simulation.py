@@ -199,6 +199,9 @@ class DatReader(Measurement):
             else:
                 data_cols.append(data['c{0:d}'.format(col_idx)])
         # separate coordinate from value dimensions
+        for c in columns:
+            c.pop('get_func', None)
+            c.pop('set_func', None)
         coord_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='coordinate']
         value_dims = [(i, c) for i, c in enumerate(columns) if c['type']=='value']
         coords = ParameterDict(zip([Parameter(**c) for _, c in coord_dims], [data_cols[i] for i, _ in coord_dims]))
