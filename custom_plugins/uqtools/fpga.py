@@ -66,8 +66,13 @@ class FPGAMeasurement(Measurement):
         # measurement was started by us in the previous iteration
         if not self.overlapped:
             self._fpga.stop()
+        # perform fpga measurement
+        self._fpga.start()
+        while not self._fpga.finished():
+            self.flow.sleep(10e-3)
+        self._fpga.stop()
         # retrieve measured data
-        data = self._fpga.get_data_blocking()
+        data = self._fpga.get_data()
         # start a new measurement in overlapped mode
         if self.overlapped:
             self._fpga.start()
