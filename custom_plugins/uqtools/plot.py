@@ -124,10 +124,12 @@ class FigureWidget(widgets.DOMWidget):
             self._zoom_index = (self._zoom_history.index(zoom_state) - 
                                 len(self._zoom_history))
         
-    def __init__(self, fig, **kwargs):
+    def __init__(self, fig=None, **kwargs):
         self._zoom_history = []
         self._zoom_index = -1
-        super(FigureWidget, self).__init__(fig=fig, **kwargs)
+        if fig is not None:
+            kwargs['fig'] = fig
+        super(FigureWidget, self).__init__(**kwargs)
         self._zoom_handlers = widgets.CallbackDispatcher()
         self.on_zoom(self.zoom)
         self.on_msg(self._handle_zoom_msg)
