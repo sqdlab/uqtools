@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from IPython.html import widgets
-from IPython.display import display, HTML, Javascript
+from IPython.display import display, clear_output, HTML, Javascript
 import IPython.utils.traitlets as traitlets
 from collections import OrderedDict
 
@@ -148,11 +148,21 @@ class FigureWidget(widgets.DOMWidget):
         
     def _handle_zoom_msg(self, _, content):
         if content.get('event', None) == 'zoom':
+            # zoom to rectangle drawn by user
             axis = content['axis']
             xlim = (content['u_min'], content['u_max'])
             ylim = (content['v_min'], content['v_max'])
             # execute zoom handlers
             self._zoom_handlers(axis, xlim, ylim)
+        if content.get('event', None) == 'zoom_reset':
+            # reset zoom of an axis
+            axis = content['axis']
+            limits = self._zoom_history[0][axis]
+            self._zoom_handlers(axis, *limits)
+        if content.get('event', None) == 'print':
+            display(self.fig)
+        if content.get('event', None) == 'clear':
+            clear_output()
         
     def on_zoom(self, callback, remove=False):
         """Register a callback to execute when Axes are zoomed.
@@ -187,7 +197,7 @@ class FigureWidget(widgets.DOMWidget):
         
     def _zoom_state(self):
         ''' return a list of tuples of the x and y limits of all axes '''
-        return [(ax['u_min'], ax['u_max'], ax['v_min'], ax['v_max']) 
+        return [((ax['u_min'], ax['u_max']), (ax['v_min'], ax['v_max'])) 
                 for ax in self.axes]
 
     def _zoom_to(self, idx):

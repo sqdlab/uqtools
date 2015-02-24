@@ -90,13 +90,28 @@
             //console.log('ConsoleView render');
             this.$el.addClass('Figure');
             // force position
-            this.$el.css('position', 'relative');
+            this.$el.css('position', 'relative')
             this.$image = $('<img />').appendTo(this.$el);
+            // create context menu
+            this.$menu = $('<menu />')
+            	.attr('type', 'context')
+            	.attr('id', (Math.random()*(1<<64)).toString(16).substr(2))
+            	.appendTo(this.$el);
+            $('<menuitem />')
+            	.attr('label', 'Print to notebook')
+            	.on('click', this, this.figurePrint)
+            	.appendTo(this.$menu);
+            $('<menuitem />')
+            	.attr('label', 'Clear cell output')
+            	.on('click', this, this.figureClear)
+            	.appendTo(this.$menu);
+            this.$el.attr('contextmenu', this.$menu[0].id);
+            // create axes
             this.axes = [];
-            this.plotUpdate();
+            this.figureUpdate();
         },
         
-        plotUpdate: function() {
+        figureUpdate: function() {
             /**
              * Update plot image, create subplot divs
              */
@@ -116,12 +131,21 @@
             }
         },
         
+        figurePrint: function(event) {
+        	// send print event to python
+        	event.data.send({'event': 'print'});
+        },
+        
+        figureClear: function(event) {
+        	// sent clear event to python
+        	event.data.send({'event': 'clear'});
+        },
+        
         update: function() {
             //console.log('FigureView update');
             FigureView.__super__.update.apply(this);
-            this.plotUpdate();
+            this.figureUpdate();
         },
-        
 
     });
 
@@ -142,7 +166,7 @@
                     var data = {view: this, ax: ax};
                     ax.$el
                         .css('cursor', 'crosshair')
-                        .on('mousedown', data, this.zoomStart);
+                        .on('mousedown', data, this.zoomStart)
                 }
             }
         },
@@ -156,11 +180,27 @@
             /**
              * Start dragging a zoom window
              */
+            //console.log('zoomStart');
             var view = event.data.view, 
                 ax = event.data.ax;
+            // only run when the main mouse button is pressed
+            if (event.button != 0) {
+            	return;
+            }
             // prevent text selection
             event.preventDefault();
             window.getSelection().removeAllRanges();
+            // handle double click
+            if ((event.timeStamp != undefined) && (event.timeStamp != 0)) {
+            	// run a zoomReset if time between successive mouseDown events 
+            	// was less than 250ms
+            	if ((view.timeStamp != undefined) && 
+            		(event.timeStamp - view.timeStamp < 250)) {
+            		view.zoomReset(event);
+            		return;
+            	}
+            	view.timeStamp = event.timeStamp;
+            }
             // create zoom overlay
             var rect = event.target.getBoundingClientRect();
             var canvas = $('<canvas />')
@@ -205,17 +245,20 @@
         },
         
         zoomAbort: function(event) {
+            //console.log('zoomAbort');
             var view = event.data.view;
             // disable event handlers
             event.stopPropagation();
             $(document).off('mousemove', view.zoomMove);
             $(document).off('mouseup', view.zoomFinish);
+            $(document).off('keydown', view.zoomAbort);
             // remove zoom box
             event.data.canvas.remove();
             
         },
 
         zoomFinish: function(event) {
+            //console.log('zoomFinish');
             var view = event.data.view,
                 ax = event.data.ax,
                 zoom = event.data.zoom;
@@ -238,6 +281,13 @@
                            u_min: uv_min[0], u_max: uv_max[0], 
                            v_min: uv_min[1], v_max: uv_max[1]});
             }
+        },
+        
+        
+        zoomReset: function(event) {
+        	//console.log('zoomReset');
+        	var view = event.data.view, ax = event.data.ax;
+        	view.send({event: 'zoom_reset', axis: ax.index});
         },
 
     });
