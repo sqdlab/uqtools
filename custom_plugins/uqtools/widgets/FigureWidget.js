@@ -90,7 +90,9 @@
             //console.log('ConsoleView render');
             this.$el.addClass('Figure');
             // force position
-            this.$el.css('position', 'relative')
+            this.$el
+            	.css('position', 'relative')
+            	.on('remove', this, this.figureClose);
             this.$image = $('<img />').appendTo(this.$el);
             // create context menu
             this.$menu = $('<menu />')
@@ -139,6 +141,11 @@
         figureClear: function(event) {
         	// sent clear event to python
         	event.data.send({'event': 'clear'});
+        },
+        
+        figureClose: function(event) {
+        	// send close event to python
+        	event.data.send({'event': 'close'});
         },
         
         update: function() {
@@ -215,21 +222,33 @@
             // save starting point
             var zoom = {start: null, end: null};
             zoom.start = ax.mouseXY(event);
+            var keys = {alt: false, shift: false, ctrl: false};
             // install event handlers
-            var data = $.extend({}, event.data, {canvas: canvas, zoom: zoom});
+            var data = $.extend({}, event.data, {canvas: canvas, zoom: zoom, keys: keys});
             $(document).on('mousemove', data, view.zoomMove);
             $(document).one('mouseup', data, view.zoomFinish);
-            $(document).one('keydown', data, view.zoomAbort);
+            $(document).on('keydown keyup', data, view.zoomKeyDown);
         },
 
         zoomMove: function(event) {
             /**
              * Resize zoom window according to mouse position
              */
-            var ax = event.data.ax;
-            var zoom = event.data.zoom;
-            var canvas = event.data.canvas;
+            var view = event.data.view,
+            	ax = event.data.ax,
+            	zoom = event.data.zoom;
             zoom.end = ax.mouseXY(event);
+            view.zoomDraw(event);
+        },
+        
+        zoomDraw(event) {
+        	/*
+        	 * Draw zoom window
+        	 */
+            var ax = event.data.ax,
+            	zoom = event.data.zoom,
+            	keys = event.data.keys,
+            	canvas = event.data.canvas;
             // draw zoom rectangle
             var rect = canvas[0].getBoundingClientRect();
             var ctx = canvas[0].getContext('2d');
@@ -240,27 +259,52 @@
                 y = Math.min(zoom.start[1], zoom.end[1]),
                 w = Math.abs(zoom.start[0] - zoom.end[0]),
                 h = Math.abs(zoom.start[1] - zoom.end[1]);
+            if (keys.ctrl) {
+            	y = 0;
+            	h = rect.height;
+            }
+            if (keys.shift) {
+            	x = 0;
+            	w = rect.width;
+            }
             ctx.clearRect(x, y, w, h);
             ctx.strokeRect(x, y, w, h);
+        },
+        
+        zoomKeyDown: function(event) {
+        	var view = event.data.view,
+        		keys = event.data.keys;
+        	if (event.which == 27) {
+        		view.zoomAbort(event);
+	            event.stopPropagation();
+        	}
+        	// redraw when any of the modifier keys is depressed
+        	if ((event.shiftKey != keys.shift) || 
+        		(event.ctrlKey != keys.ctrl) || 
+        		(event.altKey != keys.alt)) {
+        		keys.shift = event.shiftKey;
+        		keys.alt = event.altKey;
+        		keys.ctrl = event.ctrlKey;
+        		view.zoomDraw(event);
+        	} 
         },
         
         zoomAbort: function(event) {
             //console.log('zoomAbort');
             var view = event.data.view;
             // disable event handlers
-            event.stopPropagation();
             $(document).off('mousemove', view.zoomMove);
             $(document).off('mouseup', view.zoomFinish);
-            $(document).off('keydown', view.zoomAbort);
+            $(document).off('keydown keyup', view.zoomKeyDown);
             // remove zoom box
             event.data.canvas.remove();
-            
         },
 
         zoomFinish: function(event) {
             //console.log('zoomFinish');
             var view = event.data.view,
                 ax = event.data.ax,
+                keys = event.data.keys,
                 zoom = event.data.zoom;
             // clear zoom box and event handlers
             view.zoomAbort(event);
@@ -275,6 +319,14 @@
                     y_max = Math.min(zoom.start[1], zoom.end[1]);
                 var uv_min = ax.transformInverse(x_min, y_min),
                     uv_max = ax.transformInverse(x_max, y_max);
+                if (keys.ctrl) {
+                	uv_min[1] = ax.v_min;
+                	uv_max[1] = ax.v_max;
+                }
+                if (keys.shift) {
+                	uv_min[0] = ax.u_min;
+                	uv_max[0] = ax.u_max;
+                }
                 // update model
                 view.send({event: 'zoom', 
                            axis: ax.index, 
@@ -306,8 +358,7 @@
              */
             var u = attr.position[0], v = attr.position[1];
             if ((u != null) && ((u < attr.ax.u_min) || (u > attr.ax.u_max)) ||
-                (v != null) && ((v < attr.ax.v_min) || (v > attr.ax.v_max)) ||
-                !attr.template && (u == null) && (v == null)) {
+                (v != null) && ((v < attr.ax.v_min) || (v > attr.ax.v_max))) {
                 return '!';
             }
         }
@@ -349,7 +400,9 @@
                 direction = this.model.get('direction');
 
             // create DOM elements
-            this.$el.addClass('Cursor');
+            this.$el
+            	.addClass('Cursor')
+            	.attr('hidden', !this.model.isValid());
             if (direction & 1) {
                 $('<div />')
                     .addClass('hRuler')
@@ -397,6 +450,24 @@
                 this.move(direction, xy[0], xy[1]);
             }
         },
+        
+        formatNumber(u, u_min, u_max, x_min, x_max) {
+        	/**
+        	 * Format u such that its number of significant digits is at least
+        	 * equal to log10 of the number of pixels between x_min and x_max.
+        	 */
+        	var precision = Math.ceil(Math.LOG10E * Math.log(Math.abs(x_max - x_min))),
+        		u_msd = Math.LOG10E * Math.log(Math.abs(u)),
+        		s_msd = Math.LOG10E * Math.log(Math.max(Math.abs(u_max), Math.abs(u_min))),
+        		d_msd = Math.LOG10E * Math.log(Math.abs(u_max - u_min)),
+        		digits = Math.max(1, Math.ceil(precision + u_msd - d_msd));
+        	if ((Math.abs(s_msd) > 3) || (Math.abs(u_msd) > 3)) {
+        		return u.toExponential(digits - 1);
+        	} else {
+        		return u.toPrecision(digits);
+        	}
+        	
+        },
 
         move: function(direction, x, y) {
             /**
@@ -421,9 +492,7 @@
                 if (y_invalid) {
                     hlabel.text('');
                 } else {
-                    var v_pixels = Math.abs(ax.y_max - ax.y_min),
-                        v_digits = Math.ceil(Math.LOG10E * Math.log(v_pixels));
-                    hlabel.text(uv[1].toPrecision(v_digits));
+                	hlabel.text(this.formatNumber(uv[1], ax.v_min, ax.v_max, ax.y_min, ax.y_max));
                     hlabel.css('top', y - hlabel.height()/2);
                 }
             }
@@ -435,9 +504,7 @@
                 if (x_invalid) {
                     vlabel.text('');
                 } else {
-                    var u_pixels = Math.abs(ax.x_max-ax.x_min),
-                        u_digits = Math.ceil(Math.LOG10E * Math.log(u_pixels));
-                    vlabel.text(uv[0].toPrecision(u_digits));
+                	vlabel.text(this.formatNumber(uv[0], ax.u_min, ax.u_max, ax.x_min, ax.x_max));
                     vlabel.css('left', x - vlabel.width()/2);
                 }
             }            
@@ -564,8 +631,8 @@
             //console.log('add');
             var view = new CursorView({ax: this.ax, model: cursor});
             this.views.push(view);
-            view.render();
             this.$el.append(view.el);
+            view.render();
         },
         
         remove: function(cursor, model, options) {
@@ -612,21 +679,21 @@
                                          ((nb_cursor[1] != null) ? 1 : 0));
                         var cursor = new Cursor({ax: ax, direction: direction, 
                                                  position: nb_cursor});
-                        if (cursor.isValid()) {
+                        //if (cursor.isValid()) {
                             cursors.add(cursor);
-                        } else {
-                            cursor.destroy();
-                        }
+                        //} else {
+                        //    cursor.destroy();
+                        //}
                     });
                 }
                 // create a view for the cursors
                 var view = new CursorCollectionView({model: cursors});
-                view.render();
                 this.axes[idx].$el.append(view.el);
+                view.render();
                 // fire change if number of cursors changed (due to validation)
-                if ((nb_cursors != undefined) && (nb_cursors.length != cursors.length)) {
-                    this.cursorChange({collection: cursors});
-                }
+                //if ((nb_cursors != undefined) && (nb_cursors.length != cursors.length)) {
+                //    this.cursorChange({collection: cursors});
+                //}
                 // listen to cursor events
                 //this.listenTo(cursors, 'add', this.change);
                 this.listenTo(cursors, 'remove', this.cursorChange);

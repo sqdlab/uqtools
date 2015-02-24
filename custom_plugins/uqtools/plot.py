@@ -78,7 +78,7 @@ class FigureWidget(widgets.DOMWidget):
         .Cursor .hLabel, .Cursor .vLabel {
             position: absolute;
             color: blue;
-            background-color: rgba(255,255,255,0.75);
+            background-color: rgba(255,255,255,0.85);
         }
         </style>''')
     
@@ -124,13 +124,12 @@ class FigureWidget(widgets.DOMWidget):
             self._zoom_index = (self._zoom_history.index(zoom_state) - 
                                 len(self._zoom_history))
         
-    def __init__(self, **kwargs):
+    def __init__(self, fig, **kwargs):
         self._zoom_history = []
         self._zoom_index = -1
-        super(FigureWidget, self).__init__(**kwargs)
+        super(FigureWidget, self).__init__(fig=fig, **kwargs)
         self._zoom_handlers = widgets.CallbackDispatcher()
         self.on_zoom(self.zoom)
-
         self.on_msg(self._handle_zoom_msg)
         
     def _ipython_display_(self):
