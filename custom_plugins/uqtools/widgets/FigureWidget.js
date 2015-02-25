@@ -1,15 +1,29 @@
 //require(["widgets/js/widget"], function(WidgetManager) {
     function Axes(view, ax) {
-        // copy attributes: index, limits, navigable, zoomable
+        // copy attributes: index, limits, navigable, zoomable, polar
         $.extend(this, ax);
+        // calculate bbox
+        if (this.polar) {
+        	this.rxy = this.x_max - this.x_min;
+        	this.ruv = this.v_max - this.v_min;
+        	this.x_min = this.x_min - this.rxy;
+        	this.y_min = this.y_min + this.rxy;
+        	this.y_max = this.y_min - 2*this.rxy;
+        } else {
+        	this.xscale = this.x_max - this.x_min;
+        	this.yscale = this.y_min - this.y_max;
+        	this.uscale = this.u_max - this.u_min;
+        	this.vscale = this.v_max - this.v_min;
+        }
         // create in DOM
         this.$el = $('<div />')
             .addClass('Axes')
             .css('position', 'absolute')
             .css('left', this.x_min)
             .css('top', this.y_max)
-            .css('width', this.x_max-this.x_min)
-            .css('height', this.y_min-this.y_max)
+            .css('width', this.x_max - this.x_min)
+            .css('height', this.y_min - this.y_max)
+            .css('border-radius', this.polar ? '100%' : 'none')
             .appendTo(view.$el);
         
         this.destroy = function() {
@@ -47,27 +61,18 @@
                     (event.clientY >= rect.top) && (event.clientY <= rect.bottom));
         }
         
-        var _transform = function(x, y, x_min, x_max, y_min, y_max, u_min, u_max, v_min, v_max) {
-            /**
-             * transform coordinates between two linear, rectangular coordinate systems
-             */
-            var u_scale = (u_max - u_min) / (x_max - x_min),
-                v_scale = (v_max - v_min) / (y_max - y_min);
-            var u = u_min + (x - x_min) * u_scale,
-                v = v_min + (y - y_min) * v_scale;
-            return [u, v];
-        }
-            
         this.transform = function(u, v) {
             /**
              * tranform user coordinates into pixel coordinates relative to 
              * the top left corner of ax
              */
-            var xy = _transform(u, v,
-                                this.u_min, this.u_max, this.v_min, this.v_max,
-                                this.x_min, this.x_max, this.y_min, this.y_max);
-
-            return [xy[0] - this.x_min, xy[1] - this.y_max];
+            if (this.polar) {
+            	return [this.rxy + v*this.rxy/this.ruv * Math.cos(u),
+            			this.rxy - v*this.rxy/this.ruv * Math.sin(u)];
+            } else {
+            	return [(u - this.u_min) / this.uscale * this.xscale,
+            			(1 - (v - this.v_min) / this.vscale) * this.yscale];
+            }
         }
         
         this.transformInverse = function(x, y) {
@@ -75,9 +80,16 @@
              * transform pixel x, y relative to the top left corner of
              * ax into user coordinates
              */
-            return _transform(this.x_min + x, this.y_max + y, 
-                              this.x_min, this.x_max, this.y_min, this.y_max,
-                              this.u_min, this.u_max, this.v_min, this.v_max);
+            if (this.polar) {
+            	var	xt = x - this.rxy,
+            		yt = y - this.rxy,
+            		u = (Math.atan2(-yt, xt) + 2*Math.PI) % (2*Math.PI),
+            		v = Math.sqrt(xt*xt + yt*yt) / this.rxy*this.ruv;
+           		return [u, v];
+            } else {
+            	return [this.u_min + x / this.xscale * this.uscale,
+            			this.v_max - y / this.yscale * this.vscale]; 
+	        }
         }
     }
     
@@ -479,8 +491,8 @@
              */
             var ax = this.model.get('ax'),
                 uv = ax.transformInverse(x, y),
-                x_invalid = (x < 0) || (x > ax.x_max - ax.x_min),
-                y_invalid = (y < 0) || (y > ax.y_min - ax.y_max);
+                x_invalid = (uv[0] < ax.u_min) || (uv[0] > ax.u_max),
+                y_invalid = (uv[1] < ax.v_min) || (uv[1] > ax.v_max);
             x = Math.max(0, Math.min(ax.x_max-ax.x_min, x));
             y = Math.max(0, Math.min(ax.y_min-ax.y_max, y));
             

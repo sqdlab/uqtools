@@ -9,11 +9,13 @@ import matplotlib.pyplot as plt
 
 from IPython.html import widgets
 from IPython.display import display, clear_output, HTML, Javascript
+from IPython.core.ultratb import VerboseTB
 import IPython.utils.traitlets as traitlets
 from collections import OrderedDict
 
 import inspect
 import os
+import sys
 import imp
 from cStringIO import StringIO
 from base64 import b64encode
@@ -103,13 +105,18 @@ class FigureWidget(widgets.DOMWidget):
         for idx, ax in enumerate(self.fig.get_axes()):
             u_min, u_max = ax.get_xlim()
             v_min, v_max = ax.get_ylim()
-            x_min, y_min = ax.transData.transform((u_min, v_min))
-            x_max, y_max = ax.transData.transform((u_max, v_max))
+            transform = ax.transData.transform
+            bbox = transform(np.array([(u_min, v_min), (u_max, v_min), 
+                                       (u_max, v_max), (u_min, v_max)]))
+            polar = bool(np.all(np.isclose(bbox[2], bbox[3])))
+            x_min, y_min = bbox[0]
+            x_max, y_max = bbox[2]
             ax_dict = dict(index=idx,
                            u_min=u_min, v_min=v_min, 
                            u_max=u_max, v_max=v_max,
                            x_min=x_min, y_min=height-y_min,
                            x_max=x_max, y_max=height-y_max,
+                           polar=polar,
                            zoomable=ax.get_navigate() and ax.can_zoom(),
                            navigable=ax.get_navigate())
             axes.append(ax_dict)
@@ -310,15 +317,17 @@ class FunctionWidget(widgets.ContainerWidget):
         self.functions = imp.new_module('functions')
         self.sources = imp.new_module('sources')
         # add a few default functions
-        self.compile('def real(zs):\n  return np.real(zs)')
-        self.compile('def imag(zs):\n  return np.imag(zs)')
         self.compile('def abs(zs):\n  return np.abs(zs)')
         self.compile('def arg(zs):\n  return np.angle(zs)')
         self.compile('def arg_xref(zs):\n  return np.angle(zs/zs[[0], :])')
         self.compile('def arg_zref(zs):\n  return np.angle(zs/zs[:, [0]])')
+        self.compile('def default(zs):\n  if np.iscomplexobj(zs):\n' + 
+                     '    return np.abs(zs)\n  else:\n    return zs')
         self.compile('def dB_from_P(zs):\n  return 10*np.log10(np.abs(zs))')
         self.compile('def dB_from_V(zs):\n  return 20*np.log10(np.abs(zs))')
-        self.default = self.functions.real
+        self.compile('def imag(zs):\n  return np.imag(zs)')
+        self.compile('def real(zs):\n  return np.real(zs)')
+        self.default = self.functions.default
         # load functions from module
         if module is not None:
             self.load_module(module)
@@ -385,14 +394,12 @@ class FunctionWidget(widgets.ContainerWidget):
     
     def update(self, function=None):
         ''' update select box, set current selection to function '''
-        functions = dict([(name, func) for name, func 
-                          in self.functions.__dict__.iteritems() 
-                          if not name.startswith('__')])
+        functions = OrderedDict([(name, func) for name, func 
+                                 in sorted(self.functions.__dict__.iteritems()) 
+                                 if not name.startswith('__')])
         self._w_select.values = functions
         if function is not None:
             self._w_select.value = function
-        elif self._w_select.value in functions.values():
-            pass
         elif self.default is not None:
             self._w_select.value = self.default
     
@@ -839,16 +846,24 @@ class Plot(object):
         function = self.w_functions.function
         # pass the required number of function arguments
         argspec = inspect.getargspec(function)
-        if len(argspec.args) == 1:
-            zs = self.w_functions.function(xss[-1])
-        elif len(argspec.args) == 2:
-            zs = self.w_functions.function(xss[0], xss[-1])
-        elif (len(argspec.args) == 3) and (len(xss) == 3):
-            zs = self.w_functions.function(xss[0], xss[1], xss[2])
-        else:
-            # failure
-            zs = np.empty_like(zs)
-            zs.fill(np.nan)
+        try:
+            if len(argspec.args) == 0:
+                raise ValueError('Data function must accept at least one ' + 
+                                 'argument.')
+            if len(argspec.args) == 1:
+                zs = self.w_functions.function(xss[-1])
+            elif (len(argspec.args) == 2) and (len(xss) > 1):
+                zs = self.w_functions.function(xss[0], xss[-1])
+            elif (len(argspec.args) == 3) and (len(xss) > 2):
+                zs = self.w_functions.function(xss[0], xss[1], xss[2])
+            else:
+                raise ValueError('Data function requires more arguments than' +
+                                 'available.')
+        except:
+            tb = VerboseTB()
+            print tb.text(*sys.exc_info(), tb_offset=1)
+            # return a matrix of NaNs
+            zs = np.full_like(xss[0], np.nan)
         return zs
     
     @property
