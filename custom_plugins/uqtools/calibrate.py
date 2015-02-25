@@ -105,7 +105,7 @@ class FittingMeasurement(Measurement):
             slice_ = [0]*ys.ndim
             slice_[indep_idx] = slice(None)
             xs = xs[slice_]
-            ys = numpy.mean(y, axis=indep_idx)
+            ys = numpy.mean(ys, axis=indep_idx)
         else:
             xs = numpy.ravel(xs)
             ys = numpy.ravel(ys)
