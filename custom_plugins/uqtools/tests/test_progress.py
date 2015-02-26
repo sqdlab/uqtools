@@ -26,8 +26,8 @@ class TestBaseFlow:
         return NoFlowMeasurement(name='test')
 
     @fixture
-    def flow(self, measurement):
-        return BaseFlow(measurement)
+    def flow(self):
+        return BaseFlow()
     
     def test_start_stop_running(self, flow):
         assert not flow.running
@@ -82,7 +82,7 @@ class TestRootFlow(TestBaseFlow):
 class TestLoopFlow(TestBaseFlow):
     @fixture
     def flow(self, measurement):
-        return LoopFlow(measurement, iterations=10)
+        return LoopFlow(iterations=10)
 
     def test_iteration(self, flow):
         with raises(ValueError):
@@ -108,7 +108,7 @@ class TestTimingFlow(TestLoopFlow):
     @fixture
     def flow(self, measurement):
         TimingFlow.TIMING_AVERAGES = 3.
-        return TimingFlow(measurement, iterations=10)
+        return TimingFlow(iterations=10)
     
     def test_time_elapsed(self, flow):
         # elapsed time is counted from time of start
@@ -176,7 +176,7 @@ class TestTimingFlow(TestLoopFlow):
 class TestProgressBarFlow(TestLoopFlow):
     @fixture
     def flow(self, measurement):
-        return ProgressBarFlow(measurement, iterations=10)
+        return ProgressBarFlow(iterations=10)
     
             
 
@@ -192,7 +192,7 @@ class TestRootWidgetFlow(TestRootFlow):
 class TestFileLinkWidgetFlow(TestBaseFlow):
     @fixture
     def flow(self, measurement):
-        return FileLinkWidgetFlow(measurement)
+        return FileLinkWidgetFlow()
         
         
         
@@ -203,7 +203,7 @@ class TestProgressBarWidgetFlow(TestLoopFlow):
     @fixture
     def flow(self, measurement):
         ProgressBarWidgetFlow.TIMING_AVERAGES = 3.
-        return ProgressBarWidgetFlow(measurement, 10)
+        return ProgressBarWidgetFlow(10)
     
     def test_widget(self, flow):
         #TODO: more testing would be nice

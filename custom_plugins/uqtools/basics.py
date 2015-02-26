@@ -68,7 +68,7 @@ class MeasurementArray(Measurement):
             self.measurements.append(m)
             self.values.append(Parameter('nested_{0}'.format(idx)))
         # progress bar flow
-        self.flow = Flow(self, iterations=len(measurements))
+        self.flow = Flow(iterations=len(measurements))
 
     def _measure(self, **kwargs):
         output_data = kwargs.get('output_data', self.output_data)
@@ -142,7 +142,7 @@ class Sweep(Measurement):
         self.coordinates.extend(m.coordinates, inheritable=False)
         self.values.extend(m.values)
         # generate progress bar
-        self.flow = Flow(self, iterations=1)
+        self.flow = Flow(iterations=1)
 
     @property
     def range(self):

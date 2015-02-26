@@ -316,7 +316,7 @@ class Accumulate(Measurement):
         self.coordinates.extend(source.coordinates, inheritable=False)
         self.values = source.values
         self.measurements.append(source)
-        self.flow = Flow(self, iterations=iterations)
+        self.flow = Flow(iterations=iterations)
     
     def get_coordinates(self):
         # does not return or save iteration

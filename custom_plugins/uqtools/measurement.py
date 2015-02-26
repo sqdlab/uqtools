@@ -5,7 +5,7 @@ import logging
 from warnings import warn
 
 from .parameter import Parameter, TypedList, ParameterList, ParameterDict
-from .progress import Flow
+from .progress import Flow, RootFlow
 from .context import NullContextManager
 from .data import DataManagerFactory
 
@@ -54,7 +54,7 @@ class Measurement(object):
         
         # show progress bar, allow child classes to override
         if not hasattr(self, 'flow'):
-            self.flow = Flow(self)
+            self.flow = Flow()
 
         # coordinate and values lists
         # self.coordinate_flags is assigned by coordinates setter
@@ -66,6 +66,12 @@ class Measurement(object):
         self.last_data_file = None
         self.data_manager = None
 
+    def __del__(self):
+        '''
+            free resources.
+        '''
+        del self.data_manager
+        
     #
     #
     # Context Managers
@@ -377,13 +383,15 @@ class Measurement(object):
                                            'Measurement tree.'.format(str(m)))
                 mset.add(m)
             # create a data manager
-            self.data_manager = DataManagerFactory.factory(self)
+            self.data_manager = DataManagerFactory.factory(root=self)
             # setup all measurements
             self._setup()
         try:
             yield
         finally:
             if not nested:
+                # delete reference cycle
+                self.data_manager.root = None
                 # clean up all measurements
                 self._teardown()
 
@@ -395,7 +403,7 @@ class Measurement(object):
         if nested:
             yield
         else:
-            self.root_flow = Flow()
+            self.root_flow = RootFlow()
             self.root_flow.start()
             self.root_flow.show(self)
             try:
@@ -484,6 +492,7 @@ class Measurement(object):
             child._teardown()
         # dispose of data manager
         #if self.data_manager is not None:
+        # 
         #    self.data_manager.close()
         #    del self.data_manager
         # allow setup to run for the next measurement

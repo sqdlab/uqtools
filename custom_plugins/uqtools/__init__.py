@@ -37,6 +37,7 @@ from . import data
 
 from . import progress
 from .progress import ContinueIteration, BreakIteration, Flow
+flow = progress.RootFlow()
 
 from . import measurement
 from .measurement import Measurement

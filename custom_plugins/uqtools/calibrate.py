@@ -79,7 +79,7 @@ class FittingMeasurement(Measurement):
         else:
             self.test = lambda xs, ys, p_opt, p_std, p_est: numpy.all(numpy.isfinite(p_opt))
         # 
-        self.flow = Flow(self, iterations=1)
+        self.flow = Flow(iterations=1)
     
     def _measure(self, *args, **kwargs):
         # reset progress bar

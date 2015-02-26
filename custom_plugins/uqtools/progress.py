@@ -62,16 +62,18 @@ def Flow(*args, **kwargs):
       * ProgressBarWidgetFlow otherwise
     '''
     if config.enable_widgets and ('widgets' in globals()):
-        if not args and not kwargs:
-            return RootWidgetFlow()
-        if (len(args)>1) or 'iterations' in kwargs: 
+        if len(args) or 'iterations' in kwargs: 
             return ProgressBarWidgetFlow(*args, **kwargs)
         else:
             return FileLinkWidgetFlow(*args, **kwargs)
     else:
-        if not args and not kwargs:
-            return RootFlow()
         return ProgressBarFlow(*args, **kwargs)
+
+def RootFlow(*args, **kwargs):
+    if config.enable_widgets and ('widgets' in globals()):
+        return RootWidgetFlow()
+    else:
+        return RootConsoleFlow()
 
 
 
@@ -83,11 +85,8 @@ class BaseFlow(object):
     # supported events. list of str.
     EVENTS = []
     
-    def __init__(self, measurement):
-        '''
-        Input:
-            measurement - ignored.
-        '''
+    def __init__(self):
+        ''' Create a new BaseFlow object. '''
         self.running = False
         # Every entry is a <str>:threading.Event mapping. 
         # Setting an event triggers execution of self.on_<str>.
@@ -132,7 +131,7 @@ class BaseFlow(object):
     def process_events(self):
         ''' run own and RootFlow event loops ''' 
         # process root flow events
-        Flow().process_events()
+        RootFlow().process_events()
         # process own events
         self._process_events()
 
@@ -151,14 +150,14 @@ class BaseFlow(object):
 
 
 
-class RootFlow(BaseFlow):
+class RootConsoleFlow(BaseFlow):
     '''
     Global event handler and GUI generator.
     '''
     __metaclass__ = Singleton
     
     def __init__(self):
-        super(RootFlow, self).__init__(measurement=None)
+        super(RootConsoleFlow, self).__init__()
     
     def show(self, root):
         ''' show UI '''
@@ -181,21 +180,21 @@ class RootFlow(BaseFlow):
         if ('get_ipython' in globals()) and (get_ipython() is not None):
             kernel = get_ipython().kernel
             kernel.do_one_iteration()
-        super(RootFlow, self)._process_events()
+        super(RootConsoleFlow, self)._process_events()
         
             
 class LoopFlow(BaseFlow):
     '''
     Basic loop iteration counter. 
     '''
-    def __init__(self, measurement, iterations):
+    def __init__(self, iterations):
         '''
         Create a new status reporting/flow control object.
         
         Input:
             iterations - expected number of iterations
         '''
-        super(LoopFlow, self).__init__(measurement=measurement)
+        super(LoopFlow, self).__init__()
         self.iterations = iterations
         self._iteration = 0
 
@@ -240,9 +239,8 @@ class TimingFlow(LoopFlow):
     TIMING_AVERAGES = 10
     
     @wraps(LoopFlow.__init__)
-    def __init__(self, measurement, iterations):
-        super(TimingFlow, self).__init__(measurement=measurement, 
-                                         iterations=iterations)
+    def __init__(self, iterations):
+        super(TimingFlow, self).__init__(iterations=iterations)
         self.start_time = None
         self.stop_time = None
         self.point_time = None
@@ -339,10 +337,9 @@ class TimingFlow(LoopFlow):
 
 class ProgressBarFlow(TimingFlow):
     ''' Display a text/html progress bar. Not implemented. '''
-    def __init__(self, measurement, iterations=1):
+    def __init__(self, iterations=1):
         ''' Return a TimingFlow '''
-        super(ProgressBarFlow, self).__init__(measurement=measurement,
-                                              iterations=iterations)
+        super(ProgressBarFlow, self).__init__(iterations=iterations)
 
 
 
@@ -352,7 +349,7 @@ if 'widgets' in globals():
         return 'file://'+file_name.replace('\\','/')
 
     
-    class RootWidgetFlow(RootFlow):
+    class RootWidgetFlow(RootConsoleFlow):
         '''
         Global event handler and GUI generator based on IPython notebook widgets
         '''
@@ -378,7 +375,7 @@ if 'widgets' in globals():
                 path - current path in the measurement tree
             '''
             widgets = []
-            widget = leaf.flow.widget(level=len(path))
+            widget = leaf.flow.widget(leaf, level=len(path))
             if widget is not None:
                 widgets.append(widget)
             for child in leaf.measurements:
@@ -431,31 +428,29 @@ if 'widgets' in globals():
         Display a link to the data file but no progress bar.
         '''
          
-        def __init__(self, measurement):
+        def __init__(self):
             '''
             Display a link to the data file but no progress bar. 
             
             Input:
-                measurement - measurement object queried for its name and data
-                    file.
             '''
-            self.measurement = measurement
-            self.name = measurement.name
             self._widgets = {}
-            super(FileLinkWidgetFlow, self).__init__(measurement=measurement)
+            super(FileLinkWidgetFlow, self).__init__()
         
-        def widget(self, level):
+        def widget(self, measurement, level):
             ''' 
             Build UI for the bound measurement.
             
             Input:
+                measurement - measurement object queried for its name and data
+                    file.
                 level (int) - nesting level
             '''
-            file_name = self.measurement.get_data_file_paths()
+            file_name = measurement.get_data_file_paths()
             if not file_name:
                 return None
             template = '<a href="{url}">{name}</a>'
-            html = template.format(name=self.name, url=file_url(file_name))
+            html = template.format(name=measurement.name, url=file_url(file_name))
             label = widgets.HTMLWidget(value=html)
             label.set_css({'margin-left':'{0:d}px'.format(10*level)})
             self._widgets = {'label':label}
@@ -474,23 +469,18 @@ if 'widgets' in globals():
         UPDATE_INTERVAL = 250e-3
         EVENTS = ['break', 'set_iteration', 'update_timing']
         
-        def __init__(self, measurement, iterations):
+        def __init__(self, iterations):
             '''
             Create a new status reporting/flow control object with an IPython 
             widget GUI.
             
             Input:
-                measurement - any object with a .name proprty than is used as 
-                    a label for the object
                 iterations - expected number of iterations
             '''
-            self.measurement = measurement
-            self.name = measurement.name
             self._iterations = None
             self._update_timestamp = 0
             self._widgets = {}
-            super(ProgressBarWidgetFlow, self).__init__(measurement=measurement,
-                                                        iterations=iterations)
+            super(ProgressBarWidgetFlow, self).__init__(iterations=iterations)
 
         @property
         def iteration(self):
@@ -527,20 +517,22 @@ if 'widgets' in globals():
             self.on_set_iteration(force=True)
             self.on_update_timing(force=True)
 
-        def widget(self, level):
+        def widget(self, measurement, level):
             ''' 
             Build UI for the bound measurement.
             
             Input:
+                measurement - any object with a .name proprty than is used as 
+                    a label for the object
                 level (int) - nesting level
             '''
             # label [###_ 2 out of 20 ____] ETC 1min
-            file_name = self.measurement.get_data_file_paths()
+            file_name = measurement.get_data_file_paths()
             if not file_name:
-                html = self.name
+                html = measurement.name
             else:
                 template = '<a href="{url}">{name}</a>'
-                html = template.format(name=self.name, url=file_url(file_name))
+                html = template.format(name=measurement.name, url=file_url(file_name))
             label = widgets.HTMLWidget(value=html)
             label.set_css({'position':'absolute', 'left':'0px', 
                            'top':'5px', 'width':'200px', 

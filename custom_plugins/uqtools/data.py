@@ -241,6 +241,12 @@ class DataManager(object):
         # create data directory
         self.data_directory = self.file_name_gen.generate_directory_name(root.name)
         self.get_data_directory(root)
+        
+    def __del__(self):
+        '''
+        Free resources.
+        '''
+        self.close()
 
     def get_inherited_coordinates(self, measurement):
         '''
@@ -298,6 +304,9 @@ class DataManager(object):
         '''
         Close all tables.
         '''
+        while len(self.tables):
+            table = self.tables.pop()
+            table.close()
         self.tables = []
         
     def create_table(self, m=None, name=None, coordinates=None, values=None, 
@@ -476,6 +485,8 @@ if 'QTTable' in locals():
                 data.add_data_point = self._prepend_coordinates_decorator(
                     data.add_data_point, inherited_coordinates
                 )
+            # alias close_file
+            data.close = data.close_file 
             return data    
     
         @staticmethod
