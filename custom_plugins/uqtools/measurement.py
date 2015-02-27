@@ -70,7 +70,7 @@ class Measurement(object):
         '''
             free resources.
         '''
-        del self.data_manager
+        pass
         
     #
     #
