@@ -79,8 +79,9 @@ except ImportError:
 
 try:
     from . import awg
-    from .awg import ProgramAWG, ProgramAWGParametric
-    from .awg import ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep
+    from .awg import (ProgramAWG, ProgramAWGParametric,
+                      ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep,
+                      PlotSequence)
 except ImportError:
     # awg already generates a log entry
     pass
