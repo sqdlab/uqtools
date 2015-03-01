@@ -6,9 +6,10 @@
         if (this.polar) {
         	this.rxy = this.x_max - this.x_min;
         	this.ruv = this.v_max - this.v_min;
-        	this.x_min = this.x_min - this.rxy;
-        	this.y_min = this.y_min + this.rxy;
-        	this.y_max = this.y_min - 2*this.rxy;
+        	this.x_min = this.x_min - this.rxy - 1;
+        	this.x_max = this.x_max - 2; 
+        	this.y_min = this.y_min + this.rxy - 1;
+        	this.y_max = this.y_min - 2*this.rxy - 1;
         } else {
         	this.xscale = this.x_max - this.x_min;
         	this.yscale = this.y_min - this.y_max;
@@ -253,7 +254,7 @@
             view.zoomDraw(event);
         },
         
-        zoomDraw(event) {
+        zoomDraw: function(event) {
         	/*
         	 * Draw zoom window
         	 */
@@ -373,6 +374,7 @@
                 (v != null) && ((v < attr.ax.v_min) || (v > attr.ax.v_max))) {
                 return '!';
             }
+	    return null;
         }
     });
     
@@ -415,6 +417,10 @@
             this.$el
             	.addClass('Cursor')
             	.attr('hidden', !this.model.isValid());
+            if (ax.polar) {
+            	this.$el
+            		.css('border-radius', '100%');
+            }
             if (direction & 1) {
                 $('<div />')
                     .addClass('hRuler')
@@ -428,7 +434,7 @@
                         .appendTo(this.$el);
                 }
             }
-            if (direction & 2) {
+            if (!ax.polar && (direction & 2)) {
                 $('<div />')
                     .addClass('vRuler')
                     .css('position', 'absolute')
@@ -463,7 +469,7 @@
             }
         },
         
-        formatNumber(u, u_min, u_max, x_min, x_max) {
+        formatNumber: function(u, u_min, u_max, x_min, x_max) {
         	/**
         	 * Format u such that its number of significant digits is at least
         	 * equal to log10 of the number of pixels between x_min and x_max.
@@ -494,12 +500,19 @@
                 x_invalid = (uv[0] < ax.u_min) || (uv[0] > ax.u_max),
                 y_invalid = (uv[1] < ax.v_min) || (uv[1] > ax.v_max);
             x = Math.max(0, Math.min(ax.x_max-ax.x_min, x));
-            y = Math.max(0, Math.min(ax.y_min-ax.y_max, y));
+            if (ax.polar) {
+            	y = (ax.y_min - ax.y_max)/2.
+            } else {
+            	y = Math.max(0, Math.min(ax.y_min-ax.y_max, y));
+            }
             
+            if (ax.polar) {
+            	this.$el.css('transform', 'rotate(' + (-uv[0]).toString() + 'rad)');
+            }
             if (direction & 1) {
                 this.position[1] = uv[1];
-                this.$el.children('.hRuler').css('top', y - 1);
-                this.$el.children('.iRuler').css('top', y - 2);
+            	this.$el.children('.hRuler').css('top', y - 1);
+            	this.$el.children('.iRuler').css('top', y - 2);
                 var hlabel = this.$el.children('.hLabel');
                 if (y_invalid) {
                     hlabel.text('');
@@ -508,10 +521,10 @@
                     hlabel.css('top', y - hlabel.height()/2);
                 }
             }
-            if (direction & 2) {
+            if (!ax.polar && (direction & 2)) {
                 this.position[0] = uv[0];
-                this.$el.children('.vRuler').css('left', x - 1);
-                this.$el.children('.iRuler').css('left', x - 2);
+            	this.$el.children('.vRuler').css('left', x - 1);
+            	this.$el.children('.iRuler').css('left', x - 2);
                 var vlabel = this.$el.children('.vLabel');
                 if (x_invalid) {
                     vlabel.text('');
@@ -602,6 +615,7 @@
         
         render: function() {
             //console.log('render');
+            this.$el.addClass('Cursors');
             // create template cursor
             if (this.model.ax.navigable) {
                 var tCursor = new Cursor({ax: this.model.ax, template: true}),

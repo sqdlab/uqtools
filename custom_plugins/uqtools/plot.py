@@ -43,7 +43,19 @@ class FigureWidget(widgets.DOMWidget):
         
         .Axes {}
         
-        .Cursor {}
+        .Cursors {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        .Cursor {
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            width: 100%;
+            height: 100%;
+            //border: solid 1px;
+        }
         .Cursor .hRuler, .Cursor .vRuler {
             position: absolute;
             background-color: black;
