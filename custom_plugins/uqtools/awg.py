@@ -483,6 +483,8 @@ class MultiAWGSweep(Measurement):
             'force_program', 'wait'):
             if key in kwargs:
                 program_kwargs[key] = kwargs.pop(key)
+            if 'context' in kwargs:
+                program_kwargs['context'] = kwargs['context']
         # take MeasureAWGSweep parameters from kwargs
         measure_kwargs = {}
         if len(args)%2:
