@@ -663,11 +663,12 @@ class PlotSequence(object):
         '''
         self._displayed = True
         self._w_figure.fig = self.figure
+        self._w_figure.compile()
         self._w_app._ipython_display_() 
         self._w_box.add_class('align-center')
         self._w_app.remove_class('vbox')
         self._w_app.add_class('hbox')
-
+        
     #
     # Event Handlers
     #
@@ -730,24 +731,45 @@ class PlotSequence(object):
     #
     # Plot function
     #
-    @property
-    def figure(self):
-        fig = plt.figure(figsize=self.size)
-        plt.close(fig)
-        # calculate active channels and markers from active check boxes
+    def _active(self):
+        '''
+        Calculate active channels and markers.
+        
+        Return:
+            active_channels (1d array of bool) - active channels
+            active_markers (2d array of bool) - active markers
+        '''
         active = numpy.array([w_channel.value 
                            for w_channel in self._w_channels.children])
-        active_chs = active[:-2]
-        active_chpairs = numpy.any((active_chs[::2], active_chs[1::2]), axis=0)
+        active_channels = active[:-2]
         # markers are shown when their channel and marker flags are on
-        active_markers = numpy.array((active[-2]*active_chs[::2], 
-                                   active[-1]*active_chs[::2], 
-                                   active[-2]*active_chs[1::2], 
-                                   active[-1]*active_chs[1::2])).transpose()
-        nchpairs = numpy.sum(active_chpairs)
+        active_markers = numpy.array((active[-2]*active_channels, 
+                                      active[-1]*active_channels)).transpose()
+        return active_channels, active_markers
+    
+    def _figure(self, active_channels, active_markers):
+        '''
+        Create an empty figure with axes according to the active channels
+        and markers:
+        
+        The created figure is saved in self._fig, a dict of axes for each
+        chpair is saved in self._fig_axes, active channels are saved in
+        self._fig_channels, active markers are savedn in self._fig_markers.
+        '''
+        fig = plt.figure(figsize=self.size)
+        plt.close(fig)
+        
+        nullformatter = NullFormatter()
 
+        active_chpairs = numpy.any((active_channels[::2], 
+                                    active_channels[1::2]), axis=0)
+        nchpairs = numpy.sum(active_chpairs)
+        
+        waveform_axes = {}
+        marker_axes = {}
         for ax_idx, chpair in enumerate(numpy.flatnonzero(active_chpairs)):
-            nmarkers = sum(active_markers[chpair])
+            chpair_markers = active_markers[(2*chpair):(2*chpair+1)]
+            nmarkers = numpy.sum(chpair_markers)
             # bounding box of all axes of this chpair
             bbox_marker = 0.05
             bbox_height = 0.9/nchpairs
@@ -757,22 +779,26 @@ class PlotSequence(object):
             ax_marker = bbox_marker/nchpairs
             ax_height = bbox_height - ax_marker*nmarkers - ax_margin
             ax_bottom = bbox_bottom + ax_marker*nmarkers + ax_margin/2
-            axs = [fig.add_axes([0.1, ax_bottom, 0.8, ax_height])]
+            ax = fig.add_axes([0.1, ax_bottom, 0.8, ax_height])
+            waveform_axes[chpair] = dict((ch_idx, ax) for ch_idx in range(2) 
+                                         if active_channels[2*chpair+ch_idx])
             # add marker axes
-            for max_idx in range(nmarkers):
+            marker_axes[chpair] = OrderedDict()
+            for max_idx, m_idx in enumerate(numpy.flatnonzero(chpair_markers)):
                 m_bottom = ax_bottom - ax_marker*(max_idx + 1)
                 ax = fig.add_axes([0.1, m_bottom, 0.8, ax_marker])
                 ax.set_ylim((-0.2, 1.2))
-                axs.append(ax)
+                marker_axes[chpair][m_idx] = ax
                 
             # manipulate labels, ticks and spines
+            axs = waveform_axes[chpair].values() + marker_axes[chpair].values()
             axs[0].set_ylabel('channel pair {0}'.format(chpair))
             for ax in axs[:-1]:
                 # only the bottom axis has tick labels
-                ax.xaxis.set_major_formatter(NullFormatter())
+                ax.xaxis.set_major_formatter(nullformatter)
             for ax in axs[1:]:
                 # no ticks on marker yaxes
-                ax.yaxis.set_major_formatter(NullFormatter())
+                ax.yaxis.set_major_formatter(nullformatter)
                 ax.yaxis.set_ticks([])
             if nmarkers > 1:
                 # ticks and spines are at the top and bottom of the markers box
@@ -784,30 +810,65 @@ class PlotSequence(object):
                     ax.spines['top'].set_visible(False)
                 axs[-1].xaxis.set_ticks_position('bottom')
                 axs[-1].spines['top'].set_visible(False)
-            
-            # plot waveforms
-            for ch_idx, ch in enumerate([2*chpair, 2*chpair+1]):
-                if not active_chs[ch]:
-                    continue
-                if len(self._seqs[ch].waveforms) <= self.segment:
-                    continue
-                color = 'green' if ch_idx else 'blue'
-                fixed_point = self.TIME_SCALE*self._channels[ch].fixed_points[0]
-                pattern_length = self.TIME_SCALE*self._channels[ch].pattern_length
-                # mark fixed point
-                axs[0].axvline(fixed_point, ls='--', color=color)
-                # plot analog waveform
-                wf = self._seqs[ch].waveforms[self.segment]
-                ts = numpy.linspace(0., pattern_length, len(wf))
-                axs[0].plot(ts, wf, color=color)
-                # plot marker waveforms
-                for m_idx in range(2):
-                    if active_markers[chpair][2*ch_idx+m_idx]:
-                        ax = axs[1+numpy.sum(active_markers[chpair][range(2*ch_idx+m_idx)])]
-                        wf = self._seqs[ch].markers[self.segment][m_idx]
-                        ts = numpy.linspace(0., pattern_length, len(wf))
-                        ax.plot(ts, wf, color=color)
         # only the last axes has an xlabel
         if nchpairs:
             axs[-1].set_xlabel('time in {0}s'.format(1/self.TIME_SCALE))
-        return fig
+        return fig, waveform_axes, marker_axes 
+    
+    def _plot(self, waveform_axes, marker_axes):
+        '''
+        Plot waveforms and markers for all ac
+        '''
+        artists = []
+        # plot waveforms
+        for chpair, axes in waveform_axes.iteritems():
+            for ch_idx, ax in axes.iteritems():
+                ch = 2*chpair+ch_idx
+                if len(self._seqs[ch].waveforms) <= self.segment:
+                    continue
+                color = 'green' if ch_idx else 'blue'
+                # mark fixed point
+                fixed_point = self.TIME_SCALE*self._channels[ch].fixed_points[0]
+                ax.axvline(fixed_point, ls='--', color=color)
+                # plot analog waveform
+                pattern_length = self.TIME_SCALE*self._channels[ch].pattern_length
+                wf = self._seqs[ch].waveforms[self.segment]
+                ts = numpy.linspace(0., pattern_length, len(wf))
+                artists.append(ax.plot(ts, wf, color=color))
+                
+        # plot marker waveforms
+        for chpair, axes in marker_axes.iteritems():
+            for m_idx, ax in axes.iteritems():
+                ch = 2*chpair + m_idx/2
+                if len(self._seqs[ch].markers) <= self.segment:
+                    continue
+                pattern_length = self.TIME_SCALE*self._channels[ch].pattern_length
+                wf = self._seqs[ch].markers[self.segment][m_idx%2]
+                ts = numpy.linspace(0., pattern_length, len(wf))
+                artists.append(ax.plot(ts, wf, color=color))
+        return artists
+    
+    @property
+    def figure(self):
+        '''
+        Create figure with plots.
+        '''
+        active_channels, active_markers = self._active()
+        if (not hasattr(self, '_fig') or
+            numpy.any(active_channels != self._fig_channels) or
+            numpy.any(active_markers != self._fig_markers)):
+            # create a new figure if the channel or marker selections have changed
+            self._fig, self._fig_waveform_axes, self._fig_marker_axes = \
+                self._figure(active_channels, active_markers)
+            self._fig_channels = active_channels
+            self._fig_markers = active_markers
+        else:
+            # otherwise clear the current plots, but leave the skeleton intact
+            for artist in self._fig_artists:
+                for line in artist:
+                    line.remove()
+            self._fig_artists = []
+        # plot data
+        self._fig_artists = self._plot(self._fig_waveform_axes, self._fig_marker_axes)
+        # return figure 
+        return self._fig

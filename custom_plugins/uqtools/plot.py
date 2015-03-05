@@ -153,8 +153,10 @@ class FigureWidget(widgets.DOMWidget):
         self.on_zoom(self.zoom)
         self.on_msg(self._handle_zoom_msg)
         
-    def _ipython_display_(self):
-        ''' load CSS and JS '''
+    def compile(self):
+        '''
+        push CSS and JS to the browser
+        '''
         # load and display js
         plotpy_fn = inspect.getfile(inspect.currentframe())
         plotpy_path = os.path.dirname(os.path.abspath(plotpy_fn))
@@ -163,6 +165,10 @@ class FigureWidget(widgets.DOMWidget):
         display(js)
         # display css
         display(self._style)
+        
+    def _ipython_display_(self):
+        # push CSS and JS to the browser
+        self.compile()
         # display self
         super(FigureWidget, self)._ipython_display_()
         
