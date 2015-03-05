@@ -768,7 +768,7 @@ class PlotSequence(object):
         waveform_axes = {}
         marker_axes = {}
         for ax_idx, chpair in enumerate(numpy.flatnonzero(active_chpairs)):
-            chpair_markers = active_markers[(2*chpair):(2*chpair+1)]
+            chpair_markers = active_markers[(2*chpair):(2*chpair+2)]
             nmarkers = numpy.sum(chpair_markers)
             # bounding box of all axes of this chpair
             bbox_marker = 0.05
