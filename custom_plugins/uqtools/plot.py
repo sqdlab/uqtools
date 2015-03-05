@@ -151,7 +151,7 @@ class FigureWidget(widgets.DOMWidget):
         super(FigureWidget, self).__init__(**kwargs)
         self._zoom_handlers = widgets.CallbackDispatcher()
         self.on_zoom(self.zoom)
-        self.on_msg(self._handle_zoom_msg)
+        self.on_msg(self._handle_messages)
         
     def compile(self):
         '''
@@ -172,7 +172,7 @@ class FigureWidget(widgets.DOMWidget):
         # display self
         super(FigureWidget, self)._ipython_display_()
         
-    def _handle_zoom_msg(self, _, content):
+    def _handle_messages(self, _, content):
         if content.get('event', None) == 'zoom':
             # zoom to rectangle drawn by user
             axis = content['axis']
@@ -189,6 +189,8 @@ class FigureWidget(widgets.DOMWidget):
             display(self.fig)
         if content.get('event', None) == 'clear':
             clear_output()
+        if content.get('event', None) == 'close':
+            self.close()
         
     def on_zoom(self, callback, remove=False):
         """Register a callback to execute when Axes are zoomed.
