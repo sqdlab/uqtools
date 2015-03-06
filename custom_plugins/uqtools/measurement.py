@@ -3,6 +3,7 @@ import numpy
 import contextlib
 import logging
 from warnings import warn
+from copy import copy
 
 from .parameter import Parameter, TypedList, ParameterList, ParameterDict
 from .progress import Flow, RootFlow
@@ -68,10 +69,29 @@ class Measurement(object):
 
     def __del__(self):
         '''
-            free resources.
+        free resources.
         '''
         pass
-        
+    
+    
+    def __copy__(self):
+        '''
+        copy constructor
+        '''
+        new = type(self)()
+        new.__dict__.update(self.__dict__)
+        # create new coordinate, values and measurements lists
+        new.coordinates = copy(self.coordinates)
+        new.values = copy(self.values)
+        new.measurements = copy(self.measurements)
+        # create copies of all children
+        for idx, child in enumerate(new.measurements):
+            new.measurements[idx] = child.__copy__()
+        # copy flow if present
+        if hasattr(new, 'flow'):
+            new.flow = copy(new.flow)
+        return new
+    
     #
     #
     # Context Managers
@@ -252,7 +272,7 @@ class Measurement(object):
         self.measurement_flags[measurement] = flags
         return measurement
     
-    def get_measurements(self, recursive=False):
+    def get_measurements(self, recursive=False, path=[]):
         '''
         Return a copy of self.measurements.
         
@@ -263,9 +283,13 @@ class Measurement(object):
         if not recursive:
             return list(self.measurements)
         else:
+            if self in path:
+                raise ValueError('Recursion detected in the measurement tree.', 
+                                 path + [self])
             children = [self]
             for child in self.measurements:
-                children.extend(child.get_measurements(recursive=True))
+                children.extend(child.get_measurements(recursive=True, 
+                                                       path=path + [self]))
             return children
         
     def locate_measurement(self, measurement):
@@ -378,9 +402,8 @@ class Measurement(object):
             mset = set()  
             for m in mlist:
                 if m in mset:
-                    raise EnvironmentError('Measurement {0:s} appears in '+
-                                           'multiple locations in the '+ 
-                                           'Measurement tree.'.format(str(m)))
+                    raise ValueError('Duplicate measurement found in the ' +  
+                                     'Measurement tree.', m) 
                 mset.add(m)
             # create a data manager
             self.data_manager = DataManagerFactory.factory(root=self)

@@ -4,6 +4,8 @@ from uqtools import RevertInstrument, SetInstrument, RevertParameter, SetParamet
 from uqtools import nested, NullContextManager, SimpleContextManager
 from uqtools import Parameter
 
+from .lib import CountingContextManager
+
 class Instrument:
     ''' dummy instrument with an interface compatible with qtlab '''
     def __init__(self):
@@ -26,20 +28,6 @@ def instrument():
     ins.set('power', 0)
     ins.set('power2', 10)
     return ins
-
-class CountingContextManager:
-    def __init__(self, raises=None):
-        self.raises = raises
-        self.enter_count = 0
-        self.exit_count = 0
-        
-    def __enter__(self):
-        if self.raises:
-            raise self.raises
-        self.enter_count += 1
-    
-    def __exit__(self, exc_type, exc_value, tb):
-        self.exit_count += 1
 
 
 class TestNested:

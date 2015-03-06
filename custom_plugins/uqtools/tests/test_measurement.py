@@ -1,8 +1,9 @@
-import pytest
 from pytest import fixture, raises, mark, deprecated_call
+from copy import copy
 
-from uqtools import Parameter, ParameterList
-from uqtools import Measurement
+from uqtools import Parameter, ParameterList, Measurement
+
+from .lib import CountingContextManager
 
 class ImplementedMeasurement(Measurement):
     ''' implement abstract method _measure so we can run measurements '''
@@ -90,7 +91,7 @@ class TestMeasurement:
         m_nest = ImplementedMeasurement(name='nested')
         m.measurements.append(m_nest, inherit_local_coords=False)
         assert not m.measurement_flags[m_nest]['inherit_local_coords']
-            
+
     @fixture
     def m_tree(self):
         m = ImplementedMeasurement('root')
@@ -144,18 +145,38 @@ class TestMeasurement:
     def test_call_nested_after_tree(self, m_tree):
         m_tree()
         m_tree.measurements[0]()
+        
+    def test_duplicate_child(self):
+        m = ImplementedMeasurement('root')
+        m0 = ImplementedMeasurement('root.0')
+        m00 = ImplementedMeasurement('root.0.0')
+        m.measurements.extend((m0, m00))
+        m0.measurements.append(m00)
+        with raises(ValueError):
+            m()
+    
+    def test_recursive_child(self):
+        m = ImplementedMeasurement('root')
+        m0 = ImplementedMeasurement('root.0')
+        m.measurements.append(m0)
+        m0.measurements.append(m)
+        with raises(ValueError):
+            m()
+
+    def test_copy(self):
+        m = ImplementedMeasurement('root')
+        m0 = ImplementedMeasurement('root.0')
+        m.measurements.append(m0)
+        n = copy(m)
+        # make sure all measurements of the copy are different
+        assert id(m) != id(n)
+        assert id(m.measurements[0]) != id(n.measurements[0])
+        # make sure original has not changed
+        assert id(m0) == id(m.measurements[0])
     
     def test_context(self):
-        class CountingContext:
-            def __init__(self):
-                self.enter_count = 0
-                self.exit_count = 0
-            def __enter__(self):
-                self.enter_count += 1
-            def __exit__(self, exc_type, exc_value, tracebac):
-                self.exit_count += 1
-        cc1 = CountingContext()
-        cc2 = CountingContext()
+        cc1 = CountingContextManager()
+        cc2 = CountingContextManager()
         m = ImplementedMeasurement('test', context=(cc1, cc2))
         m._measure = lambda: True
         m()

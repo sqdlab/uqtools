@@ -29,7 +29,22 @@ class CountingMeasurement(Measurement):
     def _create_data_files(self):
         pass
     
+
+class CountingContextManager:
+    def __init__(self, raises=None):
+        self.raises = raises
+        self.enter_count = 0
+        self.exit_count = 0
+        
+    def __enter__(self):
+        if self.raises:
+            raise self.raises
+        self.enter_count += 1
     
+    def __exit__(self, exc_type, exc_value, tb):
+        self.exit_count += 1
+                
+                    
 class MeasurementTests:
     '''
     Generic tests for Measurement child classes
