@@ -626,6 +626,7 @@ class Plot(object):
     
     def _ipython_display_(self):
         self.update()
+        self.w_plot.compile()
         self.w_app._ipython_display_()
         self.w_axes.remove_class('vbox')
         self.w_axes.add_class('hbox')
