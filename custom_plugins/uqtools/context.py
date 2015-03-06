@@ -1,5 +1,7 @@
 import logging 
 from collections import deque
+import sys
+import contextlib
 from abc import ABCMeta, abstractmethod
 import warnings
 
@@ -10,6 +12,26 @@ class NullContextManager(object):
     
     def __exit__(self, exc_type, exc_value, traceback):
         pass
+
+
+class nested:
+    def __init__(self, *managers):
+        '''
+        A reusable nested context manager.
+        '''
+        self.managers = managers
+        self.stack = []
+        
+    def __enter__(self):
+        mgr = contextlib.nested(*self.managers)
+        self.stack.append(mgr)
+        return mgr.__enter__()
+    
+    def __exit__(self, *exc):
+        mgr = self.stack.pop()
+        mgr.__exit__(*exc)
+        
+
 
 def resolve_value(value):
     ''' call value.get if supported, otherwise return value '''

@@ -30,7 +30,7 @@ from .parameter import (Parameter, OffsetParameter, ScaledParameter, LinkedParam
                         TypedList, ParameterList, ParameterDict)
 
 from . import context
-from .context import NullContextManager, SimpleContextManager
+from .context import nested, NullContextManager, SimpleContextManager
 from .context import SetInstrument, RevertInstrument, SetParameter, RevertParameter
 
 from . import data
@@ -51,7 +51,7 @@ from .buffer import Buffer
 
 from . import process
 from .process import apply_decorator, Apply, Add, Multiply, Divide
-from .process import Reshape, Integrate, Accumulate
+from .process import Take, Reshape, Integrate, Accumulate
 
 from . import fpga
 from .fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement

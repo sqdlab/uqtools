@@ -1,8 +1,8 @@
 from pytest import fixture, raises 
 
 from uqtools import RevertInstrument, SetInstrument, RevertParameter, SetParameter
-from uqtools import NullContextManager, SimpleContextManager
-from parameter import Parameter
+from uqtools import nested, NullContextManager, SimpleContextManager
+from uqtools import Parameter
 
 class Instrument:
     ''' dummy instrument with an interface compatible with qtlab '''
@@ -26,6 +26,55 @@ def instrument():
     ins.set('power', 0)
     ins.set('power2', 10)
     return ins
+
+class CountingContextManager:
+    def __init__(self, raises=None):
+        self.raises = raises
+        self.enter_count = 0
+        self.exit_count = 0
+        
+    def __enter__(self):
+        if self.raises:
+            raise self.raises
+        self.enter_count += 1
+    
+    def __exit__(self, exc_type, exc_value, tb):
+        self.exit_count += 1
+
+
+class TestNested:
+    def test_one(self):
+        cnt = CountingContextManager()
+        with raises(ValueError):
+            with nested(cnt):
+                raise ValueError
+        assert (cnt.enter_count == 1) and (cnt.exit_count == 1)
+        
+    def test_multi(self):
+        ctxs = [CountingContextManager() for _ in range(5)]
+        with raises(ValueError):
+            with nested(*ctxs):
+                raise ValueError
+        assert all(cnt.enter_count == 1 and cnt.exit_count == 1 for cnt in ctxs)
+        
+    def test_multi_exception(self):
+        ctx1 = CountingContextManager()
+        ctx2 = CountingContextManager(raises=ValueError)
+        with raises(ValueError):
+            with nested(ctx1, ctx2):
+                pass
+        assert ((ctx1.enter_count == 1) and (ctx1.exit_count == 1) and
+                (ctx2.enter_count == 0) and (ctx2.exit_count == 0))
+    
+    def test_one_reuse(self):
+        cnt = CountingContextManager()
+        ctx = nested(cnt)
+        with ctx:
+            pass
+        with ctx:
+            pass
+        assert (cnt.enter_count == 2) and (cnt.exit_count == 2)
+
 
 class TestSetInstrument:
     def test_init(self, instrument):

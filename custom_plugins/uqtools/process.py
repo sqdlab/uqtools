@@ -203,12 +203,63 @@ class Divide(Apply):
         else:
             return numpy.divide(*factors)
             
+
+
+class Take(Measurement):
+    '''
+    Extract a slice of measured data.
+    '''
+    def __init__(self, source, coordinate, indices=None, range=None, **kwargs):
+        '''
+        Extract a slice of measured data.
         
-class Reduce(Measurement):
-    '''
-    Apply an arbitrary reducing function to measured data
-    '''
-    pass
+        Input:
+            source (Measurement) - data source
+            coord - coordinate of the slice dimension
+            indices (slice, list of int) - index range to extract
+            range (2-tuple of float) - value range to extract.
+                if the coordinate values differ along the remaining axes,
+                the intersection of the resulting index ranges will be used.
+                indices and range are mutually exclusive
+        '''
+        super(Take, self).__init__(**kwargs)
+        self.measurements.append(source, inherit_local_coords=False)
+        self.coordinates = source.coordinates
+        self.values = source.values
+        self.coordinate = coordinate
+        if (indices is None) and (range is None):
+            raise ValueError('indices or range must be provided.')
+        if (indices is not None) and (range is not None):
+            raise ValueError('indices and range args are mutually exclusive.')
+        self.indices = indices
+        self.range = range
+        
+    def _measure(self):
+        # call source
+        cs, ds = self.measurements[0](nested=True, output_data=True)
+        # calculate index range
+        axis = cs.keys().index(self.coordinate)
+        naxes = len(cs.keys())
+        if self.indices is not None:
+            axis_slice = self.indices
+        else:
+            axes = range(1 + naxes)
+            axes.remove(1 + axis)
+            axis_slice = numpy.all((cs[self.coordinate] >= self.range[0],
+                                    cs[self.coordinate] < self.range[1]), 
+                                   axis=tuple(axes))
+        # calculate index expression
+        slices = [slice(None) if (idx != axis) else axis_slice 
+                  for idx in range(naxes)]
+        # extract slices
+        cs = ParameterDict((c, v[slices]) for c, v in cs.iteritems())
+        ds = ParameterDict((c, v[slices]) for c, v in ds.iteritems())
+        # store data in file
+        points = [numpy.ravel(m) for m in cs.values()+ds.values()]
+        self._data.add_data_point(*points, newblock=True)
+        # return result
+        return cs, ds
+        
 
 
 class Reshape(Measurement):
