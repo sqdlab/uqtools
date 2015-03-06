@@ -78,7 +78,10 @@ class Measurement(object):
         '''
         copy constructor
         '''
-        new = type(self)()
+        class _EmptyClass(object):
+            pass
+        new = _EmptyClass()
+        new.__class__ = self.__class__
         new.__dict__.update(self.__dict__)
         # create new coordinate, values and measurements lists
         new.coordinates = copy(self.coordinates)
