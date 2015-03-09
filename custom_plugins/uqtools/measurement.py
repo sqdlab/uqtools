@@ -86,10 +86,11 @@ class Measurement(object):
         # create new coordinate, values and measurements lists
         new.coordinates = copy(self.coordinates)
         new.values = copy(self.values)
-        new.measurements = copy(self.measurements)
         # create copies of all children
-        for idx, child in enumerate(new.measurements):
-            new.measurements[idx] = child.__copy__()
+        new.measurements = []
+        for idx, child in enumerate(self.measurements):
+            new.measurements.append(child.__copy__(), 
+                                    **self.measurement_flags[child])
         # copy flow if present
         if hasattr(new, 'flow'):
             new.flow = copy(new.flow)
