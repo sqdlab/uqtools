@@ -131,7 +131,7 @@ class ProgramAWGParametric(ProgramAWG):
                 their values are compared to the previous iteration to determine whether
                 a new sequence must be exported to the AWG
         '''
-        Measurement.__init__(**kwargs)
+        Measurement.__init__(self, **kwargs)
         self.data_directory = kwargs.get('data_directory', self.name)
         self.awgs = awgs
         self._seq_func = seq_func
