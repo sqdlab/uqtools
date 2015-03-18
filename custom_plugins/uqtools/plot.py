@@ -109,7 +109,7 @@ class FigureWidget(widgets.DOMWidget):
     def update(self):
         # rasterize image
         png_data = StringIO()
-        self.fig.canvas.print_figure(png_data, format='png')
+        self.fig.canvas.print_png(png_data)
         self._b64image = b64encode(png_data.getvalue())
         _, height = self.fig.canvas.get_width_height()
         # save axes properties in model
