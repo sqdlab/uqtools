@@ -91,6 +91,13 @@ class BaseFlow(object):
         # Every entry is a <str>:threading.Event mapping. 
         # Setting an event triggers execution of self.on_<str>.
         self.events = dict((key, Event()) for key in self.EVENTS)
+        self.reset()
+
+    def reset(self):
+        ''' Indicate start of the top-level measurement. '''
+        self.running = False
+        for event in self.events.itervalues():
+            event.clear()
         
     def start(self):
         ''' Indicate the start of a measurement. '''
@@ -101,6 +108,11 @@ class BaseFlow(object):
     def stop(self):
         ''' Indicate the end of a measurement. '''
         self.running = False
+        
+    def update(self, measurement):
+        ''' Update flow with information from measurement. '''
+        pass
+        
 
     def sleep(self, duration=0., quantum=10e-3):
         '''
@@ -194,9 +206,9 @@ class LoopFlow(BaseFlow):
         Input:
             iterations - expected number of iterations
         '''
-        super(LoopFlow, self).__init__()
         self.iterations = iterations
         self._iteration = 0
+        super(LoopFlow, self).__init__()
 
     @property
     def iteration(self):
@@ -210,13 +222,14 @@ class LoopFlow(BaseFlow):
             raise ValueError('iteration must be between 0 and iterations.')
         self._iteration = value 
     
+    def reset(self):
+        ''' Indicate start of the top-level measurement. '''
+        super(LoopFlow, self).reset()
+        self.iteration = 0
+    
     def start(self):
         ''' Indicate the start of a measurement. '''
         super(LoopFlow, self).start()
-        self.iteration = 0
-        
-    def reset(self):
-        ''' Indicate the start of the loop. '''
         self.iteration = 0
         
     def next(self):
@@ -241,11 +254,16 @@ class TimingFlow(LoopFlow):
     @wraps(LoopFlow.__init__)
     def __init__(self, iterations):
         super(TimingFlow, self).__init__(iterations=iterations)
+    
+    @wraps(LoopFlow.reset)
+    def reset(self):
+        super(TimingFlow, self).reset()
         self.start_time = None
         self.stop_time = None
         self.point_time = None
         self.point_timing = deque(maxlen=self.TIMING_AVERAGES)
         self.trace_timing = deque(maxlen=self.TIMING_AVERAGES)
+        
     
     @wraps(LoopFlow.start)
     def start(self):
@@ -446,15 +464,21 @@ if 'widgets' in globals():
                     file.
                 level (int) - nesting level
             '''
-            file_name = measurement.get_data_file_paths()
-            if not file_name:
-                return None
-            template = '<a href="{url}">{name}</a>'
-            html = template.format(name=measurement.name, url=file_url(file_name))
-            label = widgets.HTMLWidget(value=html)
+            label = widgets.HTMLWidget() 
             label.set_css({'margin-left':'{0:d}px'.format(10*level)})
             self._widgets = {'label':label}
+            self.update(measurement)
             return label
+        
+        def update(self, measurement):
+            ''' Update file link '''
+            file_name = measurement.get_data_file_paths()
+            if not file_name:
+                html = measurement.name
+            else:
+                template = '<a href="{url}">{name}</a>'
+                html = template.format(name=measurement.name, url=file_url(file_name))
+            self._widgets['label'].value = html
 
         def hide(self):
             ''' Unshow widget '''
@@ -502,6 +526,11 @@ if 'widgets' in globals():
                 self._iterations = value
                 self.on_set_iterations()
 
+        @wraps(TimingFlow.reset)
+        def reset(self):
+            super(ProgressBarWidgetFlow, self).reset()
+            self.on_set_iteration(force=True)
+
         @wraps(TimingFlow.start)
         def start(self):
             super(ProgressBarWidgetFlow, self).start()
@@ -527,13 +556,7 @@ if 'widgets' in globals():
                 level (int) - nesting level
             '''
             # label [###_ 2 out of 20 ____] ETC 1min
-            file_name = measurement.get_data_file_paths()
-            if not file_name:
-                html = measurement.name
-            else:
-                template = '<a href="{url}">{name}</a>'
-                html = template.format(name=measurement.name, url=file_url(file_name))
-            label = widgets.HTMLWidget(value=html)
+            label = widgets.HTMLWidget()
             label.set_css({'position':'absolute', 'left':'0px', 
                            'top':'5px', 'width':'200px', 
                            'margin-left':'{0}px'.format(10*level)})
@@ -556,9 +579,20 @@ if 'widgets' in globals():
             # update values
             self._widgets = dict(box=box, label=label, progress=progress, 
                                  overlay=overlay, timer=timer, stop=stop)
+            self.update(measurement)
             self.on_set_iteration()
             return box
 
+        def update(self, measurement):
+            ''' Update file link '''
+            file_name = measurement.get_data_file_paths()
+            if not file_name:
+                html = measurement.name
+            else:
+                template = '<a href="{url}">{name}</a>'
+                html = template.format(name=measurement.name, url=file_url(file_name))
+            self._widgets['label'].value = html
+            
         def hide(self):
             ''' Unshow widget '''
             self._widgets['stop'].close()

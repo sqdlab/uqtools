@@ -62,10 +62,8 @@ class Measurement(object):
         self.coordinates = () 
         self.values = ()
         
-        self._setup_done = False
-        self.last_data_directory = None
-        self.last_data_file = None
         self.data_manager = None
+        self._setup_done = False
 
     def __del__(self):
         '''
@@ -264,9 +262,6 @@ class Measurement(object):
             
         DEPRECATED. Use measurement.append or measurement.extend instead.
         '''
-        if self._setup_done:
-            raise EnvironmentError('unable to add nested measurements after '+
-                                   'the measurement has been setup.')
         if(not self.is_compatible(measurement)):
             raise TypeError('parameter measurement must be an instance of '+
                             'Measurement.')
@@ -324,10 +319,10 @@ class Measurement(object):
         '''
         Return output directory of the last run.
         '''
-        if self.last_data_directory is None:
+        if self.data_manager is None:
             raise ValueError('data directory is only available after a '+
                              'measurement was started.')
-        return self.last_data_directory
+        return self.data_manager.get_data_directory(self)
     
     def get_data_file_paths(self, recursive=False):
         '''
@@ -342,13 +337,15 @@ class Measurement(object):
         Return:
             str if recursive is False, list of (str, str) otherwise
         '''
-        #if self.last_data_file is None:
-        #    logging.warning('data file paths are only available after a '+
-        #                    'measurement was started.')
-        if not recursive:
-            return self.last_data_file
+        if (hasattr(self, '_data') and (self._data is not None) and 
+            hasattr(self._data, 'get_filepath')):
+            data_file = self._data.get_filepath()
         else:
-            fns = [(self.name, self.last_data_file)]
+            data_file = None
+        if not recursive:
+            return data_file
+        else:
+            fns = [(self.name, data_file)]
             for measurement in self.measurements:
                 fns.extend(measurement.get_data_file_paths(True))
             return fns
@@ -359,12 +356,9 @@ class Measurement(object):
             may be replaced in subclasses if a more complex file handling is desired.
         '''
         # create own data files if any value dimensions are present
-        self.last_data_file = None
         if len(self.values):
             if self.data_save:
                 self._data = self.data_manager.create_table(self)
-                if hasattr(self._data, 'get_filepath'):
-                    self.last_data_file = self._data.get_filepath()
             else:
                 self._data = self.data_manager.create_dummy_table(self)
 
@@ -409,10 +403,13 @@ class Measurement(object):
                     raise ValueError('Duplicate measurement found in the ' +  
                                      'Measurement tree.', m) 
                 mset.add(m)
-            # create a data manager
-            self.data_manager = DataManagerFactory.factory(root=self)
-            # setup all measurements
-            self._setup()
+            # create and distribute data manager
+            data_manager = DataManagerFactory.factory(root=self)
+            for m in mlist:
+                m.data_manager = data_manager
+            
+        # setup self
+        self._setup()
         try:
             yield
         finally:
@@ -442,17 +439,25 @@ class Measurement(object):
 
     @contextlib.contextmanager
     def _start_stop_ctx(self, nested):
+        '''
+        reset/start/stop flows
+        '''
+        if not nested:
+            for m in self.get_measurements(recursive=True):
+                m.flow.reset()
         self.flow.start()
+        self.flow.update(self)
         try:
             yield
         finally:
             self.flow.stop()
-    
-    def __call__(self, nested=False, **kwargs):
+            
+    def __call__(self, comment=None, nested=False, **kwargs):
         '''
         Perform a measurement.
         
         Input:
+            comment (str) - comment string saved along with the measurement 
             nested (bool) - nested=True indicates that this measurement is nested
                 within another measurement. Set when calling a measurement from 
                 within another Measurement subclass.
@@ -471,6 +476,8 @@ class Measurement(object):
                  self._local_log_ctx(nested), \
                  self._root_flow_ctx(nested), \
                  self._start_stop_ctx(nested):
+                if (comment is not None):
+                    self.data_manager.comment = comment
                 return self._measure(**kwargs)
     
     def _setup(self):
@@ -478,15 +485,11 @@ class Measurement(object):
         setup measurements.
         called before the first measurement.
         '''
-        # create own data files
-        self.last_data_directory = self.data_manager.get_data_directory(self)
-        self._create_data_files()
-        # setup children
-        for child in self.measurements:
-            child.data_manager = self.data_manager
-            child._setup()
-        # make sure setup is not run again
+        if self._setup_done:
+            return
         self._setup_done = True
+        # create own data files
+        self._create_data_files()
     
     def _measure(self, **kwargs):
         '''
@@ -515,15 +518,9 @@ class Measurement(object):
         '''
         # clean-up of all nested measurements is handled by the 
         # top-level measurement
+        self._setup_done = False
         for child in self.measurements:
             child._teardown()
-        # dispose of data manager
-        #if self.data_manager is not None:
-        # 
-        #    self.data_manager.close()
-        #    del self.data_manager
-        # allow setup to run for the next measurement
-        self._setup_done = False
 
 
 

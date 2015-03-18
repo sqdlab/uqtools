@@ -241,6 +241,7 @@ class DataManager(object):
         # create data directory
         self.data_directory = self.file_name_gen.generate_directory_name(root.name)
         self.get_data_directory(root)
+        self._comment = None
         
     def __del__(self):
         '''
@@ -300,6 +301,18 @@ class DataManager(object):
             os.makedirs(fullpath)
         return fullpath
 
+    @property
+    def comment(self):
+        return self._comment
+    
+    @comment.setter
+    def comment(self, comment):
+        self._comment = comment
+        # save comment to file
+        fn = os.path.join(self.get_data_directory(self.root), 'comment.txt')
+        with open(fn, 'w') as f:
+            f.write(comment)
+
     def close(self):
         '''
         Close all tables.
@@ -308,7 +321,7 @@ class DataManager(object):
             table = self.tables.pop()
             table.close()
         self.tables = []
-        
+    
     def create_table(self, m=None, name=None, coordinates=None, values=None, 
                      inherited_coordinates=None, path=None):
         '''
