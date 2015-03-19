@@ -30,14 +30,13 @@ from .parameter import (Parameter, OffsetParameter, ScaledParameter, LinkedParam
                         TypedList, ParameterList, ParameterDict)
 
 from . import context
-from .context import nested, NullContextManager, SimpleContextManager
+from .context import NullContextManager, SimpleContextManager
 from .context import SetInstrument, RevertInstrument, SetParameter, RevertParameter
 
 from . import data
 
 from . import progress
 from .progress import ContinueIteration, BreakIteration, Flow
-flow = progress.RootFlow()
 
 from . import measurement
 from .measurement import Measurement
@@ -51,7 +50,7 @@ from .buffer import Buffer
 
 from . import process
 from .process import apply_decorator, Apply, Add, Multiply, Divide
-from .process import Take, Reshape, Integrate, Accumulate
+from .process import Reshape, Integrate, Accumulate
 
 from . import fpga
 from .fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
@@ -79,9 +78,8 @@ except ImportError:
 
 try:
     from . import awg
-    from .awg import (ProgramAWG, ProgramAWGParametric,
-                      ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep,
-                      PlotSequence)
+    from .awg import ProgramAWG, ProgramAWGParametric
+    from .awg import ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep, NormalizeAWG
 except ImportError:
     # awg already generates a log entry
     pass

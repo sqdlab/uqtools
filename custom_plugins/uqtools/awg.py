@@ -3,6 +3,7 @@ import os
 import numpy
 import time
 from collections import OrderedDict
+from copy import copy
 
 # Plot interface
 from contextlib import contextmanager
@@ -10,11 +11,12 @@ from IPython.html import widgets
 from matplotlib.ticker import NullFormatter
 import matplotlib.pyplot as plt
 
-from . import  FigureWidget
-from .parameter import Parameter
+from . import FigureWidget
+from .parameter import Parameter, ParameterDict
 from .measurement import Measurement
 from .process import Reshape
 try:
+    import pulsegen
     from pulsegen import MultiAWGSequence
 except ImportError:
     logging.warning(__name__+': pulsegen is not available. not loading awg library.')
@@ -259,8 +261,10 @@ class ProgramAWGSweep(ProgramAWG):
                 passed as the seq parameter.
                 if not specified, a pattern_start_marker on ch0:marker0 and a 
                 meas_marker on ch0:marker1 are generated.
-            marker_kwargs (dict, optional) - optional arguments passed to 
-                marker_func.
+            template_func (callable, optional) - sequence template function
+                If provided, template_func is called instead of MultiAWGSequence
+                to create an empty sequence. This can be used to inject
+                calibration pulses into the sequence.
             force_program (bool, default False) - arbitrary waveform generator 
                 programming policy.
                 If True, the generator is programmed during each call to 
@@ -283,6 +287,7 @@ class ProgramAWGSweep(ProgramAWG):
         self.marker_func = kwargs.pop('marker_func', default_marker_func)
         self.force_program = kwargs.pop('force_program', False)
         self.wait = kwargs.pop('wait', True)
+        self.template_func = kwargs.pop('template_func', None)
         # save patterns in patterns subdirectory
         name = kwargs.pop('name', '_'.join(args[::2]))
         data_directory = kwargs.pop('data_directory', name)
@@ -359,7 +364,7 @@ class ProgramAWGSweep(ProgramAWG):
             # add evaluated args to lists
             self._prev_rangess.append(ranges)
             self._prev_user_kwargss.append(user_kwargs)
-            self._prev_seq_lengths.append(numpy.prod([len(r) for r in ranges]))
+            self._prev_seq_lengths.append(len(seq))
         # program awg
         if (cache_idx != self.values['index'].get()) or self.force_program:
             self._program(host_dir, host_file(cache_idx), wait, self._prev_seq_lengths[cache_idx])
@@ -369,9 +374,14 @@ class ProgramAWGSweep(ProgramAWG):
 
     def sequence(self, ranges, kwargs):
         ''' generate a sequence object for the provided parameter values '''
+        # create empty or template sequence
+        if self.template_func is None:
+            seq = MultiAWGSequence()
+        else:
+            seq = self.template_func(marker_func=self.marker_func, **kwargs)
         # iterate through outer product of all ranges
-        seq = MultiAWGSequence()
-        for idx, ndidx in enumerate(numpy.ndindex(*[len(r) for r in ranges])):
+        ndidxs = numpy.ndindex(*[len(r) for r in ranges])
+        for idx, ndidx in enumerate(ndidxs, len(seq)):
             point_kwargs = dict(kwargs)
             point_kwargs.update(
                 (c, r[i]) for c, r, i in zip(self.coords, ranges, ndidx)
@@ -434,7 +444,11 @@ def MeasureAWGSweep(*args, **kwargs):
             be called whenever Reshape is executed.
         source (Measurement) - any (FPGA-)measurement that returns
             a 'segment' coordinate.
-        any keyword arguments apart from source are passed to Reshape.
+        normalize (Measurement, optional) - Measurement that normalizes measured
+            data and discards the calibration segments inserted by template_func
+            passed to ProgramAWGSweep. A copy of normalized is wrapped around
+            source using normalize.
+        any other keyword arguments are passed to Reshape.
     '''
     # apply default name
     name = kwargs.pop('name', 'MeasureAWGSweep')
@@ -444,6 +458,12 @@ def MeasureAWGSweep(*args, **kwargs):
         args = args[:-1]
     else:
         source = kwargs.pop('source')
+    # wrap normalization measurement 
+    normalize = kwargs.pop('normalize', None)
+    if normalize is not None:
+        wrapped = copy(normalize)
+        wrapped.wrap(source)
+        source = wrapped
     # remove segment
     segment = source.coordinates['segment']
     # and replace it by the ci
@@ -471,26 +491,31 @@ class MultiAWGSweep(Measurement):
                 pulse sequence will be generated.
             source (Measurement) - any (FPGA-)measurement that returns
                 a 'segment' coordinate.
+            normalize (Measurement, optional) - 
             
             See ProgramAWGSweep for additional arguments (some are mandatory).
+            See MeasureAWGSweep for even more optional arguments.
             All additional arguments must be passed as keyword arguments.
         '''
         if 'wait' in kwargs:
             raise ValueError('The "wait" argument of ProgramAWGSweep is not supported.')
         # take ProgramAWGSweep parameters from kwargs
         program_kwargs = {}
+        if ('normalize' in kwargs) and not ('template_func' in kwargs):
+            kwargs['template_func'] = kwargs['normalize'].template_func
         for key in ('awgs', 'pulse_func', 'pulse_kwargs', 'marker_func', 
-            'force_program', 'wait'):
+            'force_program', 'wait', 'template_func'):
             if key in kwargs:
                 program_kwargs[key] = kwargs.pop(key)
-            if 'context' in kwargs:
-                program_kwargs['context'] = kwargs['context']
+        for key in ('context',):
+            if key in kwargs:
+                program_kwargs[key] = kwargs[key]
         # take MeasureAWGSweep parameters from kwargs
         measure_kwargs = {}
         if len(args)%2:
             measure_kwargs['source'] = args[-1]
             args = args[:-1]
-        for key in ('source','context'):
+        for key in ('source', 'context', 'normalize'):
             if key in kwargs:
                 measure_kwargs[key] = kwargs.pop(key)
         # build name from sweep coordinates
@@ -526,6 +551,75 @@ class MultiAWGSweep(Measurement):
 
 
 
+class NormalizeAWG(Measurement):
+    def __init__(self, measurement=None, g_pulses=None, e_pulses=None, chpair=0, g_value=0., e_value=1., **kwargs):
+        '''
+        Normalize segmented FPGA data.
+        The first segment is mapped to -1., the second segment is mapped to +1.
+        and linear interpolation is performed for points in between these values.
+        
+        The calibration segments are discarded in the output.
+        
+        Input:
+            g_pulses, e_pulses (list of Pulse) - Pulses applied to rotate the qubit into the
+                ground/excited state. Default to [mwspacer(0)] and [pix].
+            chpair (int) - Channel pair the calibration pulses are applied to
+            g_value, e_value (float) - Output values for the ground/excited state
+        '''
+        super(NormalizeAWG, self).__init__(**kwargs)
+        self.g_pulses = g_pulses if g_pulses is not None else [pulsegen.mwspacer(0)]
+        self.e_pulses = e_pulses if e_pulses is not None else [pulsegen.pix]
+        if g_value == e_value:
+            raise ValueError('g and e values must be different.')
+        self.g_value = g_value
+        self.e_value = e_value
+        self.chpair = chpair
+        if measurement is not None:
+            self.wrap(measurement)
+        
+    def wrap(self, measurement):
+        ''' wrap a measurement '''
+        self.coordinates = measurement.coordinates
+        self.values = measurement.values
+        self.measurements.append(measurement, inherit_local_coords=False)
+    
+    def _measure(self, **kwargs):
+        # measure segmented data
+        if not len(self.measurements):
+            raise ValueError('NormalizeAWG.wrap must be called before use.')
+        cs, ds = self.measurements[0](nested=True, **kwargs)
+        # calculate index vectors
+        axis = cs.keys().index('segment')
+        sl = lambda sl: [slice(None)]*axis + [sl] + [slice(None)]*(len(cs.keys())-axis-1)
+        sl_data = sl(slice(2, None))
+        sl_ground = sl(0)
+        sl_excited = sl(1)
+        # slice coordinates, slice and normalize data
+        cs_out = ParameterDict()
+        for p, v in cs.iteritems():
+            cs_out[p] = v[sl_data]
+        ds_out = ParameterDict()
+        for p, v in ds.iteritems():
+            ds_out[p] = ((v[sl_data] - v[sl_ground]) / (v[sl_excited] - v[sl_ground])
+                         * (self.e_value - self.g_value) + self.g_value)
+        # save and return data
+        points = [numpy.ravel(m) for m in cs_out.values() + ds_out.values()]
+        self._data.add_data_point(*points)
+        return cs_out, ds_out
+    
+    def template_func(self, chpair=None, marker_func=default_marker_func, **kwargs):
+        ''' new sequence with zero/pi calibration pulses '''
+        if chpair is None:
+            chpair = self.chpair
+        seq = pulsegen.MultiAWGSequence()
+        seq.append_pulses(self.g_pulses, chpair=chpair)
+        marker_func(seq, 0, **kwargs)
+        seq.append_pulses(self.e_pulses, chpair=chpair)
+        marker_func(seq, 1, **kwargs)
+        return seq    
+        
+        
+        
 class PlotSequence(object):
     TIME_SCALE = 1e9
     
