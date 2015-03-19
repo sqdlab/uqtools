@@ -141,7 +141,9 @@ class InstrumentHandler(object):
                 ins.get(parameter) != value when the context is entered
                 parameter_tuples is always applied before parameter_dict, 
                 preserving the order of the tuples.
-                 
+        Examples:
+            SetInstrument(ins, 'power', 10, phase, 0)
+            SetInstrument(ins, power=-10, phase=0)
         '''
         super(InstrumentHandler, self).__init__()
         self._ins = ins
