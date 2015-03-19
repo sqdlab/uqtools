@@ -1,20 +1,24 @@
+import os
 import numpy
 import logging
 import scipy.interpolate
 import scipy.optimize
+import matplotlib.pyplot as plt
+from IPython.display import display
 
 from .parameter import Parameter, ParameterDict
 from .measurement import Measurement
 from .simulation import DatReader
 from .basics import Sweep
 from .progress import Flow, ContinueIteration
+from .plot import FigureWidget
 
 class FittingMeasurement(Measurement):
     '''
         Generic fitting of one-dimensional data via the fitting library
     '''
     
-    def __init__(self, source, fitter, measurements=None, indep=None, dep=None, test=None, fail_func=ContinueIteration, popt_out=None, **kwargs):
+    def __init__(self, source, fitter, measurements=None, indep=None, dep=None, test=None, fail_func=ContinueIteration, popt_out=None, plot='png', **kwargs):
         '''
         Generic fitting of one-dimensional data.
         
@@ -28,13 +32,17 @@ class FittingMeasurement(Measurement):
             dep (instance of Parameter) - dependent variable,
                 defaults to first value returned by measurement
             test (callable) - test optimized parameters for plausibility.
-                if test(xs, ys, p_opt, p_std, p_est.values()) returns False, the fit
-                is taken to be unsuccessful.
-            fail_func (Exception or callable) - Exception to raise or function to call
-                when the fit fails. Ignored if measurements is not None.
+                if test(xs, ys, p_opt, p_std, p_est.values()) returns False, 
+                the fit is taken to be unsuccessful.
+            fail_func (Exception or callable) - Exception to raise or function 
+                to call when the fit fails. Ignored if measurements is not None.
             popt_out (dict of Parameter:str) - After a successful fit, each
                 Parameter object present in popt is assigned the associated
                 optimized parameter.
+            plot (str) - Comma-separated list of plot output formats. Can be
+                any file format supported by matplotlib.
+                'display' prints the plot to the current cell, 
+                'widget' uses ImageWidget to show the plot.
             **kwargs are passed to superclasses
             
             handles ContinueIteration in nested measurements
@@ -44,6 +52,7 @@ class FittingMeasurement(Measurement):
         self.indep = indep if indep is not None else source.coordinates[0]
         self.dep = dep if dep is not None else source.values[0]
         self.popt_out = popt_out if popt_out is not None else {}
+        self.plot = plot
         # check inputs
         if self.dep not in source.values:
             raise ValueError(('Dependent variable {0:s} not found in source '+
@@ -81,8 +90,19 @@ class FittingMeasurement(Measurement):
         # 
         self.flow = Flow(iterations=1)
     
+    def _setup(self):
+        super(FittingMeasurement, self)._setup()
+        
+        # reset file name counter when plotting
+        if self.plot:
+            self._plot_idx = 0
+        # create FigureWidget if requested
+        if 'widget' in self.plot.split(','):
+            if hasattr(self, 'widget'):
+                self.widget.close()
+            self.widget = FigureWidget()
+    
     def _measure(self, *args, **kwargs):
-        # reset progress bar
         # for standard fitters, progress bar shows measurement id including calibration
         if not self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
             self.flow.iterations = len(self.measurements)
@@ -128,6 +148,28 @@ class FittingMeasurement(Measurement):
                 logging.warning(__name__ + ': parameter guesser failed.')
                 p_est = {}
             p_opts, p_covs = self.fitter.fit(xs, ys, guess=p_est)
+            # plot fit
+            if self.plot:
+                self._plot_idx += 1
+                fig = self.fitter.plot(xs, ys, guess=p_est, plt=plt)
+                for ax in fig.get_axes():
+                    ax.set_xlabel(self.indep.name)
+                    ax.set_ylabel(self.dep.name)
+                fig.suptitle(self.name)
+                for format in self.plot.split(','):
+                    if format == 'display':
+                        display(fig)
+                    elif format == 'widget':
+                        self.widget.fig = fig
+                        if self._plot_idx == 1:
+                            display(self.widget)
+                    else:
+                        data_fn = self.get_data_file_paths()
+                        if data_fn is not None:
+                            plot_fn = '{0}_{1}.{2}'.format(
+                                os.path.splitext(data_fn)[0],
+                                self._plot_idx, format)
+                            fig.savefig(plot_fn, format=format)
             if self.fitter.RETURNS_MULTIPLE_PARAMETER_SETS:
                 # for multi-fitters, progress bar shows result set id
                 self.flow.iterations = 1+len(p_opts)
