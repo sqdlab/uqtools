@@ -76,7 +76,7 @@ class OffsetParameter(Parameter):
     A wrapper around a parameter that offsets the values assigned to and read 
     from that parameter.
     '''
-    def __init__(self, parameter, offset):
+    def __init__(self, name, parameter, offset):
         '''
         Define an offset Parameter.
         
@@ -85,7 +85,7 @@ class OffsetParameter(Parameter):
             offset (float, Parameter) - offset added to get() and subtracted 
                 before set()
         '''
-        super(OffsetParameter, self).__init__(parameter.name,
+        super(OffsetParameter, self).__init__(name,
                                               set_func=parameter.set,
                                               get_func=parameter.get,
                                               dtype=parameter.dtype)
@@ -142,7 +142,7 @@ class ScaledParameter(Parameter):
     A wrapper around a parameter that scales the values assigned to and read 
     from that parameter.
     '''
-    def __init__(self, parameter, scale):
+    def __init__(self, name, parameter, scale):
         '''
         Define a scaled Parameter
         
@@ -150,7 +150,7 @@ class ScaledParameter(Parameter):
             parameter (Parameter) - linked parameter
             scale (float, Parameter) - scaling factor for get()
         '''
-        super(ScaledParameter, self).__init__(parameter.name,
+        super(ScaledParameter, self).__init__(name,
                                               set_func=parameter.set,
                                               get_func=parameter.get,
                                               dtype=parameter.dtype)
