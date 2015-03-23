@@ -31,8 +31,8 @@ from .parameter import (Parameter, OffsetParameter, ScaledParameter, LinkedParam
                         TypedList, ParameterList, ParameterDict)
 
 from . import context
-from .context import NullContextManager, SimpleContextManager
-from .context import SetInstrument, RevertInstrument, SetParameter, RevertParameter
+from .context import (NullContextManager, SimpleContextManager, nested, 
+                      SetInstrument, RevertInstrument, SetParameter, RevertParameter)
 
 from . import data
 
@@ -85,8 +85,9 @@ except ImportError:
 
 try:
     from . import awg
-    from .awg import ProgramAWG, ProgramAWGParametric
-    from .awg import ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep, NormalizeAWG
+    from .awg import (ProgramAWG, ProgramAWGParametric,
+                      ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep, 
+                      NormalizeAWG, PlotSequence)
 except ImportError:
     # awg already generates a log entry
     pass
