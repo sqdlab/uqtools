@@ -295,6 +295,11 @@ class ParameterList(TypedList):
         '''
         return [parameter.get() for parameter in self.data]
 
+    def names(self):
+        '''
+        Return Parameter.name of all contained objects.
+        '''
+        return [p.name for p in self.data]
 
 
 class ParameterDict(OrderedDict):
@@ -327,6 +332,12 @@ class ParameterDict(OrderedDict):
         '''
         return ParameterList(super(ParameterDict, self).keys())
 
+    def names(self):
+        '''
+        Return Parameter.name of all contained objects.
+        '''
+        return [p.name for p in super(ParameterDict, self).keys()]
+    
     def __eq__(self, other):
         '''
         Check if all items are equal. Don't check order.

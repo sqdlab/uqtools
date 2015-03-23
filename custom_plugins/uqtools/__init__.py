@@ -10,15 +10,16 @@
 # reload sub-modules in fixed order
 import logging
 import sys
-for key in ('config', 'helpers', 'parameter', 'context', 'data', 'progress', 
-            'measurement', 'basics', 'buffer', 'process', 'fpga', 'fsv',
-            'simulation', 'calibrate', 'pulselib', 'awg', 'plot'):
-    #if key in locals():
-    key = 'uqtools.'+key
-    if key in sys.modules:
+for key in ('config', 'helpers', 'parameter', 'context', 'data', 'store', 
+            'progress', 'measurement', 'basics', 'buffer', 'process', 'fpga', 
+            'fsv', 'simulation', 'calibrate', 'pulselib', 'awg', 'plot'):
+    #key = 'uqtools.' + key
+    if ('uqtools.' + key in sys.modules) and (key in locals()):
+        #del(sys.modules[key])
+        #reload(sys.modules[key])
+        #if key in locals():
         logging.debug(__name__ + ': forcing reload of {0}'.format(key))
-        del(sys.modules[key])
-        #reload(locals()[key])
+        reload(locals()[key])
 del key
 
 
@@ -34,6 +35,12 @@ from .context import NullContextManager, SimpleContextManager
 from .context import SetInstrument, RevertInstrument, SetParameter, RevertParameter
 
 from . import data
+
+try:
+    from . import store
+    from .store import CSVStore, HDFStore
+except ImportError:
+    logging.warning(__name__ + ': failed to import store.')
 
 from . import progress
 from .progress import ContinueIteration, BreakIteration, Flow
