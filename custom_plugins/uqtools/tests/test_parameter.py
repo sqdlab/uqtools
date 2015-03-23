@@ -50,14 +50,14 @@ class TestOffsetParameter:
         return Parameter('base')
         
     def test_const_offset(self, p):
-        op = OffsetParameter(p, 1)
+        op = OffsetParameter('foo', p, 1)
         op.set(2)
         assert op.get() == 2
         assert p.get() == 1
         
     def test_parameter_offset(self, p):
         o = Parameter('offset', value=1)
-        op = OffsetParameter(p, o)
+        op = OffsetParameter('foo', p, o)
         op.set(2)
         assert op.get() == 2
         assert p.get() == 1
@@ -69,14 +69,14 @@ class TestScaledParameter:
         return Parameter('base')
     
     def test_const_scale(self, p):
-        sp = ScaledParameter(p, 2.)
+        sp = ScaledParameter('foo', p, 2.)
         sp.set(1)
         assert sp.get() == 1
         assert p.get() == 0.5
 
     def test_parameter_scale(self, p):
         s = Parameter('scale', value = 2.)
-        sp = ScaledParameter(p, s)
+        sp = ScaledParameter('foo', p, s)
         sp.set(1)
         assert sp.get() == 1
         assert p.get() == 0.5

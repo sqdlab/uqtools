@@ -193,7 +193,11 @@ class TypedList(MutableSequence):
         self.is_compatible_item = is_compatible_func
         self.data = list()
         self.extend(iterable)
-
+        
+        
+    def __copy__(self):
+        ''' assign an independent list to self.data '''
+        return type(self)(self.is_compatible_item, self.data)
 
     def _check_compatible(self, obj):
         ''' raise TypeError if obj is not of a compatible type. '''
@@ -289,6 +293,10 @@ class ParameterList(TypedList):
         is_compatible_func = Parameter.is_compatible
         super(ParameterList, self).__init__(is_compatible_func, iterable)
         
+    def __copy__(self):
+        ''' assign an independent list to self.data '''
+        return type(self)(self.data)
+
     def values(self):
         '''
         Return the result of Parameter.get() called on all contained objects.

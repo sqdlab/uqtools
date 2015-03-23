@@ -680,7 +680,7 @@ class CSVStore(Store):
         
         parts = [super(CSVStore, self).__repr__()]
         parts.append('Path: ' + self.directory())
-        if max([len(key) for key in keys]) > 20:
+        if len(keys) and max([len(key) for key in keys]) > 20:
             parts.append('Keys: [{0}]'.format(',\n       '.join(keys)))
         else:
             parts.append('Keys: ' + str(keys))
