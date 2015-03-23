@@ -12,7 +12,7 @@ import logging
 import sys
 for key in ('config', 'helpers', 'parameter', 'context', 'data', 'store', 
             'progress', 'measurement', 'basics', 'buffer', 'process', 'fpga', 
-            'fsv', 'simulation', 'calibrate', 'pulselib', 'awg', 'plot'):
+            'fsv', 'simulation', 'plot', 'calibrate', 'pulselib', 'awg'):
     #key = 'uqtools.' + key
     if ('uqtools.' + key in sys.modules) and (key in locals()):
         #del(sys.modules[key])
