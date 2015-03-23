@@ -876,6 +876,7 @@ class PlotSequence(object):
             ax_height = bbox_height - ax_marker*nmarkers - ax_margin
             ax_bottom = bbox_bottom + ax_marker*nmarkers + ax_margin/2
             ax = fig.add_axes([0.1, ax_bottom, 0.8, ax_height])
+            ax.set_ylim(-1., 1.)
             waveform_axes[chpair] = dict((ch_idx, ax) for ch_idx in range(2) 
                                          if active_channels[2*chpair+ch_idx])
             # add marker axes
