@@ -6,10 +6,13 @@ from threading import Event
 
 from . import config
 try:
-    from qt import msleep
+    from qt import msleep, mstart, mend
 except ImportError:
     warn('Unable to import qt. QTLab integration is not available.', 
          ImportWarning)
+    msleep = lambda: True
+    mstart = lambda: True
+    mend = lambda: True
 try:
     from IPython import get_ipython
     ipython = get_ipython()
@@ -171,6 +174,16 @@ class RootConsoleFlow(BaseFlow):
     def __init__(self):
         super(RootConsoleFlow, self).__init__()
     
+    def start(self):
+        super(RootConsoleFlow, self).start()
+        # notify qtlab
+        mstart()
+        
+    def stop(self):
+        super(RootConsoleFlow, self).stop()
+        # notify qtlab
+        mend()
+    
     def show(self, root):
         ''' show UI '''
         pass
@@ -186,8 +199,7 @@ class RootConsoleFlow(BaseFlow):
     def _process_events(self):
         ''' run QTLab and IPython message loops '''
         # run QTLab message loop once
-        if 'msleep' in globals():
-            msleep()
+        msleep()
         # run IPython message loop once
         if ('get_ipython' in globals()) and (get_ipython() is not None):
             kernel = get_ipython().kernel
