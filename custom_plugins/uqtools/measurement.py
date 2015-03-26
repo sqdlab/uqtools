@@ -542,6 +542,10 @@ class CoordinateList(ParameterList):
         self.tag_dict = tag_dict
         super(CoordinateList, self).__init__(iterable)
     
+    def __copy__(self):
+        ''' assign an independent list to self.data '''
+        return type(self)(self.tag_dict, self.data)
+
     def append(self, obj, inheritable=True):
         super(CoordinateList, self).append(obj)
         self.tag_dict[obj] = dict(inheritable=inheritable)
