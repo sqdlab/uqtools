@@ -65,13 +65,6 @@ class Measurement(object):
         self.data_manager = None
         self._setup_done = False
 
-    def __del__(self):
-        '''
-        free resources.
-        '''
-        pass
-    
-    
     def __copy__(self):
         '''
         copy constructor
