@@ -11,7 +11,7 @@ from .measurement import Measurement
 from .simulation import DatReader
 from .basics import Sweep
 from .progress import Flow, ContinueIteration
-from .plot import FigureWidget
+from .plot import Figure
 
 class FittingMeasurement(Measurement):
     '''
@@ -100,7 +100,7 @@ class FittingMeasurement(Measurement):
         if 'widget' in self.plot.split(','):
             if hasattr(self, 'widget'):
                 self.widget.close()
-            self.widget = FigureWidget()
+            self.widget = Figure()
     
     def _measure(self, *args, **kwargs):
         # for standard fitters, progress bar shows measurement id including calibration

@@ -34,7 +34,7 @@ widgets.BoundedFloatText.set_limits = set_limits
 
 
 
-class Figure(DOMWidget):
+class Figure(widgets.DOMWidget):
     #_view_name = traitlets.Unicode('FigureView', sync=True)
     #_view_name = traitlets.Unicode('ZoomFogireView', sync=True)
     _view_name = traitlets.Unicode('ZoomCursorFigureView', sync=True)
@@ -480,7 +480,7 @@ class FunctionWidget(widgets.FlexBox):
             
             
                         
-class FloatTextSliderWidget(FlexBox):
+class FloatTextSliderWidget(widgets.FlexBox):
     '''
     A slider with associated float input box.
     The components update each other.
