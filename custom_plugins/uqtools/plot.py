@@ -6,8 +6,7 @@ Authors:
 
 import numpy as np
 import matplotlib.pyplot as plt
-
-from IPython.html import widgets
+    
 from IPython.display import display, clear_output, HTML, Javascript
 from IPython.core.ultratb import VerboseTB
 import IPython.utils.traitlets as traitlets
@@ -21,9 +20,21 @@ from cStringIO import StringIO
 from base64 import b64encode
 
 from .helpers import fix_args
+from . import widgets
+
+def set_limits(self, min, max):
+    ''' set min and max simultaneously '''
+    if min < self.max:
+        self.min = min
+        self.max = max
+    else:
+        self.max = max
+        self.min = min
+widgets.BoundedFloatText.set_limits = set_limits
 
 
-class FigureWidget(widgets.DOMWidget):
+
+class FigureWidget(DOMWidget):
     #_view_name = traitlets.Unicode('FigureView', sync=True)
     #_view_name = traitlets.Unicode('ZoomFogireView', sync=True)
     _view_name = traitlets.Unicode('ZoomCursorFigureView', sync=True)
@@ -67,22 +78,22 @@ class FigureWidget(widgets.DOMWidget):
             top: -1px;
             left: 0px;
             width: 100%;
-            height: 1px;
+            height: 3px;
             border-style: solid none;
             cursor: row-resize;
         }
         .Cursor .vRuler {
             top: 0px;
             left: -1px;
-            width: 1px;
+            width: 3px;
             height: 100%;
             border-style: none solid;
             cursor: col-resize;
         }
         .Cursor .iRuler {
             position: absolute;
-            top: -2px;
-            left: -2px;
+            top: -1px;
+            left: -1px;
             width: 3px;
             height: 3px;
             background-color: white;
@@ -250,7 +261,7 @@ class FigureWidget(widgets.DOMWidget):
 
 
 
-class AxisWidget(widgets.ContainerWidget):
+class AxisWidget(widgets.Box):
     '''
     An axis selecting and limit setting widget.
     Combines a drop-down, min/max float inputs and an autoscale flag.
@@ -260,43 +271,45 @@ class AxisWidget(widgets.ContainerWidget):
         min, max (Float) - limit box
         scaling (Integer) - autoscale mode (SCALING_ constants) 
     '''
-    axis = traitlets.Integer()
+    axis = traitlets.Any()#Integer(allow_none=True)
     min = traitlets.Float()
     max = traitlets.Float()
-    scaling = traitlets.Integer()
+    scaling = traitlets.Integer(allow_none=True)
     disabled = traitlets.Bool()
 
     SCALING_MANUAL = 0
     SCALING_AUTO = 1
     SCALING_FULL = 2
     
-    def __init__(self, description, values, **kwargs):
+    def __init__(self, description, options, **kwargs):
         '''
         Input:
             description (str) - descriptive text
-            values (str:int dict) - axis labels
+            options (str:int dict) - axis labels
         '''
-        values = OrderedDict(values)
-        self._w_select = widgets.DropdownWidget(description=description,
-                                                values=values)
-        traitlets.link((self._w_select, 'value'), (self, 'axis'))
-        self._w_min = widgets.FloatTextWidget(description='min')
+        axis = kwargs.pop('axis', options.values()[0])
+        scaling = kwargs.pop('scaling', self.SCALING_AUTO)
+        options = OrderedDict(options)
+        super(AxisWidget, self).__init__(axis=axis, scaling=scaling, **kwargs)
+        self._w_select = widgets.Dropdown(description=description, 
+                                          options=options)
+        traitlets.link((self, 'axis'), (self._w_select, 'value'))
+        self._w_min = widgets.FloatText(description='min')
         traitlets.link((self._w_min, 'value'), (self, 'min'))
-        self._w_max = widgets.FloatTextWidget(description='max')
+        self._w_max = widgets.FloatText(description='max')
         traitlets.link((self._w_max, 'value'), (self, 'max'))
-        self._w_auto = widgets.ToggleButtonsWidget(description='scaling')
-        self._w_auto.values = OrderedDict((('manual', self.SCALING_MANUAL),
-                                          ('auto', self.SCALING_AUTO),
-                                          ('full', self.SCALING_FULL)))
-        traitlets.link((self._w_auto, 'value'), (self, 'scaling'))
+        self._w_auto = widgets.ToggleButtons(description='scaling')
+        self._w_auto.options = OrderedDict((('manual', self.SCALING_MANUAL),
+                                            ('auto', self.SCALING_AUTO),
+                                            ('full', self.SCALING_FULL)))
+        traitlets.link((self, 'scaling'), (self._w_auto, 'value'))
         traitlets.link((self, 'disabled'), (self._w_auto, 'disabled'),
                        (self._w_min, 'disabled'), (self._w_max, 'disabled'))
-        axis = kwargs.pop('axis', values.values()[0])
-        scaling = kwargs.pop('scaling', self.SCALING_AUTO)
-        super(AxisWidget, self).__init__(axis=axis, scaling=scaling, **kwargs)
         self.children = (self._w_select, self._w_min, self._w_max, self._w_auto)
         self.on_trait_change(self._on_limit_change, ('min', 'max'))
-        
+    
+    set_limits = set_limits
+    
     def _on_limit_change(self):
         try:
             # IPython 2.3.1 has no official mechanism to determine if
@@ -319,7 +332,7 @@ class AxisWidget(widgets.ContainerWidget):
             
             
 
-class FunctionWidget(widgets.ContainerWidget):
+class FunctionWidget(widgets.FlexBox):
     '''
     A function selector widget.
     A select box combined with a code editor.
@@ -334,6 +347,7 @@ class FunctionWidget(widgets.ContainerWidget):
         Input:
             module - functions from module are added to the select box 
         '''
+        super(FunctionWidget, self).__init__(orientation='horizontal')
         self.functions = imp.new_module('functions')
         self.sources = imp.new_module('sources')
         # add a few default functions
@@ -352,35 +366,33 @@ class FunctionWidget(widgets.ContainerWidget):
         if module is not None:
             self.load_module(module)
         # create ui
-        self._w_select = widgets.SelectWidget()
-        self._w_select.set_css({'width':'150px', 'height':'150px'})
-        self._w_source = widgets.TextareaWidget()
-        self._w_source.set_css({'height':'140px', 'font-family':'monospace'})
-        self._w_compile = widgets.ButtonWidget(description='compile')
-        self._w_compile.set_css({'margin-top':'5px'})
+        self._w_select = Select()
+        self._w_select.width = '150px'
+        self._w_select.height = '150px'
+        self._w_source = widgets.Textarea()
+        self._w_source.height = '140px'
+        self._w_source.font_family = 'monospace'
+        self._w_compile = Button(description='compile')
+        self._w_compile.margin_top = '5px'
         self._w_compile.on_click(self._on_compile)
-        self._w_output = widgets.HTMLWidget()
-        self._w_output.set_css({'margin-top':'5px', 'width':'300px', 
-                                'font-family':'monospace'})
-        self._w_compile_box = widgets.ContainerWidget()
+        self._w_output = widgets.HTML()
+        self._w_output.margin_top = '5px'
+        self._w_output.width = '300px'
+        self._w_output.font_family = 'monospace'
+        self._w_compile_box = widgets.Box()
         self._w_compile_box.children = [self._w_compile, self._w_output]
         self.children = (self._w_select, self._w_source, self._w_compile_box)
         traitlets.link((self, 'function'), (self._w_select, 'value'))
         # install event handlers
         self._w_select.on_trait_change(self._on_select, 'value')
-        self.on_displayed(self._on_displayed)
         # populate select box
         self.update()
-    
-    def _on_displayed(self, _):
-        ''' set correct CSS classes '''
-        self.remove_class('vbox')
-        self.add_class('hbox')
-        
+            
     def _on_select(self, _, function):
         ''' show source code when a function is selected '''
-        self._w_source.value = getattr(self.sources, function.__name__)
-        self._w_output.visible = False
+        if function is not None:
+            self._w_source.value = getattr(self.sources, function.__name__)
+            self._w_output.visible = False
         
     def _on_compile(self, _):
         # compile code
@@ -417,7 +429,8 @@ class FunctionWidget(widgets.ContainerWidget):
         functions = OrderedDict([(name, func) for name, func 
                                  in sorted(self.functions.__dict__.iteritems()) 
                                  if not name.startswith('__')])
-        self._w_select.values = functions
+        self._w_select.options = functions
+        self._w_select.values = functions # IPython 2 compat
         if function is not None:
             self._w_select.value = function
         elif self.default is not None:
@@ -467,7 +480,7 @@ class FunctionWidget(widgets.ContainerWidget):
             
             
                         
-class FloatTextSliderWidget(widgets.ContainerWidget):
+class FloatTextSliderWidget(FlexBox):
     '''
     A slider with associated float input box.
     The components update each other.
@@ -487,12 +500,13 @@ class FloatTextSliderWidget(widgets.ContainerWidget):
             description - descriptive text
             values (tuple) - valid float values
         '''
-        super(FloatTextSliderWidget, self).__init__(**kwargs)
+        super(FloatTextSliderWidget, self).__init__(orientation='horizontal',
+                                                    **kwargs)
         # create widgets    
-        self._w_slider = widgets.IntSliderWidget(description=description,
-                                                 min=0, value=0, readout=False)
+        self._w_slider = widgets.IntSlider(description=description,
+                                           min=0, value=0, readout=False)
         traitlets.link((self._w_slider, 'value'), (self, 'index'))
-        self._w_text = widgets.BoundedFloatTextWidget(value=values[0])
+        self._w_text = widgets.BoundedFloatText(value=values[0])
         traitlets.link((self._w_text, 'value'), (self, 'value'))
         self.children = (self._w_slider, self._w_text)
         # register event handlers
@@ -501,21 +515,14 @@ class FloatTextSliderWidget(widgets.ContainerWidget):
         self.on_trait_change(self._on_values_change, 'values')
         traitlets.link((self._w_text, 'disabled'), (self._w_slider, 'disabled'),
                        (self, 'disabled'))
-        self.on_displayed(self._on_displayed)
         # store values and trigger range update
         self.values = values
         self.index = 0
     
-    def _on_displayed(self, _):
-        ''' apply styles '''
-        self.remove_class('vbox')
-        self.add_class('hbox')        
-
     def _on_values_change(self, _, values):
         ''' update ranges on values change '''
         self._w_slider.max = len(values)-1
-        self._w_text.min = min(values)
-        self._w_text.max = max(values)
+        self._w_text.set_limits(min(values), max(values))
         self._on_index_change()
         
     def _on_index_change(self):
@@ -587,13 +594,13 @@ class Plot(object):
                               for axis, label in enumerate(self.labels[:self.ndim])
                               if self.shape[axis] > 1])
         if self.ndim > 0:
-            w_axes.append(AxisWidget('x axis', axis=self.axes[0], values=values))
+            w_axes.append(AxisWidget('x axis', axis=self.axes[0], options=values))
         if (len(self.axes) > 2):
             values['None'] = self.AXIS_NONE
-            w_axes.append(AxisWidget('y axis', axis=self.axes[1], values=values))
+            w_axes.append(AxisWidget('y axis', axis=self.axes[1], options=values))
         values = dict(AxisWidget.reverse_enumerate(self.labels[self.ndim:], self.ndim))
-        w_axes.append(AxisWidget('z axis', axis=self.axes[-1], values=values))
-        self.w_axes = widgets.ContainerWidget(children=w_axes)
+        w_axes.append(AxisWidget('z axis', axis=self.axes[-1], options=values))
+        self.w_axes = widgets.FlexBox(orientation='horizontal', children=w_axes)
         for axis, w_axis in enumerate(w_axes):
             w_axis.on_trait_change(fix_args(self.on_axis_change, plot_axis=axis), 'axis')
             w_axis.on_trait_change(self.on_limit_change, ('min', 'max'))
@@ -604,16 +611,17 @@ class Plot(object):
             slider = FloatTextSliderWidget(description=coordinate)
             slider.on_trait_change(fix_args(self.on_slider_change, data_axis=axis), 'index')
             sliders.append(slider)
-        self.w_sliders = widgets.ContainerWidget()
+        self.w_sliders = widgets.Box()
         self.w_sliders.children = sliders
         # functions on data
         self.w_functions = FunctionWidget()
         self.w_functions.on_trait_change(self.on_function_change, 'function')
         # cursors
-        self.w_cursors = widgets.HTMLWidget()
-        self.w_cursors.set_css({'align':'center', 'padding': '10px'})
+        self.w_cursors = widgets.HTML()
+        self.w_cursors.align = 'center'
+        self.w_cursors.padding = '10px'
         # controls panel (axes, functions, sliders)
-        self.w_controls = widgets.TabWidget()
+        self.w_controls = Tab()
         self.w_controls.children = [self.w_functions, self.w_axes, 
                                     self.w_sliders, self.w_cursors]
         # plot panel
@@ -621,15 +629,13 @@ class Plot(object):
         self.w_plot.on_zoom(self.on_zoom)
         self.w_plot.on_trait_change(self.on_cursors_change, 'cursors')
         # application window
-        self.w_app = widgets.ContainerWidget()
+        self.w_app = Box()
         self.w_app.children = [self.w_controls, self.w_plot]
     
     def _ipython_display_(self):
         self.update()
         self.w_plot.compile()
         self.w_app._ipython_display_()
-        self.w_axes.remove_class('vbox')
-        self.w_axes.add_class('hbox')
         self.w_controls.set_title(0, 'Data functions')
         self.w_controls.set_title(1, 'Axis selection')
         self.w_controls.set_title(2, 'Data browser')
@@ -684,8 +690,7 @@ class Plot(object):
                 continue
             # update limits
             w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), True)
-            w_axis.min = np.min(xs)
-            w_axis.max = np.max(xs)
+            w_axis.set_limits(np.min(xs), np.max(xs))
             w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), False)
     
     #
@@ -712,8 +717,7 @@ class Plot(object):
             w_axis.on_trait_change(self.on_scaling_change, 'scaling', False)
             # update axis values
             w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), True)
-            w_axis.min = lim[0]
-            w_axis.max = lim[1]
+            w_axis.set_limits(lim[0], lim[1])
             w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), False)
         
     def on_cursors_change(self, _, __, cursors):

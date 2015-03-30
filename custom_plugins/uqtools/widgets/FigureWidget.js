@@ -512,7 +512,7 @@
             if (direction & 1) {
                 this.position[1] = uv[1];
             	this.$el.children('.hRuler').css('top', y - 1);
-            	this.$el.children('.iRuler').css('top', y - 2);
+            	this.$el.children('.iRuler').css('top', y - 1);
                 var hlabel = this.$el.children('.hLabel');
                 if (y_invalid) {
                     hlabel.text('');
@@ -524,7 +524,7 @@
             if (!ax.polar && (direction & 2)) {
                 this.position[0] = uv[0];
             	this.$el.children('.vRuler').css('left', x - 1);
-            	this.$el.children('.iRuler').css('left', x - 2);
+            	this.$el.children('.iRuler').css('left', x - 1);
                 var vlabel = this.$el.children('.vLabel');
                 if (x_invalid) {
                     vlabel.text('');

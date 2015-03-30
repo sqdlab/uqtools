@@ -2,7 +2,7 @@ import os
 import time
 import re
 import gzip
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 from functools import wraps
 from collections import OrderedDict
 import unicodedata
@@ -14,6 +14,7 @@ import numpy as np
 
 from . import config
 from . import Parameter, ParameterDict
+from .helpers import DocStringInheritor
 
 #
 #
@@ -21,32 +22,57 @@ from . import Parameter, ParameterDict
 #
 #
 def unpack_complex(frame, copy=False):
-    ''' convert complex columns in frame to a pair of real columns '''
+    ''' 
+    Convert complex columns in frame to pairs of real columns.
+    Complex column '<name>' are split into 'real(<name>)' and 'imag(<name>)'.
+    If columns 'real(<name>)' or 'imag(<name>)' already exist, they are 
+    replaced.
+    
+    Input:
+        frame (DataFrame) - DataFrame with complex columns to be converted
+        copy (bool) - If False, frame is modified in-place.
+    Output:
+        DataFrame with all complex columns replaced by pairs of real columns.
+    '''
     complex_dtypes = (np.complex, np.complex_, np.complex64, np.complex128)
-    complex_columns = [idx for idx, dtype in enumerate(frame.dtypes) if dtype in complex_dtypes]
+    complex_columns = [idx 
+                       for idx, dtype in enumerate(frame.dtypes) 
+                       if dtype in complex_dtypes]
     if copy and len(complex_columns):
         frame = frame.copy()
     for idx in complex_columns:
-            name = frame.columns[idx]
-            frame['real({0})'.format(name)] = frame[name].real
-            frame['imag({0})'.format(name)] = frame[name].imag
-            del frame[name]
+        name = frame.columns[idx]
+        frame['real({0})'.format(name)] = frame[name].real
+        frame['imag({0})'.format(name)] = frame[name].imag
+        del frame[name]
     return frame
 
-def unpack_complex_decorator(f):
-    ''' convert complex columns in value argument to pairs of real columns '''
-    @wraps(f)
+def unpack_complex_decorator(function):
+    ''' Wrap unpack_complex around function. '''
+    @wraps(function)
     def unpack_complex_decorated(self, key, value, *args, **kwargs):
         value = unpack_complex(value, copy=True)
-        return f(self, key, value, *args, **kwargs)
+        return function(self, key, value, *args, **kwargs)
     return unpack_complex_decorated
 
 def pack_complex(frame, copy=False):
-    ''' convert pairs of real columns to a complex column '''
-    matches = [re.match(r'real\((.*)\)|imag\((.*)\)', name) for name in frame.columns]
+    ''' 
+    Convert pairs of real columns to complex columns.
+    Columns 'real(<name>)' and 'imag(<name>)' are combined into '<name>'.
+    If column '<name>' already exists, it is replaced.
+
+    Input:
+        frame (DataFrame) - DataFrame with pairs of real columns to be converted
+    Output:
+        DataFrame with every pair of real columns replaced by a complex columns
+    '''
+    matches = [re.match(r'real\((.*)\)|imag\((.*)\)', name) 
+               for name in frame.columns]
     matches = [m for m in matches if m is not None]
-    reals = dict((m.group(1), m.group(0)) for m in matches if m.group(1) is not None)
-    imags = dict((m.group(2), m.group(0)) for m in matches if m.group(2) is not None)
+    reals = dict((m.group(1), m.group(0)) 
+                 for m in matches if m.group(1) is not None)
+    imags = dict((m.group(2), m.group(0)) 
+                 for m in matches if m.group(2) is not None)
     columns = set(reals.keys()).intersection(set(imags.keys()))
     if copy and len(columns):
         frame = frame.copy()
@@ -56,11 +82,11 @@ def pack_complex(frame, copy=False):
         del frame[imags[name]]
     return frame
 
-def pack_complex_decorator(f):
-    ''' convert pairs of real columns in result to complex columns '''
-    @wraps(f)
+def pack_complex_decorator(function):
+    ''' Wrap pack_complex around function. '''
+    @wraps(function)
     def pack_complex_decorated(*args, **kwargs):
-        value = f(*args, **kwargs)
+        value = function(*args, **kwargs)
         return pack_complex(value)
     return pack_complex_decorated
 
@@ -68,7 +94,7 @@ def index_concat(left, right):
     '''
     Concatenate MultiIndex objects.
     
-    This function was designed to add inherited coordiantes to DataFrame and
+    This function was designed to add inherited coordinates to DataFrame and
     may not work for most inputs. Use with care.
     
     Input:
@@ -102,22 +128,41 @@ def index_concat(left, right):
                          labels = left_labels + right_labels,
                          names = left_names + right_names)
 
-
-# monkeypatch squeeze method into pd.MultiIndex
-def index_squeeze(self):
+def index_squeeze(index):
     '''
-    Remove length 1 levels from index.
+    Remove length 1 levels from MultiIndex index.
+    
+    Input:
+        index (Index) - index to squeeze.
+    Output:
+        Input index if it has only one level, an unnamed Index if all levels
+        of MultiIndex index have length 1, a MultiIndex with length 1 levels 
+        removed otherwise.
     '''
-    min_index = pd.MultiIndex.from_tuples(self)#, names=self.names)
+    if index.nlevels == 1:
+        return index
+    min_index = pd.MultiIndex.from_tuples(index)#, names=self.names)
     drop = [idx for idx, level in enumerate(min_index.levels) if len(level) == 1]
-    if len(drop) == self.nlevels:
+    if len(drop) == index.nlevels:
         return pd.Index((0,))
     else:
-        return self.droplevel(drop)
+        return index.droplevel(drop)
+# monkeypatch squeeze method into pd.MultiIndex
 pd.MultiIndex.squeeze = index_squeeze
 
 def dataframe_from_csds(cs, ds):
-    ''' generate DataFrame for uqtools cs, ds ParameterDict objects '''
+    ''' 
+    Generate DataFrame for uqtools cs, ds ParameterDict objects.
+    
+    Input:
+        cs (ParameterDict) - Index level name to label mapping.
+        ds (ParameterDict) - Column name to column data mapping.
+        
+        All keys must be of type Parameter, values of type ndarray.
+        All values must have the same number of elements.
+    Output:
+        DataFrame with a MultiIndex generated from cs and data taken form ds.
+    '''
     frame = pd.DataFrame(OrderedDict((p.name, d.ravel())
                          for p, d in ds.iteritems()))
     index_arrs = [c.ravel() for c in cs.values()]
@@ -128,16 +173,29 @@ def dataframe_from_csds(cs, ds):
 pd.DataFrame.from_csds = staticmethod(dataframe_from_csds)
 
 def dataframe_to_csds(frame):
-    ''' convert DataFrame to uqtools cs, ds ParameterDict objects '''
+    ''' 
+    Convert DataFrame to uqtools cs, ds ParameterDict objects.
+    
+    Input:
+        frame (DataFrame)
+    Output:
+        cs (ParameterDict) - index level to label mapping.
+        ds (ParameterDict) - column name to data mapping.
+        
+        Keys are Parameter objects with their names corresponding to the level 
+        names in frame.index in case of cs and the column names in case of ds.
+        All values are ndarrays with shapes corresponding to the outer product
+        of the index levels. 
+    '''
     # get the product of all indices
     product_slice = tuple(slice(None) for _ in range(frame.index.nlevels))
     frame = frame.loc[product_slice]
     # output shapes for 1d and MultiIndex
     index = frame.index
     if index.nlevels == 1:
-        shape = frame.shape
+        shape = (len(frame),)
     else:
-        shape = [len(level) for level in index.levels]
+        shape = tuple(len(level) for level in index.levels)
     # generate cs from index
     cs = ParameterDict()
     for level_idx in range(index.nlevels):
@@ -161,45 +219,68 @@ pd.DataFrame.to_csds = dataframe_to_csds
 #
 #
 class Store(object):
-    __metaclass__ = ABCMeta
+    ''' A dict-like store for DataFrame objects. '''
+    #__metaclass__ = ABCMeta
+    __metaclass__ = DocStringInheritor # includes ABCMeta
     
     @abstractmethod
     def directory(self, key):
+        ''' Return the directory where data for key is stored. '''
         pass
     
     @abstractmethod
     def filename(self, key):
+        ''' Return the name of the file that stores the data for key. '''
         pass
     
-    #@abstractmethod
+    @abstractmethod
     def keys(self):
+        ''' Return the keys of all elements in the store. '''
         raise NotImplementedError()
 
     @abstractmethod
     def put(self, key, value):
+        ''' Set item at key to value. '''
         pass
     
     @abstractmethod
     def get(self, key):
+        ''' Get item at key. '''
         pass
 
     @abstractmethod
     def append(self, key, value):
+        ''' Append value to the data stored at key. '''
         pass
     
     def select(self, key, where=None, start=None, stop=None, **kwargs):
+        '''
+        Select data in key that satisfies condition where.
+        
+        Input:
+            key (str) - Location of the data in the store.
+            where (str) - Query string. Will typically allow simple expressions
+                involving the index names and possibly data columns.
+            start (int) - First row of data returned.
+            stop (int) - Last row of data returned.
+                start and stop are applied before selection by where.
+        '''
         raise NotImplementedError()
         
     def remove(self, key):
+        ''' Delete item stored at key. '''
         pass
     
     def open(self):
+        ''' Allocate resources required to access the store. (Open file.) '''
         pass
     
     def close(self):
+        ''' Free resources required to access the store. (Close file.) '''
         pass
     
     def flush(self):
+        ''' Carry out any pending write operations. '''
         pass
     
     def __getitem__(self, key):
@@ -211,15 +292,27 @@ class Store(object):
     def __delitem__(self, key):
         return self.remove(key)
     
+    def __contains__(self, key):
+        return key in self.keys()
+        
+    def __len__(self):
+        return len(self.keys())
+    
     def get_comment(self, key):
+        ''' Retrieve comment string for key. '''
         pass
     
     def set_comment(self, key, comment):
+        ''' Save comment string for key. '''
         pass
-    
+
 
 
 class DummyStore(Store):
+    ''' Minimal do-nothing implementation of Store. '''
+    def __init__(self, **kwargs):
+        pass
+    
     def directory(self, key):
         return None
     
@@ -238,184 +331,84 @@ class DummyStore(Store):
     def append(self, key, value):
         pass
 
-    
 
-class StoreView(Store):
-    def __init__(self, store, prefix):
+
+class MemoryStore(Store):
+    def __init__(self, title=None):
         '''
-        View of a Store that prepends a path component to all keys.
-        Key is an optional argument for all methods.
+        An in-memory store for DataFrames.
         
         Input:
-            store (Store) - data store
-            prefix (str) - prefix added to keys when accessing store,
-                must start with a '/'.
+            title (str) - ignored. for compatibility with other Stores.
         '''
-        self.store = store
-        self.prefix = prefix
+        self.comments = {}
+        self.data = {}
+        # concatenation queues
+        self.blocks = {}
 
-    def _key(self, key=None):
-        if key:
-            return '/'.join([self.prefix, key])
-        else:
-            return self.prefix
-
+    def directory(self, key):
+        return None
+    
+    def filename(self, key):
+        return None
+    
     def keys(self):
-        return [k[1 + len(self.prefix):]
-                for k in self.store.keys()
-                if k.startswith('/' + self.prefix)]
+        return self.data.keys()
 
-    def filename(self, key=None):
-        return self.store.filename(self._key(key))
+    def put(self, key, value):
+        self.data[key] = value
+        self.blocks.pop(key, None)
         
-    def directory(self, key=None):
-        return self.store.directory(self._key(key))
-
-    def _interpret_args(self, *args, **kwargs):
-        ''' emulate (key=None, value) signature '''
-        keys = ['key', 'value']
-        for k in kwargs:
-            if k not in keys:
-                raise TypeError("Unexpected keyword argument '{0}'.".format(k))
+    def get(self, key):
+        # concatenate frames in the queue
+        if key in self.blocks:
+            if key in self.data:
+                self.data[key] = pd.concat([self.data[key]] + self.blocks[key])
             else:
-                keys.remove(k)
-        kwargs.update(dict(zip(keys, args)))
-        if (len(args) > len(keys)) or (len(kwargs) > 2):
-            raise TypeError("At most two arguments expected.")
-        if 'value' not in kwargs:
-            if 'key' not in kwargs:
-                raise TypeError("Missing argument 'value'.")
-            return None, kwargs.get('key')
-        return kwargs.get('key', None), kwargs.get('value')
-
-    def put(self, *args, **kwargs):
-        ''' put(self, key=None, value) '''
-        key, value = self._interpret_args(*args, **kwargs)
-        return self.store.put(self._key(key), value)
+                self.data[key] = pc.concat(self.blocks[key])
+            del self.blocks[key]
+        return self.data[key]
     
-    def get(self, key=None):
-        return self.store.get(self._key(key))
-    
-    def append(self, *args, **kwargs):
-        ''' append(self, key=None, value) '''
-        key, value = self._interpret_args(*args, **kwargs)
-        return self.store.append(self._key(key), value)
-    
-    def select(self, key=None, where=None, start=None, stop=None, **kwargs):
-        return self.store.select(self._key(key), where=where,
-                                 start=start, stop=stop, **kwargs)
-        
-    def remove(self, key=None):
-        return self.store.remove(self._key(key))
-
-    def flush(self):
-        return self.store.flush()
-    
-    def get_comment(self, key=None):
-        return self.store.get_comment(self._key(key))
-    
-    def set_comment(self, key, comment=None):
-        if comment is None:
-            key, comment = None, key
-        return self.store.set_comment(self._key(key), comment)
-
-
-
-class MeasurementStore(StoreView):
-    def __init__(self, store, subdir, coordinates, is_dummy=False):
-        '''
-        View of a store that prepends a prefix to keys and adds inherited
-        coordinate columns to all stored values.
-        
-        Input:
-            store (Store) - data store
-            coordinates (CoordinateList) - coordinates prepended to values
-            subdir (str) - relative path from the measurement owning store
-                to the measurement owning the new view. typically, this is
-                equal to the data_directory attribute of the latter.
-            is_dummy (bool) - if True, don't write data when put or append are
-                invoked.
-        '''
-        if hasattr(store, 'coordinates'):
-            self.coordinates = store.coordinates + coordinates
+    def append(self, key, value):
+        # append to concatenation queue
+        if key not in self.data:
+            self.put(key, value)
         else:
-            self.coordinates = coordinates
-        if hasattr(store, 'store') and hasattr(store, 'prefix'):
-            if subdir:
-                prefix = '/'.join([store.prefix, subdir])
+            if key not in self.blocks:
+                self.blocks[key] = []
             else:
-                prefix = store.prefix
-            store = store.store
-        else:
-            prefix = subdir
-        super(MeasurementStore, self).__init__(store, prefix)
-        self.is_dummy = is_dummy
-    
-    @property
-    def directory(self):
-        '''
-        Determine the full path where the current measurement saves data and
-        create it.
-        '''
-        path = self.store.directory(self.prefix + '/')
-        # auto-create directory: if the user asks for it, she wants to use it
-        if not os.path.isdir(path):
-            os.makedirs(path)
-        return path
-    
-    def _prepend_coordinates(self, value):
-        # add inherited coordinates to index
-        if len(self.coordinates):
-            # build index arrays for inherited parameters
-            inherited_index = pd.MultiIndex(
-                levels = [[v] for v in self.coordinates.values()],
-                labels = [np.zeros(value.index.shape, np.int)] * len(self.coordinates),
-                names = self.coordinates.names())
-            value = value.copy()
-            value.index = index_concat(inherited_index, value.index)
-        return value
-    
-    def put(self, *args, **kwargs):
-        '''
-        Put data to the store, discarding previously written data.
-        Inherited coordinates are prepended.
+                reference = self.blocks[key][0]
+                if (list(reference.columns) != list(value.columns) or
+                    (list(reference.index.names) != list(value.index.names))):
+                    raise ValueError('Columns and index names of value must ' + 
+                                     'be equal to the columns and index names' +
+                                     'of the data already stored for this key.')
+            self.blocks[key].append(value)
+            #self.data[key] = self.data[key].append(value)
         
-        Input:
-            key (str, optional) - table in the store to append to, relative to
-                the default path of the measurement. The default path is the
-                concatenation of the data directories of all parents and self.
-            frame (DataFrame) - data to append
-        '''
-        if self.is_dummy:
-            return
-        key, value = self._interpret_args(*args, **kwargs)
-        value = self._prepend_coordinates(value)
-        self.store.put(self._key(key), value)
-        
-    def append(self, *args, **kwargs):
-        '''
-        Append data to the store, prepending inherited coordinates.
-        
-        Input:
-            key (str, optional) - table in the store to append to, relative to
-                the default path of the measurement. The default path is the
-                concatenation of the data directories of all parents and self.
-            frame (DataFrame) - data to append
-        '''
-        if self.is_dummy:
-            return
-        # append data to store
-        key, value = self._interpret_args(*args, **kwargs)
-        value = self._prepend_coordinates(value)
-        self.store.append(self._key(key), value)
+    def remove(self, key):
+        if (key not in self.data) and (key not in self.blocks):
+            raise KeyError('Key {0} not found in Store.'.format(key))
+        self.data.pop(key, None)
+        self.blocks.pop(key, None)
+    
+    def get_comment(self, key):
+        return self.comments[key]
+    
+    def set_comment(self, key, comment):
+        self.comments[key] = comment
 
 
 
 class CSVStore(Store):
+    ''' 
+    A Store for DataFrame objects that saves data to comma-separated value files  
+    in directory hierarchy.
+    '''
     series_transpose = False
     
     def __init__(self, directory, filename=None, mode=None, title=None,
-                 ext='.dat', sep=os.sep, unpack_complex=False,
+                 ext='.dat', sep=os.sep, unpack_complex=True,
                  complevel=9):
         '''
         Initialize a hierarchical CSV file store for pandas DataFrame and Series
@@ -430,7 +423,7 @@ class CSVStore(Store):
                 transparently compressed and decompressed with gzip.
             sep (str) - path separator for file names inside the store.
                 keys always use '/' as the separator.
-            unpack_complex (bool) - if true, save complex columns as pairs of
+            unpack_complex (bool) - if True, save complex columns as pairs of
                 real columns.
             complevel (int) - compression level from 0 to 9 if compression is
                 enabled.
@@ -528,7 +521,8 @@ class CSVStore(Store):
         comments = []
         column = None
         columns = []
-        for lines, line in enumerate(buf):
+        lines = 0
+        for lines, line in enumerate(buf, 1):
             # filter everything that is not a comment, stop parsing when data starts
             if line.startswith('\n'):
                 continue
@@ -537,16 +531,16 @@ class CSVStore(Store):
             # remove # and newline from comments
             line = line[1:-1]
             # column start marker can always appear
-            m = re.match(' ?Column ([0-9]+):', line)
-            if m:
-                column = {'id': int(m.group(1))-1}
+            match = re.match(' ?Column ([0-9]+):', line)
+            if match:
+                column = {'id': int(match.group(1))-1}
                 columns.append(column)
                 continue
             # check for column parameter if a column is active
             if column is not None:
-                m = re.match(' ?\t([^:]+): (.*)', line)
-                if m:
-                    column[m.group(1)] = m.group(2)
+                match = re.match(' ?\t([^:]+): (.*)', line)
+                if match:
+                    column[match.group(1)] = match.group(2)
                     continue
                 else:
                     column = None
@@ -708,17 +702,23 @@ class HDFStore(pd.HDFStore, Store):
     def directory(self, key=None):
         return self._directory
         
-    __getitem__ = pack_complex_decorator(pd.HDFStore.__getitem__)
+    #__getitem__ = pack_complex_decorator(pd.HDFStore.__getitem__)
     get = pack_complex_decorator(pd.HDFStore.get)
     select = pack_complex_decorator(pd.HDFStore.select)
  
-    __setitem__ = unpack_complex_decorator(pd.HDFStore.__setitem__)   
-    put = unpack_complex_decorator(pd.HDFStore.put)
+    #__setitem__ = unpack_complex_decorator(pd.HDFStore.__setitem__)
+
+    @unpack_complex_decorator    
+    def put(self, key, value, format='table', **kwargs):
+        return super(HDFStore, self).put(key, value, format=format, **kwargs)
     append = unpack_complex_decorator(pd.HDFStore.append)
     append_to_multiple = unpack_complex_decorator(pd.HDFStore.append_to_multiple)
     
     def get_comment(self, key):
-        return self.get_node(key + '/table').attrs.get('comment', None)
+        try:
+            return self.get_node(key + '/table').attrs['comment']
+        except AttributeError:
+            return None
                              
     def set_comment(self, key, comment):
         self.get_node(key + '/table').attrs['comment'] = comment
@@ -751,6 +751,196 @@ class StoreFactory(object):
         store_kwargs.update(kwargs)
         return cls(directory, filename, **store_kwargs)
  
+
+#
+#
+# Views into Stores
+#
+#
+class StoreView(Store):
+    def __init__(self, store, prefix):
+        '''
+        View of a Store that prepends a path component to all keys.
+        Key is an optional argument for all methods.
+        
+        Input:
+            store (Store) - data store
+            prefix (str) - prefix added to keys when accessing store,
+                a '/' is automatically prepended if missing.
+        '''
+        self.store = store
+        self.prefix = prefix
+
+    @property
+    def prefix(self):
+        return self._prefix
+    
+    @prefix.setter
+    def prefix(self, prefix):
+        self._prefix = '/' + prefix.strip('/')
+        
+    def _key(self, key=None):
+        if key:
+            return '/'.join([self.prefix.rstrip('/'), key.lstrip('/')])
+        else:
+            return self.prefix
+
+    def keys(self):
+        return [k[len(self.prefix):]
+                for k in self.store.keys()
+                if k.startswith(self.prefix)]
+
+    def filename(self, key=None):
+        return self.store.filename(self._key(key))
+        
+    def directory(self, key=None):
+        return self.store.directory(self._key(key))
+
+    def _interpret_args(self, *args, **kwargs):
+        ''' emulate (key=None, value) signature '''
+        keys = ['key', 'value']
+        for k in kwargs:
+            if k not in keys:
+                raise TypeError("Unexpected keyword argument '{0}'.".format(k))
+            else:
+                keys.remove(k)
+        kwargs.update(dict(zip(keys, args)))
+        if (len(args) > len(keys)) or (len(kwargs) > 2):
+            raise TypeError("At most two arguments expected.")
+        if 'value' not in kwargs:
+            if ('key' not in kwargs) or not len(args):
+                raise TypeError("Missing argument 'value'.")
+            return None, kwargs.get('key')
+        return kwargs.get('key', None), kwargs.get('value')
+
+    def put(self, *args, **kwargs):
+        ''' put(self, key=None, value) '''
+        key, value = self._interpret_args(*args, **kwargs)
+        return self.store.put(self._key(key), value)
+    
+    def get(self, key=None):
+        return self.store.get(self._key(key))
+    
+    def append(self, *args, **kwargs):
+        ''' append(self, key=None, value) '''
+        key, value = self._interpret_args(*args, **kwargs)
+        return self.store.append(self._key(key), value)
+    
+    def select(self, key=None, where=None, start=None, stop=None, **kwargs):
+        return self.store.select(self._key(key), where=where,
+                                 start=start, stop=stop, **kwargs)
+        
+    def remove(self, key=None):
+        return self.store.remove(self._key(key))
+    
+    def __contains__(self, key):
+        return self._key(key) in self.store
+
+    def flush(self):
+        return self.store.flush()
+    
+    def get_comment(self, key=None):
+        return self.store.get_comment(self._key(key))
+    
+    def set_comment(self, key, comment=None):
+        if comment is None:
+            key, comment = None, key
+        return self.store.set_comment(self._key(key), comment)
+
+
+
+class MeasurementStore(StoreView):
+    def __init__(self, store, subdir, coordinates, is_dummy=False):
+        '''
+        View of a store that prepends a prefix to keys and adds inherited
+        coordinate columns to all stored values.
+        
+        Input:
+            store (Store) - data store
+            coordinates (CoordinateList) - coordinates prepended to values
+            subdir (str) - relative path from the measurement owning store
+                to the measurement owning the new view. typically, this is
+                equal to the data_directory attribute of the latter.
+            is_dummy (bool) - if True, don't write data when put or append are
+                invoked.
+        '''
+        if hasattr(store, 'coordinates'):
+            self.coordinates = store.coordinates + coordinates
+        else:
+            self.coordinates = coordinates
+        if hasattr(store, 'store') and hasattr(store, 'prefix'):
+            if subdir:
+                prefix = '/'.join([store.prefix, subdir])
+            else:
+                prefix = store.prefix
+            store = store.store
+        else:
+            prefix = subdir
+        super(MeasurementStore, self).__init__(store, prefix)
+        self.is_dummy = is_dummy
+    
+    def directory(self, key=''):
+        '''
+        Determine the full path where the current measurement saves data and
+        create it.
+        '''
+        if self.is_dummy:
+            return None
+        path = self.store.directory(self.prefix + '/' + key.lstrip('/'))
+        if path is None:
+            return None
+        # auto-create directory: if the user asks for it, she wants to use it
+        if not os.path.isdir(path):
+            os.makedirs(path)
+        return path
+    
+    def _prepend_coordinates(self, value):
+        # add inherited coordinates to index
+        if len(self.coordinates):
+            # build index arrays for inherited parameters
+            inherited_index = pd.MultiIndex(
+                levels = [[v] for v in self.coordinates.values()],
+                labels = [np.zeros(value.index.shape, np.int)] * len(self.coordinates),
+                names = self.coordinates.names())
+            value = value.copy()
+            value.index = index_concat(inherited_index, value.index)
+        return value
+    
+    def put(self, *args, **kwargs):
+        '''
+        Put data to the store, discarding previously written data.
+        Inherited coordinates are prepended.
+        
+        Input:
+            key (str, optional) - table in the store to append to, relative to
+                the default path of the measurement. The default path is the
+                concatenation of the data directories of all parents and self.
+            frame (DataFrame) - data to append
+        '''
+        if self.is_dummy:
+            return
+        key, value = self._interpret_args(*args, **kwargs)
+        value = self._prepend_coordinates(value)
+        self.store.put(self._key(key), value)
+        
+    def append(self, *args, **kwargs):
+        '''
+        Append data to the store, prepending inherited coordinates.
+        
+        Input:
+            key (str, optional) - table in the store to append to, relative to
+                the default path of the measurement. The default path is the
+                concatenation of the data directories of all parents and self.
+            frame (DataFrame) - data to append
+        '''
+        if self.is_dummy:
+            return
+        # append data to store
+        key, value = self._interpret_args(*args, **kwargs)
+        value = self._prepend_coordinates(value)
+        self.store.append(self._key(key), value)
+
+
    
 #
 #
@@ -766,24 +956,24 @@ def sanitize(name):
     whitelist = '_()' + string.ascii_letters + string.digits
     name = ''.join([c for c in name if c in whitelist])
     return name
-    
+ 
 class DateTimeGenerator:
     '''
     Class to generate filenames / directories based on the date and time.
     (taken from qtlab.data)
     '''
-    def __init__(self, basedir=None, datesubdir=True, timesubdir=True):
+    def __init__(self, datesubdir=True, timesubdir=True):
         '''
         create a new filename generator
+
+        arguments are taken from config.file_name_generator_kwargs, any passed
+        values are ignored.
         
         Input:
-            basedir (string): base directory
             datesubdir (bool): whether to create a subdirectory for the date
             timesubdir (bool): whether to create a subdirectory for the time
         '''
-        self._basedir = basedir
-        self._datesubdir = datesubdir
-        self._timesubdir = timesubdir
+        pass
 
     def generate_directory_name(self, name=None, basedir=None, ts=None, suffix=None):
         '''
@@ -798,12 +988,12 @@ class DateTimeGenerator:
         Output:
             The directory to place the new file in
         '''
-        path = basedir if basedir is not None else self._basedir
+        path = basedir if basedir is not None else config.datadir
         if ts is None:
             ts = time.localtime()
-        if self._datesubdir:
+        if config.file_name_generator_kwargs.get('datesubdir', True):
             path = os.path.join(path, time.strftime('%Y%m%d', ts))
-        if self._timesubdir:
+        if config.file_name_generator_kwargs.get('timesubdir', True):
             tsd = time.strftime('%H%M%S', ts)
             if name is not None:
                 tsd += '_' + sanitize(name)
@@ -820,5 +1010,4 @@ class DateTimeGenerator:
         else:
             return '{0}{1}'.format(tstr, ext)
 
-file_name_generator = globals()[config.file_name_generator] \
-    (basedir=config.datadir, **config.file_name_generator_kwargs)
+file_name_generator = globals()[config.file_name_generator]()

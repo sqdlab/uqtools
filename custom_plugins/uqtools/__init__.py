@@ -11,8 +11,9 @@
 import logging
 import sys
 for key in ('config', 'helpers', 'parameter', 'context', 'data', 'store', 
-            'progress', 'measurement', 'basics', 'buffer', 'process', 'fpga', 
-            'fsv', 'simulation', 'plot', 'calibrate', 'pulselib', 'awg'):
+            'widgets', 'progress', 'measurement', 'basics', 'buffer', 'process', 
+            'fpga', 'fsv', 'simulation', 'plot', 'calibrate', 'pulselib', 
+            'awg'):
     #key = 'uqtools.' + key
     if ('uqtools.' + key in sys.modules) and (key in locals()):
         #del(sys.modules[key])
@@ -41,6 +42,8 @@ try:
     from .store import CSVStore, HDFStore
 except ImportError:
     logging.warning(__name__ + ': failed to import store.')
+
+from . import widgets
 
 from . import progress
 from .progress import ContinueIteration, BreakIteration, Flow

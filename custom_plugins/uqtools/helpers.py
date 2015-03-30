@@ -1,5 +1,8 @@
 import inspect
+import types
+from abc import ABCMeta
 
+# this turns out to be a python version of functools.partial...
 def fix_args(f=None, **__fixed):
     '''
     return a wrapper to a function with the arguments listed in fixed
@@ -76,3 +79,21 @@ def fix_args(f=None, **__fixed):
     source = 'def fixed_kwargs_f({in}): return f({out})'.format(**source_dict)
     exec source in locals()
     return fixed_kwargs_f
+
+class DocStringInheritor(ABCMeta): # type
+    ''' http://groups.google.com/group/comp.lang.python/msg/26f7b4fcb4d66c95 '''
+    def __new__(meta, classname, bases, classDict):
+        newClassDict = {}
+        for attributeName, attribute in classDict.items():
+            if type(attribute) == types.FunctionType:
+                # look through bases for matching function by name
+                for baseclass in bases:
+                    if hasattr(baseclass, attributeName):
+                        basefn = getattr(baseclass,attributeName)
+                        if basefn.__doc__:
+                            attribute.__doc__ = basefn.__doc__
+                            break
+
+            newClassDict[attributeName] = attribute
+
+        return ABCMeta.__new__(meta, classname, bases, newClassDict)

@@ -13,17 +13,16 @@ except ImportError:
     msleep = lambda: True
     mstart = lambda: True
     mend = lambda: True
+#try:
+
+
 try:
     from IPython import get_ipython
     ipython = get_ipython()
     if ipython is None:
-        raise ImportError
-    from IPython.display import display 
-    if not hasattr(ipython, 'comm_manager'):
-        warn('Not running in IPython notebook. Widget UI disabled.')
-        config.enable_widgets = False
-    else:
-        from IPython.html import widgets
+        raise ImportError('Not running inside IPython. Disabling widget interface.')
+    from . import widgets
+    from IPython.display import display
 except ImportError:
     warn('Unable to connect to IPython. IPython integration is not available.',
          ImportWarning)
@@ -419,12 +418,12 @@ if 'widgets' in globals():
             Input:
                 root (Measurement) - root of the measurement tree
             '''
-            stop = widgets.ButtonWidget(description='stop')
+            stop = widgets.Button(description='stop')
             stop.on_click(lambda _: self.events['stop'].set())
-            stop.set_css({'margin-right':'10px'})
-            vbox = widgets.ContainerWidget()
+            stop.margin = '0px 10px 0px 0px'
+            vbox = widgets.FlexBox()
             vbox.children = self._traverse_widget(root)
-            hbox = widgets.ContainerWidget()
+            hbox = widgets.FlexBox(orientation='horizontal')
             hbox.children = (stop, vbox)
             self._widgets = {'stop':stop, 'hbox':hbox, 'vbox':vbox}
             return hbox
@@ -443,8 +442,6 @@ if 'widgets' in globals():
                 root - root of the measurement tree
             '''
             display(self.widget(root))
-            self._widgets['hbox'].remove_class('vbox')
-            self._widgets['hbox'].add_class('hbox')
 
         def hide(self, root):
             ''' Hide widget '''
@@ -476,9 +473,10 @@ if 'widgets' in globals():
                     file.
                 level (int) - nesting level
             '''
-            label = widgets.HTMLWidget() 
-            label.set_css({'margin-left':'{0:d}px'.format(10*level)})
-            self._widgets = {'label':label}
+            label = widgets.HTML()
+            label.padding = '0px 0px 0px {0:d}px'.format(10*level)
+            label.height = '25px'
+            self._widgets = {'label': label}
             self.update(measurement)
             return label
         
@@ -568,26 +566,37 @@ if 'widgets' in globals():
                 level (int) - nesting level
             '''
             # label [###_ 2 out of 20 ____] ETC 1min
-            label = widgets.HTMLWidget()
-            label.set_css({'position':'absolute', 'left':'0px', 
-                           'top':'5px', 'width':'200px', 
-                           'margin-left':'{0}px'.format(10*level)})
-            progress = widgets.IntProgressWidget(min=0, max=self.iterations, 
-                                            value=self.iteration)
-            progress.set_css({'position':'absolute', 'left':'205px', 'top':'5px'})
-            overlay = widgets.HTMLWidget()
-            overlay.set_css({'position':'absolute', 'left':'205px', 'top':'5px',
-                             'width':'363px', 
-                             'text-align':'center', 'color':'black'})
-            timer = widgets.HTMLWidget()
-            timer.set_css({'position':'absolute', 'left':'573px', 'top':'5px', 
-                           'width':'100px'})
-            stop = widgets.ButtonWidget(description='break')
+            label = widgets.HTML()
+            label.width = '200px'
+            label.padding = '0px 0px 0px {0}px'.format(10*level)
+            progress = widgets.IntProgress(min=0, max=self.iterations, 
+                                           value=self.iteration)
+            progress.margin = '0px'
+            overlay = widgets.HTML()
+            overlay.width = '350px'
+            overlay.text_align = 'center'
+            overlay.color = 'black'
+            progress_box = widgets.FlexBox(orientation='horizontal')
+            progress_box.margin = '0px 5px 0px 0px'
+            progress_box.children = (progress, overlay)
+            if isinstance(progress._css, tuple):
+                # IPython 3.0 specific
+                progress._css = (('div.widget-progress', 'margin-top', '0px'),)
+                overlay._css = (('div', 'position', 'absolute'),
+                                ('div', 'left', '0px'),
+                                ('div', 'top', '0px'),
+                                ('div', 'text-align', 'center'))
+                progress_box._css = (('div.widget-box', 'position', 'relative'),
+                                     ('div.widget-box', 'width', '350px'))
+            timer = widgets.HTML()
+            timer.width = '100px'
+            stop = widgets.Button(description='break')
             stop.on_click(lambda _: self.events['break'].set())
-            stop.set_css({'position':'absolute', 'left':'678px', 'top':'0px'})
-            box = widgets.ContainerWidget()
-            box.children = (label, progress, overlay, timer, stop)
-            box.set_css({'position':'relative', 'vertical-align':'center'})
+            stop.height = '30px'
+            box = widgets.FlexBox(orientation='horizontal')
+            box.height = '35px'
+            box.children = (label, progress_box, timer, stop)
+            box.align = 'center'
             # update values
             self._widgets = dict(box=box, label=label, progress=progress, 
                                  overlay=overlay, timer=timer, stop=stop)
