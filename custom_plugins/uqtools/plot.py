@@ -34,7 +34,7 @@ widgets.BoundedFloatText.set_limits = set_limits
 
 
 
-class FigureWidget(DOMWidget):
+class Figure(DOMWidget):
     #_view_name = traitlets.Unicode('FigureView', sync=True)
     #_view_name = traitlets.Unicode('ZoomFogireView', sync=True)
     _view_name = traitlets.Unicode('ZoomCursorFigureView', sync=True)
@@ -159,7 +159,7 @@ class FigureWidget(DOMWidget):
         self._zoom_index = -1
         if fig is not None:
             kwargs['fig'] = fig
-        super(FigureWidget, self).__init__(**kwargs)
+        super(Figure, self).__init__(**kwargs)
         self._zoom_handlers = widgets.CallbackDispatcher()
         self.on_zoom(self.zoom)
         self.on_msg(self._handle_messages)
@@ -181,7 +181,7 @@ class FigureWidget(DOMWidget):
         # push CSS and JS to the browser
         self.compile()
         # display self
-        super(FigureWidget, self)._ipython_display_()
+        super(Figure, self)._ipython_display_()
         
     def _handle_messages(self, _, content):
         if content.get('event', None) == 'zoom':
@@ -625,7 +625,7 @@ class Plot(object):
         self.w_controls.children = [self.w_functions, self.w_axes, 
                                     self.w_sliders, self.w_cursors]
         # plot panel
-        self.w_plot = FigureWidget()
+        self.w_plot = Figure()
         self.w_plot.on_zoom(self.on_zoom)
         self.w_plot.on_trait_change(self.on_cursors_change, 'cursors')
         # application window
@@ -694,7 +694,7 @@ class Plot(object):
             w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), False)
     
     #
-    # FigureWidget callbacks
+    # Figure callbacks
     #
     @property
     def cursors(self):

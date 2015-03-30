@@ -78,7 +78,7 @@ from .calibrate import FittingMeasurement, CalibrateResonator, Minimize, Minimiz
 from .calibrate import Interpolate
 
 from . import plot
-from .plot import Plot, FigureWidget
+from .plot import Plot, Figure, Figure as FigureWidget
 
 try:
     import pulselib
