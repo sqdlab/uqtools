@@ -366,13 +366,13 @@ class FunctionWidget(widgets.FlexBox):
         if module is not None:
             self.load_module(module)
         # create ui
-        self._w_select = Select()
+        self._w_select = widgets.Select()
         self._w_select.width = '150px'
         self._w_select.height = '150px'
         self._w_source = widgets.Textarea()
         self._w_source.height = '140px'
         self._w_source.font_family = 'monospace'
-        self._w_compile = Button(description='compile')
+        self._w_compile = widgets.Button(description='compile')
         self._w_compile.margin_top = '5px'
         self._w_compile.on_click(self._on_compile)
         self._w_output = widgets.HTML()
@@ -621,7 +621,7 @@ class Plot(object):
         self.w_cursors.align = 'center'
         self.w_cursors.padding = '10px'
         # controls panel (axes, functions, sliders)
-        self.w_controls = Tab()
+        self.w_controls = widgets.Tab()
         self.w_controls.children = [self.w_functions, self.w_axes, 
                                     self.w_sliders, self.w_cursors]
         # plot panel
@@ -629,7 +629,7 @@ class Plot(object):
         self.w_plot.on_zoom(self.on_zoom)
         self.w_plot.on_trait_change(self.on_cursors_change, 'cursors')
         # application window
-        self.w_app = Box()
+        self.w_app = widgets.Box()
         self.w_app.children = [self.w_controls, self.w_plot]
     
     def _ipython_display_(self):
