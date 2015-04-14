@@ -402,10 +402,13 @@ class Measurement(object):
                 m.data_manager = data_manager
             
         # setup self
-        self._setup()
+        if not self._setup_done:
+            self._setup_done = True        
+            self._setup()
         try:
             yield
         finally:
+            self._setup_done = False
             if not nested:
                 # delete reference cycle
                 self.data_manager.root = None
@@ -478,9 +481,6 @@ class Measurement(object):
         setup measurements.
         called before the first measurement.
         '''
-        if self._setup_done:
-            return
-        self._setup_done = True
         # create own data files
         self._create_data_files()
     
@@ -511,7 +511,6 @@ class Measurement(object):
         '''
         # clean-up of all nested measurements is handled by the 
         # top-level measurement
-        self._setup_done = False
         for child in self.measurements:
             child._teardown()
 
