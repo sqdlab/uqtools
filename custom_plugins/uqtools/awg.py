@@ -189,7 +189,7 @@ class ProgramAWGParametric(ProgramAWG):
         # check if the parameter set is in the cache
         for idx, prev_seq_kwargs in enumerate(self._prev_seq_kwargss):
             if not self.cache:
-                break
+                continue
             if seq_kwargs == prev_seq_kwargs:
                 # program previously sampled sequence
                 self.values['index'].set(idx)

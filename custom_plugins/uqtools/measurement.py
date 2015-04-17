@@ -408,11 +408,12 @@ class Measurement(object):
         try:
             yield
         finally:
-            self._setup_done = False
             if not nested:
                 # delete reference cycle
                 self.data_manager.root = None
                 # clean up all measurements
+                for m in mlist:
+                    m._setup_done = False
                 self._teardown()
 
     @contextlib.contextmanager

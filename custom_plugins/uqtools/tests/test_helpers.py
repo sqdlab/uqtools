@@ -1,3 +1,4 @@
+from pytest import mark
 from inspect import ArgSpec, getargspec
 from pytest import raises
 
@@ -97,3 +98,10 @@ class TestFixArgs:
         as_a = ArgSpec(['self', 'x'], None, None, None)
         assert as_a == getargspec(c9.f)
         assert c9.f(0) == (0,1)
+
+
+
+@mark.xfail
+def test_sanitize():
+    assert False
+    

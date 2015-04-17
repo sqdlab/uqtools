@@ -1,6 +1,12 @@
 import inspect
 import types
 from abc import ABCMeta
+import unicodedata
+import string
+
+import numpy as np
+
+from . import ParameterDict
 
 # this turns out to be a python version of functools.partial...
 def fix_args(f=None, **__fixed):
@@ -80,6 +86,153 @@ def fix_args(f=None, **__fixed):
     exec source in locals()
     return fixed_kwargs_f
 
+def coordinate_concat(*css):
+    '''
+    Concatenate coordinate matrices in a memory-efficient way.
+    
+    Input:
+        *css - any number of ParameterDicts with coordinate matrices
+    Output:
+        a single ParameterDict of coordinate matrices
+    '''
+    # check inputs
+    for cs in css:
+        for k, c in cs.iteritems():
+            if not isinstance(c, np.ndarray):
+                c = np.array(c)
+                cs[k] = c
+            if not c.ndim == len(cs):
+                raise ValueError('the number dimensions of each coordinate '+
+                                 'matrix must be equal to the number of '+
+                                 'elements in the dictionary that contains it.')
+    # calculate total number of dimensions
+    ndim = sum(len(cs) for cs in css)
+    # make all arrays ndim dimensional with their non-singleton indices in the right place
+    reshaped_cs = []
+    pdim = 0
+    for cs in css:
+        for k, c in cs.iteritems():
+            newshape = np.ones(ndim)
+            newshape[pdim:(pdim+c.ndim)] = c.shape
+            reshaped_c = np.reshape(c, newshape)
+            reshaped_cs.append(reshaped_c)
+        pdim = pdim + len(cs)
+    # broadcast arrays using numpy.lib.stride_tricks
+    reshaped_cs = np.broadcast_arrays(*reshaped_cs)
+    # build output dict
+    ks = []
+    for cs in css:
+        ks.extend(cs.keys())
+    return ParameterDict(zip(ks, reshaped_cs))
+
+def checked_property(attr, doc=None, check=None, before=None, after=None):
+    '''
+    Property with optional checks and before/after set event handlers.
+    
+    Input:
+        attr (str) - Attribute that stores the data.
+        doc (str) - __doc__ string
+        check (callable) - check(self, value) is called before setting
+        before (callable) - before(self) is called before setting
+        after (callable) - after(self) is called after setting
+    Returns:
+        property with fget, fset, fdel and doc set
+    '''
+    def fget(self):
+        return getattr(self, attr)
+    
+    def fset(self, value):
+        if check is not None:
+            check(self, value)
+        if before is not None:
+            before(self)
+        setattr(self, attr, value)
+        if after is not None:
+            after(self)
+            
+    def fdel(self):
+        delattr(self, attr)
+        
+    return property(fget, fset, fdel, doc)
+
+def resolve_value(value, default=None):
+    '''return value.get() if present else value'''
+    if value is None:
+        return default
+    elif hasattr(value, 'get'):
+        return value.get()
+    return value
+
+def resolve_name(value, default=None):
+    '''return value.name if present else value'''
+    if value is None:
+        return default
+    elif hasattr(value, 'name'):
+        return value.name
+    return value
+
+def parameter_property(attr, doc=None):
+    '''
+    Property that calls get() when read if set to a Parameter.
+    
+    Input:
+        attr (str) - Attribute that stores the data.
+        doc (str) - __doc__ string
+    Returns:
+        property with fget, fset, fdel and doc set
+    '''
+    def fget(self):
+        value = getattr(self, attr)
+        if hasattr(value, 'get'):
+            return value.get()
+        return value
+    
+    def fset(self, value):
+        setattr(self, attr, value)
+        
+    def fdel(self):
+        delattr(self, attr)
+    
+    return property(fget, fset, fdel, doc)
+    
+def sanitize(name):
+    ''' sanitize name so it can safely be used as a part of a file name '''
+    # remove accents etc.
+    name = unicodedata.normalize('NFKD', unicode(name))
+    name = name.encode('ASCII', 'ignore')
+    # retain only white listed characters
+    whitelist = '_(),' + string.ascii_letters + string.digits
+    name = ''.join([c for c in name if c in whitelist])
+    return name
+
+
+
+class Singleton(type):
+    ''' Singleton metaclass '''
+    _instances = {}
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+
+    
+class CallbackDispatcher(list):
+    '''
+    A simplistic callback dispatcher.
+    
+    Usage:
+    dispatcher = CallbackDispatcher()
+    dispatcher.append(function)
+    dispatcher()
+    '''
+    def __call__(self, *args, **kwargs):
+        '''call all elements of self'''
+        for callback in self:
+            callback(*args, **kwargs)
+
+
+
 class DocStringInheritor(ABCMeta): # type
     ''' http://groups.google.com/group/comp.lang.python/msg/26f7b4fcb4d66c95 '''
     def __new__(meta, classname, bases, classDict):
@@ -93,7 +246,5 @@ class DocStringInheritor(ABCMeta): # type
                         if basefn.__doc__:
                             attribute.__doc__ = basefn.__doc__
                             break
-
             newClassDict[attributeName] = attribute
-
         return ABCMeta.__new__(meta, classname, bases, newClassDict)

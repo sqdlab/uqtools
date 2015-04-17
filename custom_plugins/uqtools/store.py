@@ -1,217 +1,74 @@
+from __future__ import absolute_import
 import os
 import time
 import re
 import gzip
 from abc import abstractmethod
 from functools import wraps
+from contextlib import contextmanager
 from collections import OrderedDict
-import unicodedata
-import string
 import types
+import json
 
 import pandas as pd
 import numpy as np
 
-from . import config
-from . import Parameter, ParameterDict
-from .helpers import DocStringInheritor
+from . import config, Parameter, ParameterDict
+from .helpers import sanitize, DocStringInheritor, CallbackDispatcher
+from .pandas import (pack_complex, pack_complex_decorator, 
+                     unpack_complex, unpack_complex_decorator, 
+                     index_concat)
 
 #
 #
-# pandas helper functions
+# Attribute dictionaries
 #
 #
-def unpack_complex(frame, copy=False):
-    ''' 
-    Convert complex columns in frame to pairs of real columns.
-    Complex column '<name>' are split into 'real(<name>)' and 'imag(<name>)'.
-    If columns 'real(<name>)' or 'imag(<name>)' already exist, they are 
-    replaced.
-    
-    Input:
-        frame (DataFrame) - DataFrame with complex columns to be converted
-        copy (bool) - If False, frame is modified in-place.
-    Output:
-        DataFrame with all complex columns replaced by pairs of real columns.
-    '''
-    complex_dtypes = (np.complex, np.complex_, np.complex64, np.complex128)
-    complex_columns = [idx 
-                       for idx, dtype in enumerate(frame.dtypes) 
-                       if dtype in complex_dtypes]
-    if copy and len(complex_columns):
-        frame = frame.copy()
-    for idx in complex_columns:
-        name = frame.columns[idx]
-        frame['real({0})'.format(name)] = frame[name].real
-        frame['imag({0})'.format(name)] = frame[name].imag
-        del frame[name]
-    return frame
-
-def unpack_complex_decorator(function):
-    ''' Wrap unpack_complex around function. '''
-    @wraps(function)
-    def unpack_complex_decorated(self, key, value, *args, **kwargs):
-        value = unpack_complex(value, copy=True)
-        return function(self, key, value, *args, **kwargs)
-    return unpack_complex_decorated
-
-def pack_complex(frame, copy=False):
-    ''' 
-    Convert pairs of real columns to complex columns.
-    Columns 'real(<name>)' and 'imag(<name>)' are combined into '<name>'.
-    If column '<name>' already exists, it is replaced.
-
-    Input:
-        frame (DataFrame) - DataFrame with pairs of real columns to be converted
-    Output:
-        DataFrame with every pair of real columns replaced by a complex columns
-    '''
-    matches = [re.match(r'real\((.*)\)|imag\((.*)\)', name) 
-               for name in frame.columns]
-    matches = [m for m in matches if m is not None]
-    reals = dict((m.group(1), m.group(0)) 
-                 for m in matches if m.group(1) is not None)
-    imags = dict((m.group(2), m.group(0)) 
-                 for m in matches if m.group(2) is not None)
-    columns = set(reals.keys()).intersection(set(imags.keys()))
-    if copy and len(columns):
-        frame = frame.copy()
-    for name in columns:
-        frame[name] = frame[reals[name]] + 1j*frame[imags[name]]
-        del frame[reals[name]]
-        del frame[imags[name]]
-    return frame
-
-def pack_complex_decorator(function):
-    ''' Wrap pack_complex around function. '''
-    @wraps(function)
-    def pack_complex_decorated(*args, **kwargs):
-        value = function(*args, **kwargs)
-        return pack_complex(value)
-    return pack_complex_decorated
-
-def index_concat(left, right):
-    '''
-    Concatenate MultiIndex objects.
-    
-    This function was designed to add inherited coordinates to DataFrame and
-    may not work for most inputs. Use with care.
-    
-    Input:
-        left (Index)
-        right (Index)
-    Return:
-        concatenated (MultiIndex)
-    '''
-    def index_dissect(index):
-        if index.nlevels > 1:
-            # input is a MultiIndex
-            levels = index.levels
-            labels = index.labels
-            names = index.names
-        elif (index.names == [None]) and (index.size == 1):
-            # input is a dummy/scalar
-            levels = []
-            labels = []
-            names = []
-        else:
-            # input is a vector
-            levels, labels = np.unique(index.values, return_inverse=True)
-            levels = [levels]
-            labels = [labels]
-            names = index.names
-        return levels, labels, names
-   
-    left_levels, left_labels, left_names = index_dissect(left)
-    right_levels, right_labels, right_names = index_dissect(right)
-    return pd.MultiIndex(levels = left_levels + right_levels,
-                         labels = left_labels + right_labels,
-                         names = left_names + right_names)
-
-def index_squeeze(index):
-    '''
-    Remove length 1 levels from MultiIndex index.
-    
-    Input:
-        index (Index) - index to squeeze.
-    Output:
-        Input index if it has only one level, an unnamed Index if all levels
-        of MultiIndex index have length 1, a MultiIndex with length 1 levels 
-        removed otherwise.
-    '''
-    if index.nlevels == 1:
-        return index
-    min_index = pd.MultiIndex.from_tuples(index)#, names=self.names)
-    drop = [idx for idx, level in enumerate(min_index.levels) if len(level) == 1]
-    if len(drop) == index.nlevels:
-        return pd.Index((0,))
-    else:
-        return index.droplevel(drop)
-# monkeypatch squeeze method into pd.MultiIndex
-pd.MultiIndex.squeeze = index_squeeze
-
-def dataframe_from_csds(cs, ds):
-    ''' 
-    Generate DataFrame for uqtools cs, ds ParameterDict objects.
-    
-    Input:
-        cs (ParameterDict) - Index level name to label mapping.
-        ds (ParameterDict) - Column name to column data mapping.
+class JSONDict(dict):
+    def __init__(self, filename, sync=True):
+        '''
+        A dictionary that serializes its items with JSON and saves them to
+        a file.
         
-        All keys must be of type Parameter, values of type ndarray.
-        All values must have the same number of elements.
-    Output:
-        DataFrame with a MultiIndex generated from cs and data taken form ds.
-    '''
-    frame = pd.DataFrame(OrderedDict((p.name, d.ravel())
-                         for p, d in ds.iteritems()))
-    index_arrs = [c.ravel() for c in cs.values()]
-    index_names = cs.names()
-    frame.index = pd.MultiIndex.from_arrays(index_arrs, names=index_names)
-    return frame
-# monkeypatch from_csds into pd.DataFrame
-pd.DataFrame.from_csds = staticmethod(dataframe_from_csds)
-
-def dataframe_to_csds(frame):
-    ''' 
-    Convert DataFrame to uqtools cs, ds ParameterDict objects.
-    
-    Input:
-        frame (DataFrame)
-    Output:
-        cs (ParameterDict) - index level to label mapping.
-        ds (ParameterDict) - column name to data mapping.
+        Input:
+            filename (str) - File in which the data is stored.
+            sync (bool) - If True, changes to the dictionary are immediately
+                flushed to disk.
+        '''
+        self.filename = filename
+        self.sync = sync
+        if os.path.isfile(filename):
+            super(JSONDict, self).update(json.load(open(filename, 'r')))
         
-        Keys are Parameter objects with their names corresponding to the level 
-        names in frame.index in case of cs and the column names in case of ds.
-        All values are ndarrays with shapes corresponding to the outer product
-        of the index levels. 
-    '''
-    # get the product of all indices
-    product_slice = tuple(slice(None) for _ in range(frame.index.nlevels))
-    frame = frame.loc[product_slice]
-    # output shapes for 1d and MultiIndex
-    index = frame.index
-    if index.nlevels == 1:
-        shape = (len(frame),)
-    else:
-        shape = tuple(len(level) for level in index.levels)
-    # generate cs from index
-    cs = ParameterDict()
-    for level_idx in range(index.nlevels):
-        cs_value = np.reshape(index.get_level_values(level_idx).values, shape)
-        cs_key = Parameter(index.names[level_idx])
-        cs[cs_key] = cs_value
-    # generate ds from columns
-    ds = ParameterDict()
-    for column in frame.columns:
-        ds_value = np.reshape(frame[column].values, shape)
-        ds_key = Parameter(column)
-        ds[ds_key] = ds_value
-    # done!
-    return cs, ds
-# monkeypatch from_csds into pd.DataFrame
-pd.DataFrame.to_csds = dataframe_to_csds
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *exc_info):
+        self.close()
+
+    def flush(self):
+        '''Serialize current contents to stream.'''
+        json.dump(self, open(self.filename, 'w'), indent=4, default=repr)
+        
+    close = flush
+    
+    #@staticmethod
+    def _flushing(function):
+        '''Decorator that adds calls to flush() to write operations.'''
+        #@wraps(function)
+        def flushing_function(self, *args, **kwargs):
+            result = function(self, *args, **kwargs)
+            if self.sync:
+                self.flush()
+        return flushing_function
+    
+    clear = _flushing(dict.clear)
+    pop = _flushing(dict.pop)
+    popitem = _flushing(dict.popitem)
+    update = _flushing(dict.update)
+    __setitem__ = _flushing(dict.__setitem__)
+    __delitem__ = _flushing(dict.__delitem__)
+
 
 #
 #
@@ -233,10 +90,18 @@ class Store(object):
         ''' Return the name of the file that stores the data for key. '''
         pass
     
+    def url(self, key):
+        ''' Return the URL of key. '''
+        return None
+    
     @abstractmethod
     def keys(self):
         ''' Return the keys of all elements in the store. '''
         raise NotImplementedError()
+    
+    def attrs(self, key):
+        ''' Retrieve attribute dictionary for key. '''
+        return {}
 
     @abstractmethod
     def put(self, key, value):
@@ -297,14 +162,6 @@ class Store(object):
         
     def __len__(self):
         return len(self.keys())
-    
-    def get_comment(self, key):
-        ''' Retrieve comment string for key. '''
-        pass
-    
-    def set_comment(self, key, comment):
-        ''' Save comment string for key. '''
-        pass
 
 
 
@@ -334,38 +191,39 @@ class DummyStore(Store):
 
 
 class MemoryStore(Store):
-    def __init__(self, title=None):
+    def __init__(self, directory=None, filename=None, title=None):
         '''
         An in-memory store for DataFrames.
         
         Input:
-            title (str) - ignored. for compatibility with other Stores.
+            All arguments are ignored.
         '''
-        self.comments = {}
         self.data = {}
+        self._attrs = {}
         # concatenation queues
         self.blocks = {}
 
-    def directory(self, key):
+    def directory(self, key=None):
         return None
     
-    def filename(self, key):
+    def filename(self, key=None):
         return None
     
     def keys(self):
         return self.data.keys()
+    
+    def attrs(self, key):
+        return self._attrs[key]
 
     def put(self, key, value):
         self.data[key] = value
+        self._attrs[key] = {}
         self.blocks.pop(key, None)
         
     def get(self, key):
         # concatenate frames in the queue
         if key in self.blocks:
-            if key in self.data:
-                self.data[key] = pd.concat([self.data[key]] + self.blocks[key])
-            else:
-                self.data[key] = pc.concat(self.blocks[key])
+            self.data[key] = pd.concat([self.data[key]] + self.blocks[key])
             del self.blocks[key]
         return self.data[key]
     
@@ -374,29 +232,35 @@ class MemoryStore(Store):
         if key not in self.data:
             self.put(key, value)
         else:
+            reference = self.data[key]
+            if (list(reference.columns) != list(value.columns) or
+                (list(reference.index.names) != list(value.index.names))):
+                raise ValueError('Columns and index names of value must be ' + 
+                                 'equal to the columns and index names of ' +
+                                 'the data already stored for this key.')
             if key not in self.blocks:
                 self.blocks[key] = []
-            else:
-                reference = self.blocks[key][0]
-                if (list(reference.columns) != list(value.columns) or
-                    (list(reference.index.names) != list(value.index.names))):
-                    raise ValueError('Columns and index names of value must ' + 
-                                     'be equal to the columns and index names' +
-                                     'of the data already stored for this key.')
             self.blocks[key].append(value)
-            #self.data[key] = self.data[key].append(value)
         
     def remove(self, key):
         if (key not in self.data) and (key not in self.blocks):
             raise KeyError('Key {0} not found in Store.'.format(key))
         self.data.pop(key, None)
         self.blocks.pop(key, None)
+        self._attrs.pop(key, None)
     
-    def get_comment(self, key):
-        return self.comments[key]
-    
-    def set_comment(self, key, comment):
-        self.comments[key] = comment
+    def __repr__(self):
+        keys = self.keys()
+        if len(keys) > 10:
+            keys = keys[:10]
+            keys.append('...')
+        
+        parts = [super(MemoryStore, self).__repr__()]
+        if len(keys) and max([len(key) for key in keys]) > 20:
+            parts.append('Keys: [{0}]'.format(',\n       '.join(keys)))
+        else:
+            parts.append('Keys: ' + str(keys))
+        return '\n'.join(parts)
 
 
 
@@ -456,6 +320,13 @@ class CSVStore(Store):
         with open(fn, 'w') as buf:
             buf.write(title)
 
+    def attrs(self, key):
+        '''return a dict-like object that stores attributes in a file.'''
+        if key in self:
+            return JSONDict(self.filename(key, '.txt'))
+        else:
+            raise KeyError(key)
+
     def _map_key(self, key, drop=0, ext=''):
         ''' calculate file or directory name for key '''
         if not isinstance(key, str):
@@ -480,6 +351,9 @@ class CSVStore(Store):
         ''' calculate file name for key. '''
         return self._map_key('' if key is None else key, 
                              ext=self.ext if ext is None else ext)
+        
+    def url(self, key=None):
+        return 'file:///' + self.filename(key).replace('\\', '/')
     
     def _open(self, path, mode='r'):
         ''' create directory and open file. transparently support .gz files. '''
@@ -522,7 +396,7 @@ class CSVStore(Store):
         column = None
         columns = []
         lines = 0
-        for lines, line in enumerate(buf, 1):
+        for lines, line in enumerate(buf):
             # filter everything that is not a comment, stop parsing when data starts
             if line.startswith('\n'):
                 continue
@@ -646,20 +520,10 @@ class CSVStore(Store):
         if key not in self:
             raise KeyError('No object named {0} found in the store'.format(key))
         os.unlink(self.filename(key))
-        
-    def get_comment(self, key):
-        fn = self.filename(key, '.txt')
-        if not os.path.isfile(fn):
-            return None
-        else:
-            with open(fn, 'r') as buf:
-                return buf.read()
-    
-    def set_comment(self, key, comment, mode='w'):
-        fn = self.filename(key, '.txt')
-        with open(fn, mode) as buf:
-            buf.write(comment)
-            
+        attr_file = self.filename(key, '.txt')
+        if os.path.isfile(attr_file):
+            os.unlink(attr_file)
+                    
     def __repr__(self):
         # efficiently get the first ten keys
         keys = []
@@ -702,6 +566,9 @@ class HDFStore(pd.HDFStore, Store):
     def directory(self, key=None):
         return self._directory
         
+    def attrs(self, key):
+        return self.get_node(key + '/table').attrs
+
     #__getitem__ = pack_complex_decorator(pd.HDFStore.__getitem__)
     get = pack_complex_decorator(pd.HDFStore.get)
     select = pack_complex_decorator(pd.HDFStore.select)
@@ -713,15 +580,6 @@ class HDFStore(pd.HDFStore, Store):
         return super(HDFStore, self).put(key, value, format=format, **kwargs)
     append = unpack_complex_decorator(pd.HDFStore.append)
     append_to_multiple = unpack_complex_decorator(pd.HDFStore.append_to_multiple)
-    
-    def get_comment(self, key):
-        try:
-            return self.get_node(key + '/table').attrs['comment']
-        except AttributeError:
-            return None
-                             
-    def set_comment(self, key, comment):
-        self.get_node(key + '/table').attrs['comment'] = comment
     
 
     
@@ -758,7 +616,7 @@ class StoreFactory(object):
 #
 #
 class StoreView(Store):
-    def __init__(self, store, prefix):
+    def __init__(self, store, prefix, default=''):
         '''
         View of a Store that prepends a path component to all keys.
         Key is an optional argument for all methods.
@@ -767,9 +625,11 @@ class StoreView(Store):
             store (Store) - data store
             prefix (str) - prefix added to keys when accessing store,
                 a '/' is automatically prepended if missing.
+            default (str) - default key if key is not passed to methods
         '''
         self.store = store
         self.prefix = prefix
+        self.default = default
 
     @property
     def prefix(self):
@@ -780,6 +640,8 @@ class StoreView(Store):
         self._prefix = '/' + prefix.strip('/')
         
     def _key(self, key=None):
+        if key is None:
+            key = self.default
         if key:
             return '/'.join([self.prefix.rstrip('/'), key.lstrip('/')])
         else:
@@ -789,6 +651,9 @@ class StoreView(Store):
         return [k[len(self.prefix):]
                 for k in self.store.keys()
                 if k.startswith(self.prefix)]
+
+    def url(self, key=None):
+        return self.store.url(self._key(key))
 
     def filename(self, key=None):
         return self.store.filename(self._key(key))
@@ -838,18 +703,16 @@ class StoreView(Store):
 
     def flush(self):
         return self.store.flush()
-    
-    def get_comment(self, key=None):
-        return self.store.get_comment(self._key(key))
-    
-    def set_comment(self, key, comment=None):
-        if comment is None:
-            key, comment = None, key
-        return self.store.set_comment(self._key(key), comment)
+
+    def attrs(self, key=None):
+        return self.store.attrs(self._key(key))
 
 
 
 class MeasurementStore(StoreView):
+    # callback when a new key is created
+    on_new_item = CallbackDispatcher()
+    
     def __init__(self, store, subdir, coordinates, is_dummy=False):
         '''
         View of a store that prepends a prefix to keys and adds inherited
@@ -894,6 +757,21 @@ class MeasurementStore(StoreView):
             os.makedirs(path)
         return path
     
+    def filename(self, name, ext=''):
+        '''
+        Generate a file name in the directory where the current measuremnt
+        saves data and create the directory.
+        
+        Input:
+            name (str) - basename of the file
+            ext (str, optional) - name suffix
+        '''
+        directory = self.directory(name)
+        if directory is None:
+            return None
+        filename = name.split('/')[-1] + ext
+        return os.path.join(directory, filename)
+    
     def _prepend_coordinates(self, value):
         # add inherited coordinates to index
         if len(self.coordinates):
@@ -902,10 +780,17 @@ class MeasurementStore(StoreView):
                 levels = [[v] for v in self.coordinates.values()],
                 labels = [np.zeros(value.index.shape, np.int)] * len(self.coordinates),
                 names = self.coordinates.names())
-            value = value.copy()
+            value = value.copy(deep=False)
             value.index = index_concat(inherited_index, value.index)
         return value
     
+    @contextmanager
+    def _check_new(self, key):
+        is_new = self._key(key) not in self.store
+        yield
+        if is_new:
+            self.on_new_item(self, key)
+        
     def put(self, *args, **kwargs):
         '''
         Put data to the store, discarding previously written data.
@@ -921,7 +806,8 @@ class MeasurementStore(StoreView):
             return
         key, value = self._interpret_args(*args, **kwargs)
         value = self._prepend_coordinates(value)
-        self.store.put(self._key(key), value)
+        with self._check_new(key):
+            self.store.put(self._key(key), value)
         
     def append(self, *args, **kwargs):
         '''
@@ -938,7 +824,8 @@ class MeasurementStore(StoreView):
         # append data to store
         key, value = self._interpret_args(*args, **kwargs)
         value = self._prepend_coordinates(value)
-        self.store.append(self._key(key), value)
+        with self._check_new(key):
+            self.store.append(self._key(key), value)
 
 
    
@@ -947,16 +834,6 @@ class MeasurementStore(StoreView):
 # File name generator
 #
 #
-def sanitize(name):
-    ''' sanitize name so it can safely be used as a part of a file name '''
-    # remove accents etc.
-    name = unicodedata.normalize('NFKD', unicode(name))
-    name = name.encode('ASCII', 'ignore')
-    # retain only white listed characters
-    whitelist = '_()' + string.ascii_letters + string.digits
-    name = ''.join([c for c in name if c in whitelist])
-    return name
- 
 class DateTimeGenerator:
     '''
     Class to generate filenames / directories based on the date and time.

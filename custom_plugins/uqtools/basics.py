@@ -129,7 +129,8 @@ class Sweep(Measurement):
         if('name' not in kwargs):
             kwargs['name'] = coordinate.name
         super(Sweep, self).__init__(**kwargs)
-        self.coordinate = Parameter(coordinate.name, set_func=coordinate.set)
+        #self.coordinate = Parameter(coordinate.name, set_func=coordinate.set)
+        self.coordinate = coordinate
         self.coordinates = (self.coordinate,)
         self.range = range
         self.output_data = output_data

@@ -1,17 +1,14 @@
-from pytest import fixture, yield_fixture, raises, mark, skip
+from pytest import fixture, yield_fixture, raises, mark, skip, xfail
 import tempfile
 import os
 import shutil
 from contextlib import contextmanager
+import cStringIO
 
 import pandas as pd
 import numpy as np
 
-from uqtools.store import (index_concat, index_squeeze, 
-                           pack_complex, pack_complex_decorator, 
-                           unpack_complex, unpack_complex_decorator, 
-                           dataframe_from_csds, dataframe_to_csds)
-from uqtools.store import (MemoryStore, CSVStore, HDFStore,
+from uqtools.store import (MemoryStore, JSONDict, CSVStore, HDFStore,
                            StoreView, MeasurementStore, StoreFactory)
 from uqtools.parameter import Parameter, ParameterList, ParameterDict
 
@@ -28,140 +25,12 @@ def tempdir():
     finally:
         shutil.rmtree(directory)
 
-#
-#
-# test pandas helper functions
-#
-#
-def mkindex(dim):
-    if dim == '0d':
-        return pd.Int64Index([0])
-    elif dim == '1d':
-        return pd.Float64Index([1., 2., 3.], name='X')
-    elif dim == '2d':
-        return pd.MultiIndex(levels = ([0, 1], ['A', 'B']),
-                             labels = ([1, 0, 1], [0, 1, 1]),
-                             names = ['#', '@'])
-
-@mark.parametrize('n1, n2',
-                  [('0d', '1d'), ('1d', '0d'), ('0d', '2d'), ('2d', '0d'),
-                   ('1d', '1d'), ('1d', '2d'), ('2d', '1d'), ('2d', '2d')])
-def test_index_concat(n1, n2):
-    ''' concatenate indices of zero to two dimensions '''
-    index1 = mkindex(n1)
-    index2 = mkindex(n2)
-    concat = index_concat(index1, index2)
-
-    if n1 == '0d':
-        index1, index2 = index2, index1
-    if (n2 == '0d') or (n1 == '0d'):
-        assert concat.nlevels == index1.nlevels
-        for level in range(index1.nlevels):
-            assert np.all(concat.get_level_values(level) ==
-                          index1.get_level_values(level))
-        assert concat.names == index1.names
-    else:
-        assert concat.nlevels == index1.nlevels + index2.nlevels
-        for index, offset in [(index1, 0), (index2, index1.nlevels)]:
-            for level in range(index.nlevels):
-                assert np.all(concat.get_level_values(offset + level) ==
-                              index.get_level_values(level))
-        assert concat.names == index1.names + index2.names
-
-@mark.parametrize('n', ['0d', '1d', '2d'])
-def test_index_squeeze_nop(n):
-    # none of the inputs has levels that can be squeezed
-    index = mkindex(n)
-    squeezed = index_squeeze(index)
-    assert np.all(index.values == squeezed.values)
-    assert np.all(index.names == squeezed.names)
-    
-def test_index_squeeze_unclean():
-    # index has excess labels in singleton dimension
-    index = pd.MultiIndex(levels=[range(5), range(5)],
-                          labels=[range(5), [1]*5],
-                          names=range(2))
-    squeezed = index_squeeze(index)
-    assert squeezed.nlevels == 1
-    
-@mark.parametrize('shape', [(1,), (1,2), (2,1), (2,1,2), (1,2,1), (1,1,2)])
-def test_index_squeeze(shape):
-    index = pd.MultiIndex.from_product(iterables=[range(n) for n in shape],
-                                       names=range(len(shape)))
-    squeezed = index_squeeze(index)
-    assert squeezed.nlevels == max(1, len([n for n in shape if n>1]))
-
-@mark.parametrize(
-    'function',
-    (lambda self, key, value: unpack_complex(value),
-     unpack_complex_decorator(lambda self, key, value: value)),
-    ids=('function', 'decorator'))
-def test_unpack_complex(function):    
-    frame_in = pd.DataFrame(data={'a': [1.], 'b': [2.+3.j], 'real(d)': [6.], 
-                                  'imag(e)': [7.]})
-    frame = function(None, None, frame_in)
-    assert list(frame['a']) == [1.]
-    assert list(frame['real(b)']) == [2.]
-    assert list(frame['imag(b)']) == [3.]
-    assert list(frame['real(d)']) == [6.]
-    assert list(frame['imag(e)']) == [7.]
-
-@mark.parametrize(
-    'function',
-    (pack_complex, pack_complex_decorator(lambda frame: frame)),
-    ids=('function', 'decorator'))
-def test_pack_complex(function):
-    frame_in = pd.DataFrame(data=np.arange(1., 8.)[np.newaxis, :], 
-                            index=[0.],
-                            columns=['a', 'real(b)', 'imag(b)', 'imag(c)', 
-                                     'real(c)', 'real(d)', 'imag(e)'])
-    frame = function(frame_in)
-    assert list(frame['a']) == [1.]
-    assert list(frame['b']) == [2.+3.j]
-    assert list(frame['c']) == [5.+4.j]
-    assert list(frame['real(d)']) == [6.]
-    assert list(frame['imag(e)']) == [7.]
-
-@fixture
-def ref_csds_and_frame():
-    xs, ys = np.meshgrid(np.arange(10), np.arange(8), indexing='ij')
-    zs1 = xs * ys
-    zs2 = xs * ys**2
-    cs = ParameterDict([(Parameter('x'), xs), (Parameter('y'), ys)])
-    ds = ParameterDict([(Parameter('z1'), zs1), (Parameter('z2'), zs2)])
-    index = pd.MultiIndex.from_arrays((xs.ravel(), ys.ravel()), names=('x', 'y'))
-    frame = pd.DataFrame({'z1': zs1.ravel(), 'z2': zs2.ravel()}, index=index)
-    return cs, ds, frame
-
-def test_dataframe_from_csds(ref_csds_and_frame):
-    cs, ds, ref_frame = ref_csds_and_frame
-    ref_index = ref_frame.index
-    frame = dataframe_from_csds(cs, ds)
-    index = frame.index
-    for level in range(index.nlevels):
-        assert index.names[level] == ref_index.names[level]
-        assert np.all(index.get_level_values(level) ==
-                      ref_index.get_level_values(level))
-    for column in frame.columns:
-        assert np.all(frame[column] == ref_frame[column])
-    
-def test_dataframe_to_csds(ref_csds_and_frame):
-    ref_cs, ref_ds, frame = ref_csds_and_frame
-    cs, ds = dataframe_to_csds(frame)
-    for ps, ref_ps in [(cs, ref_cs), (ds, ref_ds)]:
-        assert len(ps.keys()) == len(ref_ps.keys())
-        for column in [p.name for p in ref_ps.keys()]:
-            assert np.all(ps[column] == ref_ps[column])
 
 #
 #
 # Helpers and file name generator
 #
 #
-@mark.xfail
-def test_sanitize():
-    assert False
-    
 @mark.xfail
 def test_DateTimeGenerator():
     assert False
@@ -172,15 +41,71 @@ def test_file_name_generator():
 
 #
 #
+# test attribute helpers
+#
+#
+class TestJSONDict(object):
+    @fixture
+    def tmpfile(self, tmpdir):
+        return str(tmpdir.join('dict.json'))
+
+    def test_sync(self, tmpfile):
+        dic = JSONDict(tmpfile, sync=True)
+        dic.update({'obj1': True, 'obj2': True, 'obj3': True, 'obj4': True})
+        assert dic == JSONDict(tmpfile)
+        dic['obj1'] = False
+        assert dic == JSONDict(tmpfile)
+        del dic['obj1']
+        assert dic == JSONDict(tmpfile)
+        dic.pop('obj2')
+        assert dic == JSONDict(tmpfile)
+        dic.popitem()
+        assert dic == JSONDict(tmpfile)
+        dic.clear()
+        assert dic == JSONDict(tmpfile)
+
+    def test_async_close(self, tmpfile):
+        dic = JSONDict(tmpfile, sync=False)
+        dic['obj'] = True
+        assert 'obj' not in JSONDict(tmpfile)
+        dic.close()
+        assert 'obj' in JSONDict(tmpfile)
+
+    def test_async_context(self, tmpfile):
+        with JSONDict(tmpfile, sync=False) as dic:
+            dic['obj'] = True
+            assert 'obj' not in JSONDict(tmpfile)
+        assert 'obj' in JSONDict(tmpfile)
+    
+    @mark.parametrize('obj', [1, 2., True, None, 'str', [1,2], {'a':1, 'b':2}],
+                      ids=['int', 'float', 'bool', 'None', 'str', 'list', 'dict'])
+    def test_serialization_twoway(self, tmpfile, obj):
+        # these objects should survive a round-trip through the store
+        with JSONDict(tmpfile) as dic:
+            dic['obj'] = obj
+        with JSONDict(tmpfile) as dic:
+            assert dic['obj'] == obj
+
+    @mark.parametrize('obj', [(1, 2), Parameter('x'), [Parameter('x')], lambda: 1],
+                      ids=['tuple', 'object', '[object]', 'lambda'])
+    def test_serialization_oneway(self, tmpfile, obj):
+        # these objects should not raise any exceptions when stored
+        with JSONDict(tmpfile) as dic:
+            dic['obj'] = obj
+        assert 'obj' in JSONDict(tmpfile)
+
+
+#
+#
 # test store classes
 #
 #
 # Store, DummyStore, StoreView, MeasurementStore, StoreFactory
 @fixture
 def frame():
-    xs, ys = np.meshgrid(np.arange(10), np.arange(8), indexing='ij')
-    zs1 = xs * ys
-    zs2 = xs * ys**2
+    xs, ys = np.meshgrid(np.arange(3), np.arange(2), indexing='ij')
+    zs1 = np.asfarray(2*xs + ys)
+    zs2 = np.asfarray(xs * ys)
     index = pd.MultiIndex.from_arrays((xs.ravel(), ys.ravel()),
                                       names=('x', 'y'))
     frame = pd.DataFrame({'z1': zs1.ravel(), 'z2': zs2.ravel()},
@@ -206,12 +131,16 @@ class StoreTests:
         store.append(key, frame)
         assert pd.concat([frame, frame]).equals(store[key])
     
+    @mark.xfail
+    def test_append_mismatch(self):
+        assert False
+        
     def test_remove(self, store, frame, key):
         store.put(key, frame)
         store.remove(key)
         assert key not in store
     
-    @mark.parametrize('query', ('(x < 5) & (y == 0)',))
+    @mark.parametrize('query', ('(x < 2) & (y == 0)',))
     def test_select_where(self, store, frame, query):
         key = '/data'
         store[key] = frame
@@ -225,20 +154,21 @@ class StoreTests:
         key = '/data'
         store[key] = frame
         try:
-            selection = store.select(key, start=5, stop=10)
+            selection = store.select(key, start=2, stop=5)
         except NotImplementedError:
             skip('store does not implement select')
-        assert len(selection) == 5
+        assert int(selection.iloc[0]['z1']) == 2
+        assert len(selection) == 3
         
     def test_select_both(self, store, frame):
         key = '/data'
         store[key] = frame
         try:
-            selection = store.select(key, 'y == 2', start=5, stop=4*8)
+            selection = store.select(key, 'y == 0', start=2, stop=5)
         except NotImplementedError:
             skip('store does not implement select')
-        # store has shape 10 by 8 and indices running from 0 to shape[level]
-        assert len(selection) == 3
+        # store has shape 3 by 2 and indices running from 0 to shape[level]
+        assert len(selection) == 2
 
     def test_delitem(self, store, frame, key):
         store[key] = frame
@@ -251,10 +181,9 @@ class StoreTests:
         assert key in store
 
     @mark.parametrize('keys',
-                      (['/data'], ['/data', '/sub/data']),
-                      ids=('one key', 'two keys'))
+                      ([], ['/data'], ['/data', '/sub/data']),
+                      ids=('no keys', 'one key', 'two keys'))
     def test_keys_len(self, store, frame, keys):
-        assert store.keys() == []
         for key in keys:
             store[key] = frame
         for key in keys:
@@ -299,15 +228,17 @@ class StoreTests:
                        ('AA ', 'A A', ' AA'),
                        (',', '.', '"', "'"),
                        ('\t',),
-                       mark.xfail(('#',))],
+                       (('#',))],
                       ids=['char', 'str', 'spaces', 'punctuation', 
                            'separator', 'comment'])
     def test_string_index(self, store, strings):
         # store string index
+        if strings == ('#',) and type(store).__name__ == 'CSVStore':
+            xfail('CSVStore does not escape comment markers correctly.')
         key = '/data'
         index = pd.MultiIndex.from_product((strings, np.arange(2)),
                                            names=('cat', 'num'))
-        frame = pd.DataFrame(data=np.arange(len(strings)*2),
+        frame = pd.DataFrame(data=np.arange(len(strings)*2, dtype=np.float),
                              index=index, columns=('data',))
         store[key] = frame
         assert frame.equals(store[key])
@@ -323,11 +254,11 @@ class StoreTests:
         store['/data'] = frame
         store.flush()
         
-    def test_comment(self, store, frame, key):
+    def test_attrs(self, store, frame, key):
         comment = "I'm a comment."
         store[key] = frame
-        store.set_comment(key, comment)
-        assert comment == store.get_comment(key)
+        store.attrs(key)['comment'] = comment
+        assert comment == store.attrs(key)['comment']
 
     def test_directory(self, store):
         directory = store.directory('/')
@@ -338,6 +269,15 @@ class StoreTests:
         filename = store.filename('/')
         if filename is not None:
             assert not os.path.exists(filename) or os.path.isfile(filename)
+            
+    def test_url(self, store):
+        url = store.url('/')
+        assert (url is None) or ('://' in url) 
+        
+    def test_repr(self, store):
+        # make sure it does not raise
+        #TODO: more thorough testing
+        store.__repr__()
  
 
 
@@ -349,22 +289,22 @@ class TestMemoryStore(StoreTests):
     def test_title_arg(self):
         # title arg should be supported by all stores
         title = 'My title.'
-        store = MemoryStore(title=title)
+        MemoryStore(title=title)
 
 
 
 @yield_fixture
-def csvstore(tempdir):
-    yield CSVStore(tempdir, ext='.dat')
+def csvstore(tmpdir):
+    yield CSVStore(str(tmpdir), ext='.dat')
 
 class TestCSVStore(StoreTests):    
     @fixture
     def store(self, csvstore):
         return csvstore
     
-    def test_compression(self, store, tempdir, frame):
+    def test_compression(self, store, tmpdir, frame):
         # check that compression does not alter the data
-        cstore = CSVStore(tempdir, ext='.dat.gz', complevel=5)
+        cstore = CSVStore(str(tmpdir), ext='.dat.gz', complevel=5)
         key = '/data'
         cstore[key] = frame
         assert frame.equals(cstore[key])
@@ -373,10 +313,10 @@ class TestCSVStore(StoreTests):
         assert (os.stat(cstore.filename(key)).st_size <
                 os.stat(store.filename(key)).st_size)
     
-    def test_title_arg(self, tempdir):
+    def test_title_arg(self, tmpdir):
         title = 'My title.'
-        store = CSVStore(tempdir, title=title)
-        store = CSVStore(tempdir)
+        CSVStore(str(tmpdir), title=title)
+        store = CSVStore(str(tmpdir))
         assert store.title == title
         
     def test_title_prop(self, store):
@@ -388,28 +328,33 @@ class TestCSVStore(StoreTests):
     def test_mode(self):
         raise NotImplementedError
         
-    def test_sep(self, tempdir, frame):
-        store = CSVStore(tempdir, sep='_')
+    def test_sep(self, tmpdir, frame):
+        store = CSVStore(str(tmpdir), sep='_')
         key = '/data'
         store[key] = frame
         # separator is not os.sep, so no subdirectories are created.
-        assert not any(os.path.isdir(os.path.join(tempdir, subdir))
-                       for subdir in os.listdir(tempdir))
+        assert not any(os.path.isdir(os.path.join(str(tmpdir), subdir))
+                       for subdir in os.listdir(str(tmpdir)))
 
 
 
 class TestHDFStore(StoreTests):
     @yield_fixture
     def store(self):
-        ntf = tempfile.NamedTemporaryFile(suffix='.h5')
-        directory, filename = os.path.split(ntf.name)
+        if os.name == 'nt':
+            # pytables does not like mkstemp in windows
+            fullpath = tempfile.mktemp(suffix='.h5')
+        else:
+            ntf = tempfile.NamedTemporaryFile(suffix='.h5')
+            fullpath = ntf.name
+        directory, filename = os.path.split(fullpath)
         basename, ext = os.path.splitext(filename)
         store = HDFStore(directory, basename, ext=ext)
         try:
             yield store
         finally:
             store.close()
-            # file is deleted when ntf goes out of scope
+            os.unlink(fullpath)
 
 
 
@@ -424,7 +369,7 @@ class TestStoreView(StoreTests):
     def store(self, request):
         if 'select' in request.function.__name__:
             # MemoryStore does not implement select, use CSVStore instead
-            # use tempdir fixture as a context manager
+            # use tmpdir fixture as a context manager
             with contextmanager(tempdir)() as directory:
                 yield StoreView(CSVStore(directory), self.prefix)
         else:
@@ -442,6 +387,17 @@ class TestStoreView(StoreTests):
         # if they don't use the correct prefix
         store[key] = frame
         assert frame.equals(store.store[self.prefix + ('' if key is None else key)])
+
+    @mark.parametrize('default', [None, 'default', '/default'])
+    def test_default(self, store, frame, default, key):
+        store.default = default
+        store[key] = frame
+        full_key = self.prefix
+        if key:
+            full_key += key
+        elif default:
+            full_key += '/' + default.lstrip('/')
+        assert full_key in store.store
 
     @mark.parametrize('method', ('put', 'append'))
     def test_put_append_without_key_arg(self, store, frame, method):
@@ -533,17 +489,22 @@ class TestMeasurementStore(object):
             pframe = store.get().loc[(idx, slice(None), slice(None)), :]
             self.check_coords(frame, pframe, coords)
 
-
-
-@mark.xfail
-def test_sanitize():
-    assert False
+    def test_on_new_item(self, frame):
+        self.new_item_count = 0
+        def on_new_item(store, key):
+            self.new_item_count += 1
+        MeasurementStore.on_new_item.append(on_new_item)
+        store = MeasurementStore(MemoryStore(), '/data', ParameterList())
+        store.append(frame)
+        assert self.new_item_count == 1, 'on_new_item did not fire'
+        store.append(frame)
+        assert self.new_item_count == 1, 'on_new_item fired more than once'
 
     
     
-def test_StoreFactory(tempdir, monkeypatch):
+def test_StoreFactory(tmpdir, monkeypatch):
     from uqtools import config
-    monkeypatch.setattr(config, 'datadir', tempdir)
+    monkeypatch.setattr(config, 'datadir', str(tmpdir))
     monkeypatch.setattr(config, 'store', 'CSVStore')
     monkeypatch.setattr(config, 'store_kwargs', {})
     store = StoreFactory.factory('foo')

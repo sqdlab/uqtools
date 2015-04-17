@@ -10,7 +10,7 @@
 # reload sub-modules in fixed order
 import logging
 import sys
-for key in ('config', 'helpers', 'parameter', 'context', 'data', 'store', 
+for key in ('config', 'helpers', 'parameter', 'context', 'data', 'pandas', 'store', 
             'widgets', 'progress', 'measurement', 'basics', 'buffer', 'process', 
             'fpga', 'fsv', 'simulation', 'plot', 'calibrate', 'pulselib', 
             'awg'):
@@ -25,11 +25,12 @@ del key
 
 
 from . import config
-from . import helpers
 
 from . import parameter
 from .parameter import (Parameter, OffsetParameter, ScaledParameter, LinkedParameter,
                         TypedList, ParameterList, ParameterDict)
+
+from . import helpers
 
 from . import context
 from .context import (NullContextManager, SimpleContextManager, nested, 
@@ -37,11 +38,13 @@ from .context import (NullContextManager, SimpleContextManager, nested,
 
 from . import data
 
-try:
+#try:
+if True:
+    from . import pandas
     from . import store
-    from .store import CSVStore, HDFStore
-except ImportError:
-    logging.warning(__name__ + ': failed to import store.')
+    from .store import MemoryStore, CSVStore, HDFStore
+#except ImportError:
+#    logging.warning(__name__ + ': failed to import store.')
 
 from . import widgets
 
