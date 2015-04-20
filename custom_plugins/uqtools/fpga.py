@@ -2,9 +2,7 @@ import numpy
 import logging
 import contextlib
 
-from .parameter import ParameterDict
-from .measurement import Measurement
-from .process import Integrate
+from . import Parameter, ParameterDict, Measurement, Integrate
 
 class FPGAMeasurement(Measurement):
     '''
@@ -30,6 +28,8 @@ class FPGAMeasurement(Measurement):
         with self.context:
             self._check_mode()
             dims = self._fpga.get_data_dimensions()
+            dims = [Parameter(**dim) if isinstance(dim, dict) else dim 
+                    for dim in dims]
             self.coordinates = dims[:-1]
             self.values.append(dims[-1])
 
@@ -55,7 +55,7 @@ class FPGAMeasurement(Measurement):
         self._check_mode()
         # build coordinate matrices
         # retrieve list of values taken by each independent variable
-        points = [c.get() for c in self._fpga.get_data_dimensions()[:-1]]
+        points = self.coordinates.values()
         # create index arrays that will return the proper value of 
         # each independent variable for each point in data
         indices = numpy.mgrid[[slice(len(c)) for c in points]]
