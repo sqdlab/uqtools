@@ -95,7 +95,7 @@ class FPGAStart(Measurement):
 
 class FPGAStop(Measurement):
     def __init__(self, fpga, **kwargs):
-        super(FPGAStart, self).__init__(**kwargs)
+        super(FPGAStop, self).__init__(**kwargs)
         self._fpga = fpga
         
     def _measure(self, **kwargs):

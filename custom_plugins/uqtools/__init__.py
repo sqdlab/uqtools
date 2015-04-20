@@ -38,13 +38,12 @@ from .context import (NullContextManager, SimpleContextManager, nested,
 
 from . import data
 
-#try:
-if True:
+try:
     from . import pandas
     from . import store
     from .store import MemoryStore, CSVStore, HDFStore
-#except ImportError:
-#    logging.warning(__name__ + ': failed to import store.')
+except ImportError:
+    logging.warning(__name__ + ': failed to import store.')
 
 from . import widgets
 
