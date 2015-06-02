@@ -55,7 +55,7 @@ class FPGAMeasurement(Measurement):
         self._check_mode()
         # build coordinate matrices
         # retrieve list of values taken by each independent variable
-        points = self.coordinates.values()
+        points = [dim['value'] for dim in self._fpga.get_data_dimensions()[:-1]]
         # create index arrays that will return the proper value of 
         # each independent variable for each point in data
         indices = numpy.mgrid[[slice(len(c)) for c in points]]
@@ -66,8 +66,11 @@ class FPGAMeasurement(Measurement):
         # measurement was started by us in the previous iteration
         if not self.overlapped:
             self._fpga.stop()
-        # perform fpga measurement
-        self._fpga.start()
+            self._fpga.start()
+        else:
+            if not self._fpga.get('app_running'):
+                # perform fpga measurement
+                self._fpga.start()
         while not self._fpga.finished():
             self.flow.sleep(10e-3)
         self._fpga.stop()
