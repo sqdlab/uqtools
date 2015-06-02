@@ -662,34 +662,32 @@ class StoreView(Store):
         return self.store.directory(self._key(key))
 
     def _interpret_args(self, *args, **kwargs):
-        ''' emulate (key=None, value) signature '''
+        ''' emulate (key=None, value, **kwargs) signature '''
         keys = ['key', 'value']
         for k in kwargs:
-            if k not in keys:
-                raise TypeError("Unexpected keyword argument '{0}'.".format(k))
-            else:
+            if k in keys:
                 keys.remove(k)
         kwargs.update(dict(zip(keys, args)))
-        if (len(args) > len(keys)) or (len(kwargs) > 2):
+        if len(args) > len(keys):
             raise TypeError("At most two arguments expected.")
         if 'value' not in kwargs:
             if ('key' not in kwargs) or not len(args):
                 raise TypeError("Missing argument 'value'.")
-            return None, kwargs.get('key')
-        return kwargs.get('key', None), kwargs.get('value')
+            return None, kwargs.pop('key'), kwargs
+        return kwargs.pop('key', None), kwargs.pop('value'), kwargs
 
     def put(self, *args, **kwargs):
         ''' put(self, key=None, value) '''
-        key, value = self._interpret_args(*args, **kwargs)
-        return self.store.put(self._key(key), value)
+        key, value, kwargs = self._interpret_args(*args, **kwargs)
+        return self.store.put(self._key(key), value, **kwargs)
     
     def get(self, key=None):
         return self.store.get(self._key(key))
     
     def append(self, *args, **kwargs):
         ''' append(self, key=None, value) '''
-        key, value = self._interpret_args(*args, **kwargs)
-        return self.store.append(self._key(key), value)
+        key, value, kwargs = self._interpret_args(*args, **kwargs)
+        return self.store.append(self._key(key), value, **kwargs)
     
     def select(self, key=None, where=None, start=None, stop=None, **kwargs):
         return self.store.select(self._key(key), where=where,
@@ -804,10 +802,10 @@ class MeasurementStore(StoreView):
         '''
         if self.is_dummy:
             return
-        key, value = self._interpret_args(*args, **kwargs)
+        key, value, kwargs = self._interpret_args(*args, **kwargs)
         value = self._prepend_coordinates(value)
         with self._check_new(key):
-            self.store.put(self._key(key), value)
+            self.store.put(self._key(key), value, **kwargs)
         
     def append(self, *args, **kwargs):
         '''
@@ -822,10 +820,10 @@ class MeasurementStore(StoreView):
         if self.is_dummy:
             return
         # append data to store
-        key, value = self._interpret_args(*args, **kwargs)
+        key, value, kwargs = self._interpret_args(*args, **kwargs)
         value = self._prepend_coordinates(value)
         with self._check_new(key):
-            self.store.append(self._key(key), value)
+            self.store.append(self._key(key), value, **kwargs)
 
 
    
