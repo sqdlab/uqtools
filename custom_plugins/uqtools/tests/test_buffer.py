@@ -1,5 +1,6 @@
 from pytest import fixture, raises
-import numpy
+import numpy as np
+import pandas as pd
 
 from uqtools import Buffer, Parameter, Function, MeasurementArray
 
@@ -8,11 +9,13 @@ from .lib import MeasurementTests
 class TestBuffer(MeasurementTests):
     @fixture
     def buffer(self):
-        pidx0 = Parameter('idx0', value=range(-3, 4))
-        pidx1 = Parameter('idx1', value=range(-2, 3))
+        index = pd.MultiIndex.from_product([range(2), range(2)], names='xy')
+        frame = pd.DataFrame({'z': range(4)}, index=index)
         self.pscale = Parameter('scale', value=1)
-        f = lambda xs, ys: self.pscale.get() * xs * ys
-        self.source = Function(f, [pidx0, pidx1])
+        self.source = Function(lambda scale: frame * scale,
+                               args=[self.pscale],
+                               coordinates=[Parameter('x'), Parameter('y')],
+                               values=[Parameter('z')])
         return Buffer(self.source)
     
     # run MeasurementTests against uninitialized and initialized buffers
@@ -22,13 +25,21 @@ class TestBuffer(MeasurementTests):
             buffer.writer()
         return buffer.reader
     
+    def test_call(self, buffer):
+        with raises(TypeError):
+            buffer()
+    
     def test_read_write(self, buffer):
-        scs, sds = self.source()
+        self.pscale.set(1)
+        ref1 = self.source(output_data=True)
         buffer.writer()
-        assert buffer.reader() == self.source()
+        read1 = buffer.reader(output_data=True)
+        assert ref1.equals(read1), 'buffer did not return same value as source'
         self.pscale.set(2)
-        assert buffer.reader() == (scs, sds)
-        assert buffer.reader() != self.source()
+        ref2 = self.source(output_data=True)
+        assert not ref1.equals(ref2), 'source return did not change, test error'
+        read2 = buffer.reader(output_data=True)
+        assert ref1.equals(read2), 'buffer return affected by change of source'
         
     def test_multi_read(self, buffer):
         ''' assert that multiple readers can be inserted into the tree '''
@@ -38,5 +49,5 @@ class TestBuffer(MeasurementTests):
     def test_multi_write(self, buffer):
         ''' assert that only one writer can be inserted into the tree '''
         ma = MeasurementArray(buffer.writer, buffer.writer, buffer.reader)
-        with raises(EnvironmentError):
+        with raises(ValueError):
             ma()

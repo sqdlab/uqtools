@@ -100,7 +100,7 @@ class TestJSONDict(object):
 # test store classes
 #
 #
-# Store, DummyStore, StoreView, MeasurementStore, StoreFactory
+# Store, StoreView, MeasurementStore, StoreFactory
 @fixture
 def frame():
     xs, ys = np.meshgrid(np.arange(3), np.arange(2), indexing='ij')
@@ -113,7 +113,8 @@ def frame():
     return frame
 
 class StoreTests:
-    @fixture(params=('/data', '/sub/data'))
+    @fixture(params=('/data', u'/data', '/sub/data'),
+             ids=['/data', '/data (unicode)', '/sub/data'])
     def key(self, request):
         return request.param
         
@@ -179,7 +180,12 @@ class StoreTests:
         assert key not in store
         store[key] = frame
         assert key in store
-
+        
+    def test_keys(self, store, frame, key):
+        store[key] = frame
+        key = store.keys()[0]
+        assert frame.equals(store[key])
+        
     @mark.parametrize('keys',
                       ([], ['/data'], ['/data', '/sub/data']),
                       ids=('no keys', 'one key', 'two keys'))
@@ -445,7 +451,7 @@ class TestMeasurementStore(object):
         store = MemoryStore()
         for prefix, names in zip(prefixes, namess):
             coords = ParameterList(Parameter(name, value=name) for name in names)
-            store = MeasurementStore(store, subdir=prefix, coordinates=coords)
+            store = MeasurementStore(store, prefix=prefix, coordinates=coords)
             self.coords.extend(coords)
         return store
     
@@ -467,8 +473,8 @@ class TestMeasurementStore(object):
         store = MeasurementStore(MemoryStore(), '/data', coords)
         self.check_coords(frame, store._prepend_coordinates(frame), coords)
 
-    def test_is_dummy(self, csvstore, frame):
-        store = MeasurementStore(csvstore, '/data', ParameterList(), is_dummy=True)
+    def test_save(self, csvstore, frame):
+        store = MeasurementStore(csvstore, '/data', ParameterList(), save=False)
         store.put(frame)
         assert len(store.store) == 0
         assert store.directory() is None

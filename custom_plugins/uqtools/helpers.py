@@ -1,32 +1,84 @@
+"""
+Helper functions used by other modules.
+"""
+
 import inspect
 import types
 from abc import ABCMeta
 import unicodedata
 import string
+import math
 
 import numpy as np
 
 from . import ParameterDict
 
-# this turns out to be a python version of functools.partial...
+def make_iterable(obj):
+    """Wrap `obj` in a `tuple` if it is not a `tuple` or `list`."""
+    if isinstance(obj, list) or isinstance(obj, tuple):
+        return obj
+    else:
+        return (obj,)
+
+def round(x, xlim, precision=3):
+    """
+    Round `x` so that at least `precision` digits vary in window `xlim`.
+    
+    Parameters
+    ----------
+    x : `float`
+        Input number.
+    xlim : `tuple` of `float
+        Minimum and maximum `x` values.
+    precision : `int`
+        Significant number of digits.
+        
+    Return
+    ------
+    rounded : `str`
+    """
+    d_msd = math.log10(abs(xlim[0] - xlim[1])) if (xlim[0] != xlim[1]) else 0
+    digits = int(math.ceil(precision - d_msd))
+
+    x_msd = math.log10(abs(x)) if x != 0 else d_msd
+    if (abs(x_msd) >= 3) and (digits + x_msd > 0):
+        code = 'e'
+        digits += int(math.ceil(x_msd)) - 1
+    else:
+        code = 'f'
+    return '{0:.{1}{2}}'.format(x, max(0, digits), code)
+        
 def fix_args(f=None, **__fixed):
     '''
-    return a wrapper to a function with the arguments listed in fixed
-    removed from its signature. the wrapper function has the same
+    Return a wrapper to a function with the arguments listed in fixed
+    removed from its signature. The wrapper function has the same
     argspec than the wrapped function, less the fixed arguments.
     
-    Input:
-        f (function) - wrapped function. 
-        __fixed (dict) - fixed arguments
-    Return:
-        wrapper function
-    Remarks:
-        only functions and bound methods are supported. your mileage may vary
-        with other callable objects.
-        if f is not given, a decorator function is returned. syntax:
-            @fix_args(x=0)
-            def f(x, y): 
-                ...
+    Parameters
+    ----------
+    f : `callable`, optional
+        The wrapped function.
+    __fixed : `dict`
+        Fixed arguments.
+        
+    Returns
+    -------
+    If `f` is given, returns a wrapper function around `f`.
+    Otherwise, returns a decorator.
+    
+    Notes
+    -----
+    Only functions and bound methods are tested. YMMV for other callables.
+    This turns out to be a pure python implementation of `functools.partial`,
+    which should be used where applicable.
+
+    Examples
+    --------
+    >>> @fix_args(x=0)
+    ... def f(x, y): 
+    ...     return x, y
+    >>> f(1)
+    (0, 1)
     '''
     # if f is not given, return a decorator function
     if f is None:
@@ -86,14 +138,19 @@ def fix_args(f=None, **__fixed):
     exec source in locals()
     return fixed_kwargs_f
 
+
 def coordinate_concat(*css):
     '''
-    Concatenate coordinate matrices in a memory-efficient way.
+    Concatenate coordinate arrays in a memory-efficient way.
     
-    Input:
-        *css - any number of ParameterDicts with coordinate matrices
-    Output:
-        a single ParameterDict of coordinate matrices
+    Parameters
+    ----------
+    cs0, cs1, ... : `ParameterDict` with `np.ndarray` values
+        Any number of parameter dictionaries containing coordinate arrays.
+        
+    Returns
+    -------
+    A single `ParameterDict` containing coordinate arrays.
     '''
     # check inputs
     for cs in css:
@@ -125,19 +182,28 @@ def coordinate_concat(*css):
         ks.extend(cs.keys())
     return ParameterDict(zip(ks, reshaped_cs))
 
+
 def checked_property(attr, doc=None, check=None, before=None, after=None):
-    '''
-    Property with optional checks and before/after set event handlers.
+    """
+    `property` with optional checks and before/after set event handlers.
     
-    Input:
-        attr (str) - Attribute that stores the data.
-        doc (str) - __doc__ string
-        check (callable) - check(self, value) is called before setting
-        before (callable) - before(self) is called before setting
-        after (callable) - after(self) is called after setting
-    Returns:
-        property with fget, fset, fdel and doc set
-    '''
+    Parameters
+    ----------
+    attr : `str`
+        Name of the attribute that stores the data.
+    doc : `str`
+        __doc__ of the property.
+    check : `callable`
+        `check(self, value)` is called before setting.
+    before : `callable`
+        `before(self)` is called before setting.
+    after : `callable`
+        `after(self)` is called after setting.
+        
+    Returns
+    -------
+    `property` with `fget`, `fset`, `fdel` and `doc` set.
+    """
     def fget(self):
         return getattr(self, attr)
     
@@ -155,35 +221,44 @@ def checked_property(attr, doc=None, check=None, before=None, after=None):
         
     return property(fget, fset, fdel, doc)
 
+
 def resolve_value(value, default=None):
-    '''return value.get() if present else value'''
+    """Return `value.get()` for `Parameter` else `value` if not None else
+    `default`."""
     if value is None:
         return default
-    elif hasattr(value, 'get'):
+    elif (type(value).__name__ == 'Parameter') and hasattr(value, 'get'):
         return value.get()
     return value
 
 def resolve_name(value, default=None):
-    '''return value.name if present else value'''
+    """Return `value.name()` for `Parameter` else `value` if not None else
+    `default`."""
     if value is None:
         return default
     elif hasattr(value, 'name'):
         return value.name
     return value
 
-def parameter_property(attr, doc=None):
-    '''
-    Property that calls get() when read if set to a Parameter.
+
+def parameter_value(attr, doc=None):
+    """
+    `property` that calls `get()` when read if set to a `Parameter`.
     
-    Input:
-        attr (str) - Attribute that stores the data.
-        doc (str) - __doc__ string
-    Returns:
-        property with fget, fset, fdel and doc set
-    '''
+    Parameters
+    ----------
+    attr : `str`
+        Name of the attribute that stores the data.
+    doc : `str`
+        __doc__ string
+        
+    Returns
+    -------
+    `property` with `fget`, `fset`, `fdel` and `doc` set.
+    """
     def fget(self):
         value = getattr(self, attr)
-        if hasattr(value, 'get'):
+        if (type(value).__name__ == 'Parameter') and hasattr(value, 'get'):
             return value.get()
         return value
     
@@ -194,21 +269,51 @@ def parameter_property(attr, doc=None):
         delattr(self, attr)
     
     return property(fget, fset, fdel, doc)
+
+
+def parameter_name(attr, doc=None):
+    """
+    Property that returns `.name` when read if set to a `Parameter`.
     
+    Parameters
+    ----------
+    attr : `str`
+        Name of the attribute that stores the data.
+    doc : `str`
+        __doc__ string
+
+    Returns
+    -------
+    `property` with `fget`, `fset`, `fdel` and `doc` set.
+    """
+    def fget(self):
+        value = getattr(self, attr)
+        if hasattr(value, 'name'):
+            return value.name
+        return value
+    
+    def fset(self, value):
+        setattr(self, attr, value)
+        
+    def fdel(self):
+        delattr(self, attr)
+    
+    return property(fget, fset, fdel, doc)
+
+
 def sanitize(name):
-    ''' sanitize name so it can safely be used as a part of a file name '''
+    """sanitize `name` so it can safely be used as a part of a file name."""
     # remove accents etc.
     name = unicodedata.normalize('NFKD', unicode(name))
     name = name.encode('ASCII', 'ignore')
     # retain only white listed characters
-    whitelist = '_(),' + string.ascii_letters + string.digits
+    whitelist = '_(),.' + string.ascii_letters + string.digits
     name = ''.join([c for c in name if c in whitelist])
     return name
 
 
-
 class Singleton(type):
-    ''' Singleton metaclass '''
+    """Singleton metaclass"""
     _instances = {}
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
@@ -216,16 +321,20 @@ class Singleton(type):
         return cls._instances[cls]
 
 
-    
 class CallbackDispatcher(list):
-    '''
+    """
     A simplistic callback dispatcher.
     
-    Usage:
-    dispatcher = CallbackDispatcher()
-    dispatcher.append(function)
-    dispatcher()
-    '''
+    Examples
+    --------
+    >>> from uqtools.helpers import CallbackDispatcher
+    >>> def callback(message):
+    ...     print message
+    >>> dispatcher = CallbackDispatcher()
+    >>> dispatcher.append(callback)
+    >>> dispatcher('Boo!')
+    Boo!
+    """
     def __call__(self, *args, **kwargs):
         '''call all elements of self'''
         for callback in self:
@@ -234,11 +343,16 @@ class CallbackDispatcher(list):
 
 
 class DocStringInheritor(ABCMeta): # type
-    ''' http://groups.google.com/group/comp.lang.python/msg/26f7b4fcb4d66c95 '''
+    """
+    A metaclass that passes __doc__ strings down the inheritance tree.
+    
+    http://groups.google.com/group/comp.lang.python/msg/26f7b4fcb4d66c95
+    """
     def __new__(meta, classname, bases, classDict):
         newClassDict = {}
         for attributeName, attribute in classDict.items():
-            if type(attribute) == types.FunctionType:
+            if ((type(attribute) == types.FunctionType) and
+                not attribute.__doc__):
                 # look through bases for matching function by name
                 for baseclass in bases:
                     if hasattr(baseclass, attributeName):

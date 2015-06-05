@@ -1,3 +1,7 @@
+"""
+Flow control user interface.
+"""
+
 import time
 from collections import deque
 from functools import wraps
@@ -5,18 +9,10 @@ from warnings import warn
 from threading import Event
 
 from . import config
-try:
-    from qt import msleep, mstart, mend
-except ImportError:
-    warn('Unable to import qt. QTLab integration is not available.', 
-         ImportWarning)
-    msleep = lambda: True
-    mstart = lambda: True
-    mend = lambda: True
-#try:
-
+from .helpers import Singleton, CallbackDispatcher
 
 try:
+    import IPython
     from IPython import get_ipython
     ipython = get_ipython()
     if ipython is None:
@@ -28,29 +24,16 @@ except ImportError:
          ImportWarning)
 
 
-
 class ContinueIteration(Exception):
-    ''' signal Sweep to continue at the next coordinate value '''
+    """Signal :class:`~uqtools.control.Sweep` to jump to the next point."""
     pass
-
 
 
 class BreakIteration(Exception):
-    ''' signal Sweep to continue at the next coordinate value '''
+    """Signal :class:`~uqtools.control.Sweep` to skip the remaining points."""
     pass
 
 
-
-class Singleton(type):
-    ''' Singleton metaclass '''
-    _instances = {}
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-    
-
-    
 def Flow(*args, **kwargs):
     '''
     Select flow class according to environment.
@@ -89,6 +72,8 @@ class BaseFlow(object):
     
     def __init__(self):
         ''' Create a new BaseFlow object. '''
+        self.on_start = CallbackDispatcher()
+        self.on_stop = CallbackDispatcher()
         self.running = False
         # Every entry is a <str>:threading.Event mapping. 
         # Setting an event triggers execution of self.on_<str>.
@@ -106,10 +91,12 @@ class BaseFlow(object):
         if self.running:
             raise RuntimeError('A measurement is already running.')
         self.running = True
+        self.on_start()
 
     def stop(self):
         ''' Indicate the end of a measurement. '''
         self.running = False
+        self.on_stop()
         
     def update(self, measurement):
         ''' Update flow with information from measurement. '''
@@ -123,7 +110,7 @@ class BaseFlow(object):
         loop though kernel.do_one_iteration at most every quantum up to duration 
         and time.sleep the rest of the time.
         
-        Input:
+        Parameters:
             duration - sleep duration in seconds. The message loops are run even
                 when duration is set to 0.
             quantum - minimum interval between two calls to the QTLab/IPython 
@@ -135,6 +122,7 @@ class BaseFlow(object):
             loop_start = time.time()
             # run message loops once
             self.process_events()
+            RootFlow().on_idle()
             # finish when duration is over. 
             if loop_start+quantum > start+duration:
                 break
@@ -172,24 +160,17 @@ class RootConsoleFlow(BaseFlow):
     
     def __init__(self):
         super(RootConsoleFlow, self).__init__()
-    
-    def start(self):
-        super(RootConsoleFlow, self).start()
-        # notify qtlab
-        mstart()
-        
-    def stop(self):
-        super(RootConsoleFlow, self).stop()
-        # notify qtlab
-        mend()
+        self.on_show = CallbackDispatcher()
+        self.on_hide = CallbackDispatcher()
+        self.on_idle = CallbackDispatcher()
     
     def show(self, root):
         ''' show UI '''
-        pass
+        self.on_show()
     
     def hide(self, root):
         ''' hide UI '''
-        pass
+        self.on_hide()
     
     def process_events(self):
         ''' run QTLab and IPython message loops '''
@@ -197,12 +178,11 @@ class RootConsoleFlow(BaseFlow):
     
     def _process_events(self):
         ''' run QTLab and IPython message loops '''
-        # run QTLab message loop once
-        msleep()
         # run IPython message loop once
-        if ('get_ipython' in globals()) and (get_ipython() is not None):
-            kernel = get_ipython().kernel
-            kernel.do_one_iteration()
+        if (('get_ipython' in globals()) and
+            (get_ipython() is not None) and
+            hasattr(get_ipython(), 'kernel')):
+            get_ipython().kernel.do_one_iteration()
         super(RootConsoleFlow, self)._process_events()
         
             
@@ -214,11 +194,12 @@ class LoopFlow(BaseFlow):
         '''
         Create a new status reporting/flow control object.
         
-        Input:
+        Parameters:
             iterations - expected number of iterations
         '''
         self.iterations = iterations
         self._iteration = 0
+        self.on_next = CallbackDispatcher()
         super(LoopFlow, self).__init__()
 
     @property
@@ -249,6 +230,7 @@ class LoopFlow(BaseFlow):
             raise ValueError('not running')
         if self._iteration < self.iterations:
             self.iteration = self.iteration+1
+        self.on_next()
         
     def stop(self):
         ''' Indicate the end of a measurement. '''
@@ -400,14 +382,14 @@ if 'widgets' in globals():
             ''' 
             Traverse the measurement tree and collect widgets.
             
-            Input:
+            Parameters:
                 path - current path in the measurement tree
             '''
             widgets = []
             widget = leaf.flow.widget(leaf, level=len(path))
             if widget is not None:
                 widgets.append(widget)
-            for child in leaf.measurements:
+            for child in leaf._measurements:
                 widgets.extend(self._traverse_widget(child, leaf, *path))
             return widgets
 
@@ -415,7 +397,7 @@ if 'widgets' in globals():
             ''' 
             Build UI for the Measurement hierarchy starting from root.
             
-            Input:
+            Parameters:
                 root (Measurement) - root of the measurement tree
             '''
             stop = widgets.Button(description='stop')
@@ -431,14 +413,14 @@ if 'widgets' in globals():
         def _traverse_hide(self, leaf, *path):
             ''' Traverse the measurement tree and hide all flows. '''
             leaf.flow.hide()
-            for child in leaf.measurements:
+            for child in leaf._measurements:
                 self._traverse_hide(child, leaf, *path)
             
         def show(self, root):
             ''' 
             Build and display user interface.
             
-            Input:
+            Parameters:
                 root - root of the measurement tree
             '''
             display(self.widget(root))
@@ -459,7 +441,7 @@ if 'widgets' in globals():
             '''
             Display a link to the data file but no progress bar. 
             
-            Input:
+            Parameters:
             '''
             self._widgets = {}
             super(FileLinkWidgetFlow, self).__init__()
@@ -468,7 +450,7 @@ if 'widgets' in globals():
             ''' 
             Build UI for the bound measurement.
             
-            Input:
+            Parameters:
                 measurement - measurement object queried for its name and data
                     file.
                 level (int) - nesting level
@@ -482,12 +464,12 @@ if 'widgets' in globals():
         
         def update(self, measurement):
             ''' Update file link '''
-            file_name = measurement.get_data_file_paths()
-            if not file_name:
+            if (measurement.store is None) or (measurement.store.url() is None):
                 html = measurement.name
             else:
                 template = '<a href="{url}">{name}</a>'
-                html = template.format(name=measurement.name, url=file_url(file_name))
+                html = template.format(name=measurement.name,
+                                       url=measurement.store.url())
             self._widgets['label'].value = html
 
         def hide(self):
@@ -508,7 +490,7 @@ if 'widgets' in globals():
             Create a new status reporting/flow control object with an IPython 
             widget GUI.
             
-            Input:
+            Parameters:
                 iterations - expected number of iterations
             '''
             self._iterations = None
@@ -560,7 +542,7 @@ if 'widgets' in globals():
             ''' 
             Build UI for the bound measurement.
             
-            Input:
+            Parameters:
                 measurement - any object with a .name proprty than is used as 
                     a label for the object
                 level (int) - nesting level
@@ -606,12 +588,12 @@ if 'widgets' in globals():
 
         def update(self, measurement):
             ''' Update file link '''
-            file_name = measurement.get_data_file_paths()
-            if not file_name:
+            if (measurement.store is None) or (measurement.store.url() is None):
                 html = measurement.name
             else:
                 template = '<a href="{url}">{name}</a>'
-                html = template.format(name=measurement.name, url=file_url(file_name))
+                html = template.format(name=measurement.name,
+                                       url=measurement.store.url())
             self._widgets['label'].value = html
             
         def hide(self):

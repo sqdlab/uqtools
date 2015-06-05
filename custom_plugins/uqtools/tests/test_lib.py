@@ -9,10 +9,10 @@ class TestCountingMeasurement(MeasurementTests):
 
     def test_count(self, measurement):
         ''' test counting mechanism. '''
-        cs, ds = measurement()
-        assert ds == {measurement.counter: 0}
-        cs, ds = measurement()
-        assert ds == {measurement.counter: 1}
+        frame = measurement(output_data=True)
+        assert list(frame['count']) == [0]
+        frame = measurement(output_data=True)
+        assert list(frame['count']) == [1]
 
     def test_raises(self, measurement):
         ''' test exception raising when counter reaches 0. '''

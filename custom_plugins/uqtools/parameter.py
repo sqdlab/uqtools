@@ -1,251 +1,412 @@
-import numpy
+"""
+Named parameters, lists and dicts.
+"""
+
+__all__ = ['Parameter', 'ParameterBase', 'LinkedParameter', 'OffsetParameter', 
+           'ScaledParameter', 'TypedList', 'ParameterList', 'ParameterDict']
+
 from collections import OrderedDict, MutableSequence
 from copy import copy
+from functools import wraps
+from abc import ABCMeta
 
-class Parameter(object):
-    '''
-    a parameter of a data object
+import numpy as np
+
+class ParameterBase(object):
+    """
+    Abstract base class of :class:`Parameter` and :class:`LinkedParameter`.
+    """
     
-    by making parameter objects it becomes possible to store them inside 
-    nested measurement functions/objects. when a nested measurement is run, 
-    it can retrieve the current point on the coordinate axes by accessing 
-    its stored parameter objects.
+    __metaclass__ = ABCMeta
     
-    additional properties like the parameter name can be automatically 
-    added to new data files created by nested measurements. 
-    '''
-    def __init__(self, name, set_func=None, get_func=None, value=None, 
-                 dtype=None, **options):
-        '''
-        initialize parameter.
-        
-        Input:
-            name - friendly name of the parameter
-            set_func - function called when set(value) is called
-            get_func - function called when get() is called, returns stored 
-                value if not given
-            value - stored value. not necessarily scalar.
-            dtype - data type
-            **options - extra keyword arguments are descriptive information 
-                and may be stored in data files
-        '''
+    def __init__(self, name, **options):
         self.name = name
-        self.set_func = set_func
-        self.get_func = get_func
-        if(value is not None):
-            self.set(value)
-        else:
-            self._value = None
-        self.dtype = dtype
         self.options = options
-    
-    def set(self, value):
-        ''' 
-        store value AND call set_func if defined 
-        '''
-        if(self.set_func):
-            self.set_func(value)
-        self._value = value
-    
-    def get(self):
-        '''
-        return result of get_func OR stored value if no get_func was defined 
-        '''
-        if(self.get_func):
-            return self.get_func()
-        return self._value
+
+    def set(self, value, **kwargs):
+        """Set value of the parameter."""
+        raise NotImplementedError
+
+    def get(self, **kwargs):
+        """Return value of the parameter."""
+        raise NotImplementedError
     
     def __repr__(self):
-        ''' return a human-readable representation of self '''
-        return 'Parameter(\'{0}\')'.format(self.name)
+        """Return a human-readable representation of self."""
+        parts = super(ParameterBase, self).__repr__().split(' ')
+        # <uqtools.parameter.Parameter "{name}" at 0x...>
+        parts[1] = '"{0}"'.format(self.name)
+        return ' '.join(parts)
 
     @staticmethod
     def is_compatible(obj):
-        ''' 
-        test if an object supports all properties expected from a Parameter 
-        '''
+        """Test `obj` for `name`, `get()` and `set()` attributes.""" 
         return (hasattr(obj, 'name') and
                 hasattr(obj, 'get') and callable(obj.get) and 
-                hasattr(obj, 'set') and callable(obj.set) and
-                hasattr(obj, 'dtype'))
+                hasattr(obj, 'set') and callable(obj.set))
+
+    #
+    # Arithmetic operators
+    #
+    def __neg__(self):
+        """-`self`"""
+        return Parameter(
+            self.name[1:] if (self.name[:1] == '-') else ('-' + self.name), 
+            get_func=lambda **kwargs: -self.get(**kwargs), 
+            set_func=lambda value, **kwargs: self.set(-value, **kwargs)
+        )
     
+    def __abs__(self):
+        """`abs(self)`"""
+        return Parameter(
+            'abs({0})'.format(self.name),
+            get_func = lambda **kwargs: np.abs(self.get(**kwargs)),
+            set_func = self.set
+        )
+    
+    def __add__(self, other):
+        """`self` + `other`"""
+        if hasattr(other, 'get'):
+            name = '({0}+{1})'.format(self.name, other.name)
+            get_func = lambda **kwargs: self.get(**kwargs) + other.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(value - other.get(), **kwargs)
+        else:
+            name = '({0}+{1})'.format(self.name, other)
+            get_func = lambda **kwargs: self.get(**kwargs) + other
+            set_func = lambda value, **kwargs: self.set(value - other, **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
+    
+    __radd__ = __add__
+    
+    def __sub__(self, other):
+        """`self` - `other`"""
+        if hasattr(other, 'get'):
+            name = '({0}-{1})'.format(self.name, other.name)
+            get_func = lambda **kwargs: self.get(**kwargs) - other.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(value + other.get(), **kwargs)
+        else:
+            name = '({0}-{1})'.format(self.name, other)
+            get_func = lambda **kwargs: self.get(**kwargs) - other
+            set_func = lambda value, **kwargs: self.set(value + other, **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
+    
+    def __rsub__(self, other):
+        """`other` - `self`"""
+        if hasattr(other, 'get'):
+            name = '({1}-{0})'.format(self.name, other.name)
+            get_func = lambda **kwargs: other.get(**kwargs) - self.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(other.get() - value, **kwargs)
+        else:
+            name = '({1}-{0})'.format(self.name, other)
+            get_func = lambda **kwargs: other - self.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(other - value, **kwargs)
+        return Parameter(name, get_func=get_func, set_func=set_func)
+
+    def __mul__(self, other):
+        """`self` \* `other`"""
+        if hasattr(other, 'get'):
+            name = '({0}*{1})'.format(self.name, other.name)
+            get_func = lambda **kwargs: self.get(**kwargs) * other.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(value / other.get(), **kwargs)
+        else:
+            name = '({0}*{1})'.format(self.name, other)
+            get_func = lambda **kwargs: self.get(**kwargs) * other
+            set_func = lambda value, **kwargs: self.set(value / other, **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
+    
+    __rmul__ = __mul__
+    
+    def __div__(self, other):
+        """`self` / `other`"""
+        if hasattr(other, 'get'):
+            name = '({0}/{1})'.format(self.name, other.name)
+            get_func = lambda **kwargs: self.get(**kwargs) / other.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(value * other.get(), **kwargs)
+        else:
+            name = '({0}/{1})'.format(self.name, other)
+            get_func = lambda **kwargs: self.get(**kwargs) / other
+            set_func = lambda value, **kwargs: self.set(value * other, **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
+    
+    def __rdiv__(self, other):
+        """`other` / `self`"""
+        if hasattr(other, 'get'):
+            name = '({1}/{0})'.format(self.name, other.name)
+            get_func = lambda **kwargs: other.get(**kwargs) / self.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(other.get() / value, **kwargs)
+        else:
+            name = '({1}/{0})'.format(self.name, other)
+            get_func = lambda **kwargs: other / self.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(other / value, **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
+
+    def __pow__(self, other):
+        """`self` \*\* `other`"""
+        if hasattr(other, 'get'):
+            name = '({0}**{1})'.format(self.name, other.name)
+            get_func = lambda **kwargs: self.get(**kwargs) ** other.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(value ** (1./other.get()), **kwargs)
+        else:
+            name = '({0}**{1})'.format(self.name, other)
+            get_func = lambda **kwargs: self.get(**kwargs) ** other
+            set_func = lambda value, **kwargs: self.set(value ** (1./other), **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
+
+    def __rpow__(self, other):
+        """`other` \*\* `self`"""
+        if hasattr(other, 'get'):
+            name = '({1}**{0})'.format(self.name, other.name)
+            get_func = lambda **kwargs: other.get(**kwargs) **self.get(**kwargs) 
+            set_func = lambda value, **kwargs: self.set(np.log(value) / np.log(other.get()), **kwargs)
+        else:
+            name = '({1}**{0})'.format(self.name, other)
+            get_func = lambda **kwargs: other ** self.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(np.log(value) / np.log(other), **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
 
     
-class OffsetParameter(Parameter):
-    '''
-    A wrapper around a parameter that offsets the values assigned to and read 
-    from that parameter.
-    '''
-    def __init__(self, name, parameter, offset):
-        '''
-        Define an offset Parameter.
-        
-        Input:
-            parameter (Parameter) - linked parameter
-            offset (float, Parameter) - offset added to get() and subtracted 
-                before set()
-        '''
-        super(OffsetParameter, self).__init__(name,
-                                              set_func=parameter.set,
-                                              get_func=parameter.get,
-                                              dtype=parameter.dtype)
-        self._offset = offset
+class Parameter(ParameterBase):
+    """
+    Create a named parameter.
     
+    `Parameter` objects are used throughout uqtools to describe named variables 
+    of an experiment. Their main use is to give uqtools measurements access to 
+    (scalar) instrument settings via the `get_func` and `set_func` arguments.
+    Instead of a parameter name and a function for setting or getting a 
+    parameter, classes like :class:`~uqtools.control.Sweep` and
+    :class:`~uqtools.basics.ParameterMeasurement` take a single `Parameter`
+    object as the sweep coordinate or measured quantity. Without `get_func` and
+    `set_func`, `Parameter` functions as a simple buffer that can be used to
+    transfer data between measurements, e.g. to use a fit result as the central
+    point for a sweep.
+    
+    `Parameter` supports the -, +, *, /, ** and abs operations between two  
+    `Parameter` objects or between a `Parameter` and any other object. Every 
+    time `get()` of a `Parameter` that is the result of an expression is 
+    invoked, the current values of all `Parameter` operands is determined. When 
+    `set()` of such a `Parameter` is called, the leftmost `Parameter` appearing 
+    in the expression is set such that a subsequent `get()` on the expression 
+    returns the value set with `set()`. 
+    
+    Parameters
+    ----------
+    name : `str`
+        Name of the parameter for display, indexing dicts, column names in
+        returns and files etc.
+    set_func : `callable`, optional
+        `set_func(value, \*\*kwargs)` is called when the parameter is set.
+    get_func : `callable`, optional
+        `get_func(\*\*kwargs)` is called to retrieve the parameter value.
+    value : `any`
+        Initial value returned by `get()` if no `get_func` is defined.
+    options
+        Extra descriptive information. May be stored in data files.
+        
+    Examples
+    --------
+    Measuring a scalar device output.
+    
+    >>> import time
+    >>> timestamp = uqtools.Parameter('timestamp', get_func=time.time)
+    >>> measurement = uqtools.ParameterMeasurement(timestamp)
+    >>> measurement(output_data=True)
+            timestamp
+    0    1.429861e+09
+    
+    Sweeping a device input.
+    
+    >>> def set_voltage(voltage):
+    ...     # send some command to the device to set the voltage
+    ...     print 'voltage set to {0}.'.format(voltage)
+    >>> voltage = uqtools.Parameter('voltage', set_func=set_voltage)
+    >>> response = uqtools.Parameter('response', 
+    ...                              get_func=lambda: voltage.get()**2)
+    >>> measurement = uqtools.ParameterMeasurement(response)
+    >>> sw = uqtools.Sweep(voltage, np.linspace(0, 1, 3), measurement)
+    >>> sw()
+    voltage set to 0.0.
+    voltage set to 0.5.
+    voltage set to 1.0.
+       response
+    voltage    
+    0.0    0.00
+    0.5    0.25
+    1.0    1.00
+    
+    Parameter expressions.
+    
+    >>> rf_freq = uqtools.Parameter('rf frequency', value=8e9)
+    >>> if_freq = uqtools.Parameter('if frequency', value=100e6)
+    >>> lo_freq = rf_freq - if_freq
+    >>> lo_freq.get()
+    7900000000.0
+    >>> lo_freq.set(8e9)
+    >>> rf_freq.get()
+    8100000000.0
+
+    >>> centre = uqtools.Parameter('centre_frequency', value=5e9)
+    >>> range_ = centre + np.linspace(-100e6, 100e6, 5)
+    >>> range_.get()
+    array([  4.90000000e+09,   4.95000000e+09,   5.00000000e+09,
+             5.05000000e+09,   5.10000000e+09])
+    """
+    
+    def __init__(self, name, set_func=None, get_func=None, value=None, 
+                 **options):
+        super(Parameter, self).__init__(name, **options)
+        # assign self.get
+        if get_func is None:
+            def get(**kwargs):
+                return self.value
+        else:
+            @wraps(get_func)
+            def get(**kwargs):
+                return get_func(**kwargs)
+        self.get = get
+        # assign self.set
+        if set_func is None:
+            def set(value, **kwargs):
+                self.value = value
+        else:
+            @wraps(set_func)
+            def set(value, **kwargs):
+                set_func(value, **kwargs)
+                self.value = value
+        self.set = set
+        self.value = value
+    
+
+def OffsetParameter(name, parameter, offset):
+    """
+    `parameter` + `offset`
+    
+    Parameters
+    ----------
+    name : `str`
+        Name assigned to the sum.
+    """
+    p = parameter + offset
+    p.name = name
+    return p
+       
+def ScaledParameter(name, parameter, scale):    
+    """
+    `parameter` \* `scale`
+    
+    Parameters
+    ----------
+    name : `str`
+        Name assigned to the product.
+    """
+    p = parameter * scale
+    p.name = name
+    return p
+
+    
+class LinkedParameter(ParameterBase):
+    """
+    Define a parameter that sets all `params`.
+    
+    Parameters
+    ----------
+    params : `iterable` of `Parameter`
+        The parameters that are set on `set()`
+    """
+    def __init__(self, *params):
+        params = tuple(params)
+        if not len(params):
+            raise ValueError('At least one argument is required.')
+        self._params = params
+        super(LinkedParameter, self).__init__(name=params[0].name)
+
     @property
-    def offset(self):
-        if hasattr(self._offset, 'get'):
-            return self._offset.get()
-        else:
-            return self._offset
-    
-    def get(self):
-        ''' get value from linked parameter and apply offset '''
-        return self.get_func() + self.offset
-    
-    def set(self, value):
-        ''' apply offset to value and set linked parameter '''
-        return self.set_func(value - self.offset)
-    
-    
-    
-class LinkedParameter(Parameter):
-    def __init__(self, *parameters):
-        '''
-        Define linked Parameters.
-        Setting LinkedParameter sets all Parameters in *parameters.
-        
-        Input:
-            *parameters (iterable of Parameter) - linked parameters
-        '''
-        self.parameters = tuple(parameters)
-        if not len(self.parameters):
-            raise ValueError('At least one Parameter argument is required.')
-        p0 = self.parameters[0]
-        super(LinkedParameter, self).__init__(name=p0.name, dtype=p0.dtype)
+    def parameters(self):
+        return self._params
         
     def get(self):
-        ''' get value from first linked parameter '''
-        if len(self.parameters):
-            return self.parameters[0].get()
-        else:
-            return None
+        """Get value of the first parameter."""
+        return self._params[0].get()
 
     def set(self, value):
-        ''' set value on all linked parameters '''
-        for parameter in self.parameters:
-            parameter.set(value)
-    
-    
-    
-class ScaledParameter(Parameter):
-    '''
-    A wrapper around a parameter that scales the values assigned to and read 
-    from that parameter.
-    '''
-    def __init__(self, name, parameter, scale):
-        '''
-        Define a scaled Parameter
-        
-        Input:
-            parameter (Parameter) - linked parameter
-            scale (float, Parameter) - scaling factor for get()
-        '''
-        super(ScaledParameter, self).__init__(name,
-                                              set_func=parameter.set,
-                                              get_func=parameter.get,
-                                              dtype=parameter.dtype)
-        self._scale = scale
-    
-    @property
-    def scale(self):
-        if hasattr(self._scale, 'get'):
-            return self._scale.get()
-        else:
-            return self._scale
-    
-    def get(self):
-        ''' get linked parameter and scale result '''
-        return self.get_func()*self.scale
-    
-    def set(self, value):
-        ''' scale value and set linked parameter '''
-        return self.set_func(value/self.scale)
-
+        """Set value of all parameters."""
+        for param in self._params:
+            param.set(value)
     
     
 class TypedList(MutableSequence):
-    '''
-    A list that contains only elements compatible with a signature defined by 
-    a test function. Taylored towards Parameter and Measurement, a .name 
-    property is expected to be present for all elements.
-    '''
+    """
+    A list containing only elements found compatible by `is_compatible_func`.
+    
+    Taylored towards :class:`~uqtools.measurement.Measurement` and
+    :class:`Parameter`, some methods expect the elements to have a `name`
+    attribute. 
+
+    Parameters
+    ----------
+    is_compatible_func : `callable`
+        Function called to determine if an added object is of the expected type.
+    iterable : `iterable`
+        Initial contents of the list.
+    """
 
     def __init__(self, is_compatible_func, iterable=()):
-        '''
-        Create a new typed list.
-        
-        Input:
-            is_compatible_func: function called on each added object to test
-                if its type is compatible with the expected item type.
-            iterable: initial list contents
-        '''
         super(TypedList, self).__init__()
         self.is_compatible_item = is_compatible_func
         self.data = list()
         self.extend(iterable)
         
-        
     def __copy__(self):
-        ''' assign an independent list to self.data '''
+        """Return a shallow copy of the list."""
         return type(self)(self.is_compatible_item, self.data)
 
     def _check_compatible(self, obj):
-        ''' raise TypeError if obj is not of a compatible type. '''
+        """raise `TypeError` if `obj` is not compatible with the list."""
         if not self.is_compatible_item(obj):
-            raise TypeError('obj is of an incompatible type.')
+            raise TypeError('{0} is of an incompatible type.'.format(obj))
     
     def __getitem__(self, idx):
-        ''' element access by integer index or obj.name '''
+        """Access element by integer `idx` or name."""
         if isinstance(idx, int) or isinstance(idx, slice):
             return self.data.__getitem__(idx)
         for item in self.data:
             if item.name == idx:
                 return item
-        raise IndexError(idx)
+        raise KeyError(idx)
     
     def __setitem__(self, idx, obj):
-        ''' set item at idx. '''
+        """Set element at `idx`."""
         self._check_compatible(obj)
         self.data.__setitem__(idx, obj)
         
     def __delitem__(self, idx):
-        ''' remove item at idx. '''
+        """Remove element at `idx`."""
         self.data.__delitem__(idx)
     
     def __len__(self):
-        ''' return number of items. '''
+        """Return the number of elements."""
         return self.data.__len__()
 
     def insert(self, idx, obj):
-        ''' insert obj before idx. '''
+        """Insert `obj` before `idx`."""
         self._check_compatible(obj)
         self.data.insert(idx, obj)
 
+    def names(self):
+        """Return name attribute of all elements."""
+        return [obj.name for obj in self.data]
+
     def index(self, obj):
-        '''
-        Return first index of obj. If not found, try item.name for all items.
-        Raises ValueError if the obj is not found.
-        '''
+        """
+        Return the index of the first occurence of `obj`.
+        If `obj` is not an element of the list, return `names().index(obj)`.
+        """
         try:
             return self.data.index(obj)
-        except ValueError as err:
-            for idx, item in enumerate(self.data):
-                if item.name == obj:
-                    return idx
-            raise err
+        except ValueError:
+            return self.names().index(obj)
     
     def __contains__(self, obj):
-        ''' test if obj in self or obj==item.name for any item. '''
+        """Test if `obj` is in the list or `names()`."""
         try:
             self.index(obj)
         except ValueError:
@@ -259,21 +420,22 @@ class TypedList(MutableSequence):
             return self.data == other
     
     def __add__(self, other):
-        ''' addition operator '''
         result = copy(self)
         result.data = list(self.data)
         result.extend(other)
         return result
 
     def __radd__(self, other):
-        ''' addition operator '''
         result = copy(self)
         result.data = list(self.data)
         result.data = other+result.data
         return result
     
+    def __str__(self):
+        return '{0}({1})'.format(type(self).__name__, str(self.data))
+
     def _repr_pretty_(self, p, cycle):
-        ''' pretty representation for IPython '''
+        """IPython pretty representation of the list."""
         if cycle:
             p.text(super(TypedList, self).__repr__())
         else:
@@ -283,73 +445,63 @@ class TypedList(MutableSequence):
                         p.text(',')
                         p.breakable()
                     p.pretty(item)
-                    
-    def __repr__(self):
-        return '{0}({1})'.format(self.__class__.__name__, repr(self.data))
 
 
 class ParameterList(TypedList):
+    """A :class:`TypedList` containing :class:`Parameter` elements."""
     def __init__(self, iterable=()):
-        is_compatible_func = Parameter.is_compatible
-        super(ParameterList, self).__init__(is_compatible_func, iterable)
+        super(ParameterList, self).__init__(Parameter.is_compatible, iterable)
         
     def __copy__(self):
-        ''' assign an independent list to self.data '''
         return type(self)(self.data)
 
-    def values(self):
-        '''
-        Return the result of Parameter.get() called on all contained objects.
-        '''
-        return [parameter.get() for parameter in self.data]
+    def __setitem__(self, idx, obj):
+        """Set element at idx. `str` `obj` are converted to `Parameter`."""
+        if isinstance(obj, str):
+            obj = Parameter(obj)
+        super(ParameterList, self).__setitem__(idx, obj)
 
-    def names(self):
-        '''
-        Return Parameter.name of all contained objects.
-        '''
-        return [p.name for p in self.data]
+    def insert(self, idx, obj):
+        """Insert `obj` before `idx`. `str` `obj` are converted to `Parameter`"""
+        if isinstance(obj, str):
+            obj = Parameter(obj)
+        super(ParameterList, self).insert(idx, obj)
+
+    def values(self):
+        """Return result of `get()` of all elements as a list."""
+        return [parameter.get() for parameter in self.data]
 
 
 class ParameterDict(OrderedDict):
-    '''
-    An OrderedDict that accepts string keys as well as Parameter keys 
-    for read access.
-    '''
+    """
+    An :class:`OrderedDict <python:collections.OrderedDict>` with
+    :class:`Parameter` keys and read access by `Parameter` or `str`.
+    
+    .. note:: obsolete. `ParameterDict` was the default return type of 
+        :class:`Measurement` in old versions of uqtools.
+    """
+    
     def __getitem__(self, key):
-        '''
-        Retrieve an element by key.
-        
-        key can be a Parameter object or a string that is matched against
-        Parameter.name of all keys of the dictionary.  
-        '''
+        """Retrieve element by key. Key can be :class:`Parameter` or `str`."""
         try:
             # try key directly
             return OrderedDict.__getitem__(self, key)
         except KeyError as err:
-            # compare key to .name property of items
-            #if hasattr(key, 'name'): 
-            #    key = key.name
             for parameter in self.keys():
                 if parameter.name == key:
-                    return OrderedDict.__getitem__(self, parameter)
+                    return super(ParameterDict, self).__getitem__(parameter)
             raise err
 
     def keys(self):
-        '''
-        Return a ParameterList of the keys of self.
-        '''
+        """Return a :class:`ParameterList` of the keys of self."""
         return ParameterList(super(ParameterDict, self).keys())
 
     def names(self):
-        '''
-        Return Parameter.name of all contained objects.
-        '''
-        return [p.name for p in super(ParameterDict, self).keys()]
+        """Return the name attributes of all keys."""
+        return self.keys().names()
     
     def __eq__(self, other):
-        '''
-        Check if all items are equal. Don't check order.
-        '''
+        """Check if all items are equal. Does not check order."""
         # check that other is dict-like with the same number of keys
         if not hasattr(other, 'keys'):
             return False
@@ -360,12 +512,12 @@ class ParameterDict(OrderedDict):
             if key not in super(ParameterDict, self).keys():
                 return False
             # compare values
-            if numpy.any(self[key] != other[key]):
+            if np.any(self[key] != other[key]):
                 return False
         return True
 
     def _repr_pretty_(self, p, cycle):
-        ''' pretty representation for IPython '''
+        """IPython pretty representation of the dict."""
         if cycle:
             p.text(self.__repr__())
         else:
@@ -377,44 +529,3 @@ class ParameterDict(OrderedDict):
                     p.pretty(item[0])
                     p.text(': ')
                     p.pretty(item[1])
-    
-    
-    
-def coordinate_concat(*css):
-    '''
-    Concatenate coordinate matrices in a memory-efficient way.
-    
-    Input:
-        *css - any number of ParameterDicts with coordinate matrices
-    Output:
-        a single ParameterDict of coordinate matrices
-    '''
-    # check inputs
-    for cs in css:
-        for k, c in cs.iteritems():
-            if not isinstance(c, numpy.ndarray):
-                c = numpy.array(c)
-                cs[k] = c
-            if not c.ndim == len(cs):
-                raise ValueError('the number dimensions of each coordinate '+
-                                 'matrix must be equal to the number of '+
-                                 'elements in the dictionary that contains it.')
-    # calculate total number of dimensions
-    ndim = sum(len(cs) for cs in css)
-    # make all arrays ndim dimensional with their non-singleton indices in the right place
-    reshaped_cs = []
-    pdim = 0
-    for cs in css:
-        for k, c in cs.iteritems():
-            newshape = numpy.ones(ndim)
-            newshape[pdim:(pdim+c.ndim)] = c.shape
-            reshaped_c = numpy.reshape(c, newshape)
-            reshaped_cs.append(reshaped_c)
-        pdim = pdim + len(cs)
-    # broadcast arrays using numpy.lib.stride_tricks
-    reshaped_cs = numpy.broadcast_arrays(*reshaped_cs)
-    # build output dict
-    ks = []
-    for cs in css:
-        ks.extend(cs.keys())
-    return ParameterDict(zip(ks, reshaped_cs))

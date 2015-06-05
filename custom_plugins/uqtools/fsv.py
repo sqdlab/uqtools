@@ -1,22 +1,36 @@
-# Measurements using the Rohde&Schwarz FSV spectrum analyzer
-import numpy
-import contextlib
+"""
+Rohde & Schwarz FSV spectrum analyzer support.
+"""
 
-from .parameter import Parameter, ParameterDict
-from .measurement import Measurement
+# Measurements using the Rohde&Schwarz FSV spectrum analyzer
+from __future__ import absolute_import
+import logging
+
+import numpy as np
+import pandas as pd
+
+from . import Parameter, Measurement
 
 class FSVMeasurement(Measurement):
+    """
+    A measurement that performs single shot acquisition on a Rohde & Schwarz
+    FSV spectrum analyzer.
+    
+    The measurement sets the device to single shot mode, performs and waits for
+    data acquisition to finish. It does not retrieve any data,
+    :class:`~uqtools.basics.ParameterMeasurement` can be used for that.
+    
+    Parameters
+    ----------
+    fsv : `Instrument`
+        Rohde & Schwarz FSV instrument
+    m : `Measurement`, optional
+        Measurement run when the device has finished acquisition.
+    timeout : float
+        Maximum time to wait for the device to finish.
+    """
+    
     def __init__(self, fsv, m=None, timeout=None, **kwargs):
-        '''
-        Start a measurement on a Rohde&Schwarz FSV spectrum analyzer 
-        and wait for it to finish.
-        
-        Input:
-            fsv (Instrument): Rohde&Schwarz FSV instrument
-            m (Measurement, optional): nested measurement
-            timeout (float): maximum time to wait for the measurement to finish
-                before returning
-        '''
         super(FSVMeasurement, self).__init__(**kwargs)
         self.fsv = fsv
         self.timeout = timeout
@@ -34,12 +48,8 @@ class FSVMeasurement(Measurement):
         if len(ms):
             return ms[0](nested=True, **kwargs)
         else:
-            return {}, {}
+            return None
 
-    def _create_data_files(self):
-        ''' never creates data files '''
-        pass
-        
     def _start(self):
         self.fsv.sweep_start()
         
@@ -50,18 +60,24 @@ class FSVMeasurement(Measurement):
             logging.warning(__name__+': '+message)
             if hasattr(self, '_data') and hasattr(self._data, 'add_comment'):
                 self._data.add_comment(message)
+
         
 class FSVTrace(FSVMeasurement):
+    """
+    A measurement that retrieves a data trace from a Rohde & Schwarz FSV
+    spectrum analyzer.
+    
+    Parameters
+    ----------
+    fsv : `Instrument`
+        Rohde & Schwarz FSV instrument
+    trace : `int`
+        Trace to retrieve, 1 to 4.
+    timeout : `float`
+        Maximum time to wait for acquisition to finish before retrieving data.
+    """
+
     def __init__(self, fsv, trace=1, timeout=None, **kwargs):
-        '''
-        Record a data trace measured by a Rohde&Schwarz FSV spectrum analyzer
-        
-        Input:
-            fsv (Instrument) - Rohde&Schwarz FSV instrument
-            trace (int) - trace to record, 1..4
-            timeout (float) - maximum time to wait for the measurement to finish
-                before retrieving data
-        '''
         super(FSVTrace, self).__init__(fsv, timeout, **kwargs)
         self.trace = trace
         # TODO: the axes may be different in some modes
@@ -69,25 +85,20 @@ class FSVTrace(FSVMeasurement):
             self.coordinates.append(Parameter('frequency'))
             self.values.append(Parameter('data', unit=fsv.get_unit()))
 
-    def _create_data_files(self):
-        ''' never creates data files '''
-        super(FSVMeasurement, self)._create_data_files()
-
     def _measure(self, **kwargs):
         # start a new measurement
         self._start()
         # calculate frequency points
         # (get_frequencies returns the frequencies truncated to float32, which
         #  provides insufficient precision in some cases)
-        xs = numpy.linspace(self.fsv.get_freq_start(), 
-                            self.fsv.get_freq_stop(), 
-                            self.fsv.get_sweep_points())
+        xs = np.linspace(self.fsv.get_freq_start(), 
+                         self.fsv.get_freq_stop(), 
+                         self.fsv.get_sweep_points())
+        index = pd.Index(xs, name=self.coordinates[0].name)
         # wait for measurement to finish
         self._wait()
         # retrieve data, save to file and return
         ys = self.fsv.get_data(self.trace)
-        self._data.add_data_point(xs, ys, newblock=True)
-        return (
-            ParameterDict(zip(self.coordinates, (xs,))), 
-            ParameterDict(zip(self.values, (ys,)))
-        )    
+        frame = pd.DataFrame([ys], index=index, columns=self.values.names()[:1])
+        self.store.append(frame)
+        return frame

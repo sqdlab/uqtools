@@ -1,10 +1,13 @@
-from pytest import fixture, raises 
+from pytest import fixture, raises, mark 
+
+import logging
 
 from uqtools import RevertInstrument, SetInstrument, RevertParameter, SetParameter
-from uqtools import nested, NullContextManager, SimpleContextManager
+from uqtools import nested, SimpleContextManager
 from uqtools import Parameter
+from uqtools import debug
 
-from .lib import CountingContextManager
+from .lib import CountingContextManager, CaptureLog
 
 class Instrument:
     ''' dummy instrument with an interface compatible with qtlab '''
@@ -70,10 +73,12 @@ class TestSetInstrument:
         SetInstrument(instrument, power=10)
         with raises(TypeError):
             SetInstrument(None, power=10)
-        with raises(KeyError):
+        with CaptureLog() as log:
             SetInstrument(instrument, voltage=0, frequency=2e9)
-        with raises(KeyError):
+            assert 'not support' in log.messages
+        with CaptureLog() as log:
             SetInstrument(instrument, 'voltage', 0, 'frequency', 2e9)
+            assert 'not support' in log.messages
             
     def test_operation(self, instrument):
         ctx = SetInstrument(instrument, power=10)
@@ -108,6 +113,15 @@ class TestSetInstrument:
             assert instrument.get('power') == 10
         assert instrument.get('power') == 0
         
+    def test_revert_None(self, instrument):
+        instrument.set('power', None)
+        ctx = RevertInstrument(instrument, power=10)
+        with CaptureLog() as log:
+            with ctx:
+                assert instrument.get('power') == 10
+            assert 'None' in log.messages
+        assert instrument.get('power') == 10
+
     def test_revert_nested(self, instrument):
         ctx = RevertInstrument(instrument, power=10)
         with ctx:
@@ -115,6 +129,27 @@ class TestSetInstrument:
             with ctx:
                 assert instrument.get('power') == 10
         assert instrument.get('power') == 0
+        
+    def test_debug_set(self, instrument):
+        ctx = SetInstrument(instrument, power=10)
+        with debug(), CaptureLog() as log:
+            with ctx:
+                assert 'Set power' in log.messages
+
+    def test_debug_revert(self, instrument):
+        ctx = RevertInstrument(instrument, power=10)
+        with debug(), CaptureLog() as log:
+            with ctx:
+                assert 'Set power' in log.messages
+            assert 'Reverted power' in log.messages
+            
+    def test_find_name(self, instrument):
+        ctx = SetInstrument(instrument, power=10)
+        import __main__
+        __main__.myctx = ctx
+        ctx._find_name()
+        assert ctx.name == 'myctx'
+        
 
 
 @fixture
@@ -127,6 +162,7 @@ class TestSetParameter:
         with raises(TypeError): 
             SetParameter(None, 10)
         SetParameter(parameter, 10, parameter, 10)
+        SetParameter({parameter: 10})
         
     def test_parameter_arg(self, parameter):
         p = Parameter('p')
@@ -135,7 +171,10 @@ class TestSetParameter:
         with ctx:
             assert parameter.get() == 10
 
-    def test_set(self, parameter):
+    @mark.parametrize('args',
+                      [(parameter, 10), {parameter: 10}],
+                      ids=['args', 'dict'])
+    def test_set(self, parameter, args):
         ctx = SetParameter(parameter, 10)
         parameter.set(0)
         with ctx:
@@ -153,14 +192,6 @@ class TestSetParameter:
     # Parameter classes -- no surprises expected
 
 
-class TestNullContextManager:
-    def test(self):
-        # make sure it is a valid context manager
-        ctx = NullContextManager()
-        with ctx:
-            pass
-
-       
 class TestSimpleContextManager:
     def test_init_parameter(self, parameter):
         # invalid parameter
@@ -176,12 +207,24 @@ class TestSimpleContextManager:
         # valid instrument
         SimpleContextManager((instrument, 'power', 10))
         
+    def test_init_bogus(self, parameter):
+        with raises(ValueError):
+            SimpleContextManager((parameter, ))
+        with raises(ValueError):
+            SimpleContextManager((parameter, 1, 2, 3))
+
     def test_init_contextmanager(self, parameter, instrument):
         # invalid SimpleContextManager
         with raises(ValueError):
             SimpleContextManager(None)
         # valid SimpleContextManager
         SimpleContextManager(SimpleContextManager((parameter, 10)))
+        
+    def test_init_contextmanager_revert_missmatch(self, parameter):
+        ctx = SimpleContextManager((parameter, 10), restore=True)
+        with CaptureLog() as log:
+            SimpleContextManager(ctx, restore=False)
+            assert 'restore' in log.messages
         
     def test_reverting_instrument(self, instrument):
         ctx = SimpleContextManager((instrument, 'power', 10))
@@ -195,14 +238,23 @@ class TestSimpleContextManager:
         with ctx:
             assert parameter.get() == 10
         assert parameter.get() == 0
-        
+    
     def test_call(self, parameter):
-        ctx = SimpleContextManager((parameter, 10))
+        ctx = SimpleContextManager((parameter, 10), restore=False)
         parameter.set(0)
         ctx()
         assert parameter.get() == 10
+        
+    def test_call_restore(self, parameter):
+        ctx = SimpleContextManager((parameter, 10), restore=True)
+        with raises(RuntimeError):
+            ctx()
 
-    # SimpleContextManager is now deprecated.
-    # a few things known to be broken are not tested:
-    # - revert when nesting
-    # - revert when SimpleContextManagers are arguments to other SimpleContextManagers
+    def test_reenter(self, parameter):
+        ctx = SimpleContextManager((parameter, 10))
+        parameter.set(0)
+        with ctx:
+            with raises(RuntimeError):
+                with ctx:
+                    pass
+        assert parameter.get() == 0

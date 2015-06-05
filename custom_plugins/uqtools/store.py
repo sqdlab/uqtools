@@ -1,4 +1,29 @@
+"""
+Data storage backends.
+
+The :class:`Store` hierarchy of classes is responsible for storing measured
+data. Stores are `dict-like` objects that can store, append to and retrieve
+:class:`pandas.DataFrame` objects and additional attributes.
+
+uqtools currently supports 2.5 storage backends, :class:`MemoryStore`,
+:class:`CSVStore` and :class:`HDFStore` that hold data in RAM, text
+(comma-separated value) files and HDF5 files, respectively. The storage
+backend is configurable through the `store` and `store_kwargs` variables in
+:mod:`~uqtools.config`.
+
+Users subclassing :class:`~uqtools.measurement.Measurement` interact mainly
+with :class:`MeasurementStore` through `self.store`, which is a view into the
+root store of the currently executing measurement with an automatic prefix to
+keys that corresponds to the location of `self` in the measurement tree.
+Saving data can be as simple as calling `self.store.append(frame)`.
+"""
+
 from __future__ import absolute_import
+
+__all__ = ['Store', 'MemoryStore', 'CSVStore', 'HDFStore', 'StoreFactory',
+           'StoreView', 'MeasurementStore', 'JSONDict']
+# JSONDict, DateTimeGenerator, file_name_generator
+
 import os
 import time
 import re
@@ -6,18 +31,27 @@ import gzip
 from abc import abstractmethod
 from functools import wraps
 from contextlib import contextmanager
-from collections import OrderedDict
 import types
 import json
 
 import pandas as pd
 import numpy as np
 
-from . import config, Parameter, ParameterDict
+from .import config
 from .helpers import sanitize, DocStringInheritor, CallbackDispatcher
 from .pandas import (pack_complex, pack_complex_decorator, 
                      unpack_complex, unpack_complex_decorator, 
                      index_concat)
+
+def sanitize_key(key):
+    """Remove leading and double separators from `key`."""
+    if not isinstance(key, str) and not isinstance(key, unicode):
+        raise TypeError('String key expected.')
+    # remove leading and double but not trailing separators 
+    key_parts = key.split('/')
+    key_parts = [subkey for idx, subkey in enumerate(key_parts) 
+                 if subkey or (idx == len(key_parts)-1)]
+    return '/'.join(key_parts)
 
 #
 #
@@ -25,16 +59,31 @@ from .pandas import (pack_complex, pack_complex_decorator,
 #
 #
 class JSONDict(dict):
-    def __init__(self, filename, sync=True):
-        '''
-        A dictionary that serializes its items with JSON and saves them to
-        a file.
+    """
+    A dict that serializes its items with JSON and saves them to a file.
+    
+    Parameters
+    ----------
+    filename : `str`
+        Name of the file in which the data is stored.
+    sync : `bool`
+        If True, changes to the dictionary are immediately flushed to disk.
         
-        Input:
-            filename (str) - File in which the data is stored.
-            sync (bool) - If True, changes to the dictionary are immediately
-                flushed to disk.
-        '''
+    Notes
+    -----
+    Automatic serialization only happens when items are added, set or removed.
+    `JSONDict` does not detect changes to attributes or elements of contained
+    objects.
+    
+    Examples
+    --------
+    `JSONDict` has an optional context manager interface.
+    
+    >>> with uqtools.store.JSONDict('demo.json', sync=False) as jd:
+    ...     jd['key'] = 'value'
+    """
+    
+    def __init__(self, filename, sync=True):
         self.filename = filename
         self.sync = sync
         if os.path.isfile(filename):
@@ -47,14 +96,14 @@ class JSONDict(dict):
         self.close()
 
     def flush(self):
-        '''Serialize current contents to stream.'''
+        """Serialize current contents to stream."""
         json.dump(self, open(self.filename, 'w'), indent=4, default=repr)
         
     close = flush
     
     #@staticmethod
     def _flushing(function):
-        '''Decorator that adds calls to flush() to write operations.'''
+        """Decorator that adds calls to `flush()` to write operations."""
         #@wraps(function)
         def flushing_function(self, *args, **kwargs):
             result = function(self, *args, **kwargs)
@@ -76,76 +125,189 @@ class JSONDict(dict):
 #
 #
 class Store(object):
-    ''' A dict-like store for DataFrame objects. '''
+    """
+    A dict-like store for DataFrame objects.
+        
+    Parameters
+    ----------
+    directory : `str`
+        Root directory of the store.
+    filename : `str`
+        Basename of the store's container file.
+    title : `str`
+        Store title.
+        
+    Note
+    ----
+    Subclasses must support at least the `directory`, `filename` and `title`
+    arguments, but can ignore their values if they are not relevant for the
+    type of store.
+    
+    
+    .. rubric:: Method summary
+    
+    :meth:`put`, :meth:`append`, :meth:`get`, :meth:`select`, :meth:`remove`
+        Set, append to, get all or parts of and remove element `key`.
+    :meth:`__getitem__`, :meth:`__setitem__`, :meth:`__delitem__`
+        Indexing with square brackets.
+    :meth:`keys`
+        Get the keys of all items.
+    :meth:`attrs`
+        Access attribute dictionary for `key`.
+    :meth:`close`, :meth:`open`, :meth:`flush`
+        Close and reopen the store, commit pending writes.
+    :meth:`directory`, :meth:`filename`, :meth:`url`
+        Get the directory name, file name and url of element `key`.
+    
+    Notes
+    -----
+    The :meth:`directory` and :meth:`filename` methods return the directories
+    and file names where the store saves data. They may return None if the
+    store does not create files or point to the same location for all keys if 
+    all data is stored in a single file. Thus, they are of limited use if extra
+    files are to be stored along with the data files. :class:`MeasurementStore`
+    avoids this by requesting the root directory and creating its own directory
+    hierarchy when :meth:`~uqtools.store.MeasurementStore.directory` or
+    :meth:`~uqtools.store.MeasurementStore.filename` are invoked.
+    
+    Examples
+    --------
+    Stores support indexing with square brackets, and the `in` and `len`
+    operations.
+    
+    >>> store = uqtools.store.MemoryStore()
+    >>> frame = pd.DataFrame({'A': [1, 2], 'B': [3, 4]},
+    ...                      pd.Index([0, 1], name='x'))
+    >>> store['/data'] = frame
+    >>> store.keys()
+    ['/data']
+    >>> store['/data']
+       A  B
+    x      
+    0  1  3
+    1  2  4
+    >>> del store['/data']
+    >>> '/data' in store
+    False
+    
+    The :meth:`get`, :meth:`put` and :meth:`remove` are equivalent to the
+    indexing operations and `del`. In addition, the :meth:`append` method
+    allows appending to a table and :meth:`select` allows reading a subset
+    of a table.
+    
+    >>> store = uqtools.store.MemoryStore()
+    >>> def frame_func(x):
+    ...     return pd.DataFrame({'x+1': [x+1], 'x**2': [x**2]},
+    ...                         pd.Index([x], name='x'))
+    >>> for x in range(5):
+    ...     store.append('/data', frame_func(x))
+    >>> store.select('/data', '(x == 2) | (x == 3)')
+       x**2  x+1
+    x           
+    2     4    3
+    3     9    4
+    
+    The :meth:`attrs` method returns an attribute dictionary that is stored
+    along with the data. Any type can be stored in the dictionary, but some 
+    types may not survive a round trip. The supported types vary by subclass.
+    
+    >>> store = uqtools.store.CSVStore('store')
+    >>> store['/data'] = pd.DataFrame({'A': [0]})
+    >>> store.attrs('/data')['string'] = "I'm a comment."
+    >>> store.attrs('/data')['list'] = [0., 0.25, 0.5, 0.75, 1.]
+    >>> store.attrs('/data')['array'] = np.linspace(0, 1, 5)
+    >>> store.attrs('/data')
+    {u'array': u'array([ 0.  ,  0.25,  0.5 ,  0.75,  1.  ])',
+     u'list': [0.0, 0.25, 0.5, 0.75, 1.0],
+     u'string': u"I'm a comment."}
+    """
+    
     #__metaclass__ = ABCMeta
     __metaclass__ = DocStringInheritor # includes ABCMeta
     
     @abstractmethod
+    def __init__(self, directory, filename, title=None):
+        pass
+    
+    @abstractmethod
     def directory(self, key):
-        ''' Return the directory where data for key is stored. '''
+        """Return the directory where data for `key` is stored."""
         pass
     
     @abstractmethod
     def filename(self, key):
-        ''' Return the name of the file that stores the data for key. '''
+        """Return the name of the file that stores the data for `key`."""
         pass
     
     def url(self, key):
-        ''' Return the URL of key. '''
+        """Return the URL of `key`."""
         return None
     
     @abstractmethod
     def keys(self):
-        ''' Return the keys of all elements in the store. '''
-        raise NotImplementedError()
+        """Return the keys of all elements in the store."""
+        pass
     
     def attrs(self, key):
-        ''' Retrieve attribute dictionary for key. '''
+        """Retrieve attribute dictionary for `key`."""
         return {}
 
     @abstractmethod
     def put(self, key, value):
-        ''' Set item at key to value. '''
+        """Set element `key` to `value`."""
         pass
     
     @abstractmethod
     def get(self, key):
-        ''' Get item at key. '''
+        """Get element `key`."""
         pass
 
     @abstractmethod
     def append(self, key, value):
-        ''' Append value to the data stored at key. '''
+        """Append `value` to element `key`."""
         pass
     
     def select(self, key, where=None, start=None, stop=None, **kwargs):
-        '''
-        Select data in key that satisfies condition where.
+        """
+        Select data of element `key` that satisfies the `where` condition.
         
-        Input:
-            key (str) - Location of the data in the store.
-            where (str) - Query string. Will typically allow simple expressions
-                involving the index names and possibly data columns.
-            start (int) - First row of data returned.
-            stop (int) - Last row of data returned.
-                start and stop are applied before selection by where.
-        '''
-        raise NotImplementedError()
+        Parameters
+        ----------
+        key : `str`
+            Location of the data in the store.
+        where : `str`
+            Query string. Will typically allow simple expressions involving
+            the index names and possibly data columns.
+        start : `int`
+            First row of data returned.
+        stop : `int`
+            Last row of data returned.
+            
+        Notes
+        -----
+        `start` and `stop` are applied before selection by `where`.
+        """
+        if (start is not None) or (stop is not None):
+            raise NotImplementedError('start, stop are not implemented.')
+        frame = self.get(key)
+        if where is not None:
+            return frame.query(where)
+        return frame
         
     def remove(self, key):
-        ''' Delete item stored at key. '''
+        """Delete element `key`."""
         pass
     
     def open(self):
-        ''' Allocate resources required to access the store. (Open file.) '''
+        """Allocate resources required to access the store. (Open file.)"""
         pass
     
     def close(self):
-        ''' Free resources required to access the store. (Close file.) '''
+        """Free resources required to access the store. (Close file.)"""
         pass
     
     def flush(self):
-        ''' Carry out any pending write operations. '''
+        """Carry out any pending write operations."""
         pass
     
     def __getitem__(self, key):
@@ -164,40 +326,23 @@ class Store(object):
         return len(self.keys())
 
 
-
-class DummyStore(Store):
-    ''' Minimal do-nothing implementation of Store. '''
-    def __init__(self, **kwargs):
-        pass
-    
-    def directory(self, key):
-        return None
-    
-    def filename(self, key):
-        return None
-    
-    def keys(self):
-        return []
-    
-    def put(self, key, value):
-        pass
-    
-    def get(self, key):
-        pass
-    
-    def append(self, key, value):
-        pass
-
-
-
 class MemoryStore(Store):
+    """
+    A memory-based store for pandas objects.
+    
+    `MemoryStore` supports fast append operations by keeping appended objects
+    in concatenation queues and only performing the costly reallocation and
+    concatenation once the objects are retrieved.
+    
+    Because the store is not filesystem-based, the `directory`, `filaname` and
+    `url` methods always return None.
+    
+    Parameters
+    ----------
+    directory, filename, title: `any`
+        Ignored.
+    """
     def __init__(self, directory=None, filename=None, title=None):
-        '''
-        An in-memory store for DataFrames.
-        
-        Input:
-            All arguments are ignored.
-        '''
         self.data = {}
         self._attrs = {}
         # concatenation queues
@@ -213,6 +358,10 @@ class MemoryStore(Store):
         return self.data.keys()
     
     def attrs(self, key):
+        """Return attribute dictionary for `key`.
+        
+        Returns a `dict` object, any type can be safely stored and retrieved.
+        """
         return self._attrs[key]
 
     def put(self, key, value):
@@ -263,41 +412,41 @@ class MemoryStore(Store):
         return '\n'.join(parts)
 
 
-
 class CSVStore(Store):
-    ''' 
-    A Store for DataFrame objects that saves data to comma-separated value files  
-    in directory hierarchy.
-    '''
+    """
+    Store data in a directory hierarchy of comma-separated value files.
+
+    Parameters
+    ----------
+    directory : `str`
+        Root directory of the store.
+    filename : `any`, optional
+        Ignored.
+    mode : `str`, optional
+        Ignored for files, directories are created for write modes.
+    ext : `str`, default '.dat'
+        File name extension for data files. If `ext` ends in '.gz', files are
+        transparently compressed and decompressed with :mod:`gzip <Python:gzip>`.
+    sep : `str`, optional
+        Path separator for file names inside the store.
+        keys always use '/' as the separator.
+    unpack_complex : `bool`, optional
+        If True, save complex columns as pairs of real columns.
+    complevel : `int`
+        Compression level from 0 to 9 if compression is enabled.
+    """
+    
     series_transpose = False
     
     def __init__(self, directory, filename=None, mode=None, title=None,
                  ext='.dat', sep=os.sep, unpack_complex=True,
                  complevel=9):
-        '''
-        Initialize a hierarchical CSV file store for pandas DataFrame and Series
-        in filesystem path.
-        
-        Input:
-            directory (str) - base directory of the store
-            filename (str) - ignored
-            mode (str) - ignored for files, path is created for write modes
-            comment (str) - string saved in comment file
-            ext (str) - extension of data files. if ext ends in .gz, files are
-                transparently compressed and decompressed with gzip.
-            sep (str) - path separator for file names inside the store.
-                keys always use '/' as the separator.
-            unpack_complex (bool) - if True, save complex columns as pairs of
-                real columns.
-            complevel (int) - compression level from 0 to 9 if compression is
-                enabled.
-        '''
         # create containing directory in write modes
         self._directory = directory 
         if (mode is None) or ('r' not in mode):
             if not os.path.isdir(directory):
                 os.makedirs(directory)
-        # write comment to file
+        # write title to file
         if title is not None:
             self.title = title
         self.sep = sep
@@ -307,6 +456,7 @@ class CSVStore(Store):
         
     @property
     def title(self):
+        """Read or write contents of '/title.txt'."""
         fn = os.path.join(self._directory, 'title.txt')
         if not os.path.isfile(fn):
             return None
@@ -321,42 +471,37 @@ class CSVStore(Store):
             buf.write(title)
 
     def attrs(self, key):
-        '''return a dict-like object that stores attributes in a file.'''
+        """Return attribute dictionary for `key`.
+        
+        Returns a :class:`JSONDict`. Any attribute whose type does not map to
+        a JSON type is converted to its string `repr`.
+        """
         if key in self:
-            return JSONDict(self.filename(key, '.txt'))
+            return JSONDict(self.filename(key, '.json'))
         else:
             raise KeyError(key)
-
-    def _map_key(self, key, drop=0, ext=''):
-        ''' calculate file or directory name for key '''
-        if not isinstance(key, str):
-            raise TypeError('String key expected.')
-        # remove leading and double but not trailing separators 
-        key_parts = key.split('/')
-        key_parts = [subkey for idx, subkey in enumerate(key_parts) 
-                     if subkey or (idx == len(key_parts)-1)]
-        # remove drop path components
-        key_parts = key_parts[:len(key_parts)-drop]
-        # use custom path separator (set to suppress directory generation) 
-        key = '/'.join(key_parts)
-        key = key.replace('/', self.sep)
-        # concatenate with base directory and extension
-        return os.path.join(self._directory, key) + ext
-        
+    
     def directory(self, key=None):
-        ''' calculate directory name for key '''
-        return self._map_key('' if key is None else key, drop=1)
+        """Calculate directory name for `key`."""
+        return os.path.dirname(self.filename(key, ''))
 
     def filename(self, key=None, ext=None):
-        ''' calculate file name for key. '''
-        return self._map_key('' if key is None else key, 
-                             ext=self.ext if ext is None else ext)
-        
+        """
+        Calculate file name for `key` with optional alternative extension `ext`.
+        """
+        filename = sanitize_key(key) if key else ''
+        # use custom path separator (set to suppress directory generation) 
+        filename = filename.replace('/', self.sep)
+        # concatenate with base directory and extension
+        if ext is None:
+            ext = self.ext
+        return os.path.join(self._directory, filename) + ext
+
     def url(self, key=None):
         return 'file:///' + self.filename(key).replace('\\', '/')
     
     def _open(self, path, mode='r'):
-        ''' create directory and open file. transparently support .gz files. '''
+        """Create directory and open file. Transparently supports .gz files."""
         # auto-create directory in write modes
         if ('w' in mode) or ('a' in mode):
             dirname = os.path.dirname(path)
@@ -369,12 +514,12 @@ class CSVStore(Store):
             return open(path, mode)
 
     def __contains__(self, key):
-        '''check if a file is contained in the store '''
+        """Check if a file is contained in the store."""
         return os.path.isfile(self.filename(key))
         
     def iterkeys(self):
         ''' 
-        iterate over the relative path names of all data files in the store
+        Iterate over the relative path names of all data files in the store.
         '''
         for root, _, files in os.walk(self._directory):
             root = root[len(self._directory)+1:]
@@ -386,12 +531,12 @@ class CSVStore(Store):
     
     def keys(self):
         ''' 
-        return the relative path names of all data files in the store
+        Return the relative path names of all data files in the store.
         '''
         return list(self.iterkeys())
 
     def _read_header(self, buf):
-        ''' read QTLab format CSV file header from buffer '''
+        """Read QTLab style CSV file header from `buf`."""
         comments = []
         column = None
         columns = []
@@ -423,7 +568,7 @@ class CSVStore(Store):
         return columns, comments, lines
 
     def _write_header(self, buf, value):
-        ''' append csv header to buffer '''
+        """Append QTLab style CSV header to `buf`."""
         buf.write('# Timestamp: {0}\n'.format(time.asctime()))
         comments = []
         for idx, name in enumerate(value.index.names):
@@ -439,11 +584,11 @@ class CSVStore(Store):
             buf.write('# {0}\n'.format(comment))
 
     def _write_data(self, buf, value):
-        ''' append csv data to buffer '''
+        """Append csv data to `buf`"""
         value.to_csv(buf, sep='\t', header=False)
         
     def _to_frame(self, value):
-        ''' Convert value to DataFrame. '''
+        """Convert `value` to DataFrame and unpack complex columns."""
         if hasattr(value, 'to_frame'):
             if (value.ndim == 1) and self.series_transpose:
                 value = value.to_frame().T
@@ -454,14 +599,14 @@ class CSVStore(Store):
         return value
     
     def put(self, key, value):
-        ''' overwrite csv file key with data in value '''
+        """Overwrite csv file `key` with data in `value`."""
         value = self._to_frame(value)
         with self._open(self.filename(key), 'w') as buf:
             self._write_header(buf, value)
             self._write_data(buf, value)
     
     def append(self, key, value):
-        ''' append data in value to csv file key '''
+        """Append data in `value` to csv file `key`."""
         must_write_header = not key in self
         value = self._to_frame(value)
         with self._open(self.filename(key), 'a') as buf:
@@ -470,21 +615,30 @@ class CSVStore(Store):
             self._write_data(buf, value)
         
     def get(self, key):
-        ''' retrieve data in csv file key '''
+        """Retrieve data in csv file `key`."""
         return self.select(key)
         
     def select(self, key, where=None, start=None, stop=None, **kwargs):
-        ''' 
-        retrieve data with additional options. 
+        """
+        Select data of element `key` that satisfies the `where` condition.
         
-        Input:
-            key (str) - csv file key
-            where (str) - query string passed to DataFrame.query.
-                Note that CSVStore performs selection after loading
-                the file. 
-            start (int) - first line loaded from the file
-            stop (int) - last line loaded from the file (not inclusive)
-        '''
+        Parameters
+        ----------
+        key : `str`
+            Location of the data within the store.
+        where : `str`
+            Query string passed to DataFrame.query.
+        start : `int`
+            Index of the first line loaded from file.
+        stop : `int`
+            Index of the line after the last line loaded from file.
+        kwargs
+            passed to `pandas.read_csv`.
+        
+        Note
+        ----
+        The `where` condition is evaluated after the file has been loaded.
+        """
         if (where is not None) and ('iterator' in kwargs):
             raise NotImplementedError('The where and iteratore arguments can ' + 
                                       'currently not be used together.')
@@ -520,7 +674,7 @@ class CSVStore(Store):
         if key not in self:
             raise KeyError('No object named {0} found in the store'.format(key))
         os.unlink(self.filename(key))
-        attr_file = self.filename(key, '.txt')
+        attr_file = self.filename(key, '.json')
         if os.path.isfile(attr_file):
             os.unlink(attr_file)
                     
@@ -544,12 +698,26 @@ class CSVStore(Store):
             parts.append('Keys: ' + str(keys))
         return '\n'.join(parts)
     
-    
 
 class HDFStore(pd.HDFStore, Store):
     '''
-    pandas HDFStore with automatic conversion of complex columns into pairs of
-    real columns when writing and vice versa.
+    A pandas HDFStore that converts complex columns into pairs of real columns
+    when writing.
+    
+    Parameters
+    ----------
+    directory : `str`
+        Root directory of the store.
+    filename : `str`
+        Name of the HDF5 file.
+    mode : `str`
+        File `open()` mode
+    title : `str`
+        Title of property of the HDF5 file.
+    ext : `str`
+        File name extension of the HDF5 file.
+    kwargs
+        Passed to parent constructor.
     '''
     def __init__(self, directory, filename, mode=None, title=None, ext='.h5', **kwargs):
         # create containing directory in write modes
@@ -584,17 +752,26 @@ class HDFStore(pd.HDFStore, Store):
 
     
 class StoreFactory(object):
-    ''' Store factory. '''
+    """Store factory."""
     classes = {}
     # auto-discovery of Store subclasses
     for key, cls in globals().iteritems():
         if (isinstance(cls, (type, types.ClassType)) and
             issubclass(cls, Store) and (cls != Store)):
             classes[key] = cls
+    del cls
 
     @staticmethod
     def factory(name, **kwargs):
-        ''' Return DataManger specified by config.data_manager '''
+        """Return a data store.
+
+        The :class:`Store` subclass name is specified by
+        :data:`uqtools.config.store`.
+        The `directory` and `filename` arguments are provided by
+        :any:`file_name_generator`.
+        Additional arguments to the constructor can be set in
+        :data:`uqtools.config.store_kwargs`.
+        """
         cls = StoreFactory.classes[config.store]
         for suffix in xrange(100):
             directory = file_name_generator.generate_directory_name(
@@ -616,20 +793,33 @@ class StoreFactory(object):
 #
 #
 class StoreView(Store):
-    def __init__(self, store, prefix, default=''):
-        '''
-        View of a Store that prepends a path component to all keys.
-        Key is an optional argument for all methods.
-        
-        Input:
-            store (Store) - data store
-            prefix (str) - prefix added to keys when accessing store,
-                a '/' is automatically prepended if missing.
-            default (str) - default key if key is not passed to methods
-        '''
+    """
+    A view into a :class:`Store` that prepends `prefix` to keys.
+    
+    :class:`StoreView` is a view into a subset of another :class:`Store`.
+    All read and write operations prepend `prefix` to the `key` argument,
+    and the :meth:`keys` method filters keys that do not contain `prefix`
+    and removes `prefix` from the returned keys.
+    
+    The `key` argument is optional for all operations that require a key,
+    with the default given by `default` and the default of `default`
+    configurable by :data:`~uqtools.config.store_default_key`.
+    
+    Parameters
+    ----------
+    store : `Store`
+        Store viewed.
+    prefix : `str`
+        Prefix added to keys when accessing store.
+        Must start with a '/', which is automatically prepended if missing.
+    default : `str`, optional
+        Default `key` if `key` is not passed to methods that require it.
+    """
+
+    def __init__(self, store, prefix, default=None):
         self.store = store
         self.prefix = prefix
-        self.default = default
+        self.default = config.store_default_key if default is None else default
 
     @property
     def prefix(self):
@@ -677,7 +867,9 @@ class StoreView(Store):
         return kwargs.pop('key', None), kwargs.pop('value'), kwargs
 
     def put(self, *args, **kwargs):
-        ''' put(self, key=None, value) '''
+        """put(self, key=None, value)
+        
+        Set element `key` to `value`."""
         key, value, kwargs = self._interpret_args(*args, **kwargs)
         return self.store.put(self._key(key), value, **kwargs)
     
@@ -685,7 +877,9 @@ class StoreView(Store):
         return self.store.get(self._key(key))
     
     def append(self, *args, **kwargs):
-        ''' append(self, key=None, value) '''
+        """append(self, key=None, value)
+        
+        Append `value` to element `key`."""
         key, value, kwargs = self._interpret_args(*args, **kwargs)
         return self.store.append(self._key(key), value, **kwargs)
     
@@ -706,72 +900,75 @@ class StoreView(Store):
         return self.store.attrs(self._key(key))
 
 
-
 class MeasurementStore(StoreView):
-    # callback when a new key is created
-    on_new_item = CallbackDispatcher()
+    """
+    View of a store that prepends a prefix to keys and adds inherited
+    coordinate columns to all stored values.
     
-    def __init__(self, store, subdir, coordinates, is_dummy=False):
-        '''
-        View of a store that prepends a prefix to keys and adds inherited
-        coordinate columns to all stored values.
-        
-        Input:
-            store (Store) - data store
-            coordinates (CoordinateList) - coordinates prepended to values
-            subdir (str) - relative path from the measurement owning store
-                to the measurement owning the new view. typically, this is
-                equal to the data_directory attribute of the latter.
-            is_dummy (bool) - if True, don't write data when put or append are
-                invoked.
-        '''
+    Parameters
+    ----------
+    store : `Store`
+        Store viewed.
+    coordinates : `CoordinateList`
+        Index levels prepended to the index of all data written.
+    prefix : `str`
+        Prefix added to keys when accessing the store. This is typically
+        equal to the `data_directory` attribute of the owning
+        :class:`~uqtools.measurement.Measurement`.
+    save : `bool`, default True
+        If False, don't write data when put or append are invoked.
+    default : `str`, optional
+        Default `key` if `key` is not passed to methods that require it.
+    """
+
+    on_new_item = CallbackDispatcher()
+    """List of callbacks run when a new key is created."""
+    
+    def __init__(self, store, prefix, coordinates, save=True, default=None):
         if hasattr(store, 'coordinates'):
             self.coordinates = store.coordinates + coordinates
         else:
             self.coordinates = coordinates
         if hasattr(store, 'store') and hasattr(store, 'prefix'):
-            if subdir:
-                prefix = '/'.join([store.prefix, subdir])
+            if prefix:
+                prefix = store.prefix + '/' + prefix.strip('/')
             else:
                 prefix = store.prefix
             store = store.store
-        else:
-            prefix = subdir
-        super(MeasurementStore, self).__init__(store, prefix)
-        self.is_dummy = is_dummy
+        super(MeasurementStore, self).__init__(store, prefix, default)
+        self.save = save
     
-    def directory(self, key=''):
-        '''
-        Determine the full path where the current measurement saves data and
-        create it.
-        '''
-        if self.is_dummy:
+    def directory(self, key='/'):
+        """Determine the directory where `key` is stored and create it."""
+        filename = self.filename(key)
+        if filename is None:
             return None
-        path = self.store.directory(self.prefix + '/' + key.lstrip('/'))
-        if path is None:
-            return None
+        path = os.path.dirname(filename)
         # auto-create directory: if the user asks for it, she wants to use it
         if not os.path.isdir(path):
             os.makedirs(path)
         return path
     
     def filename(self, name, ext=''):
-        '''
-        Generate a file name in the directory where the current measuremnt
-        saves data and create the directory.
+        """
+        Generate a file name in the data directory of the measurement,
+        and create the directory.
         
-        Input:
-            name (str) - basename of the file
-            ext (str, optional) - name suffix
-        '''
-        directory = self.directory(name)
-        if directory is None:
+        Parameters
+        ----------
+        name : `str`
+            Basename of the file.
+        ext : `str`, optional
+            File name suffix.
+        """
+        if not self.save:
             return None
-        filename = name.split('/')[-1] + ext
-        return os.path.join(directory, filename)
+        if self.store.directory() is None:
+            return None
+        return self.store.directory() + '/' + sanitize_key(self._key(name)) + ext
     
     def _prepend_coordinates(self, value):
-        # add inherited coordinates to index
+        """Prepend `coordinates` to the index of `value`."""
         if len(self.coordinates):
             # build index arrays for inherited parameters
             inherited_index = pd.MultiIndex(
@@ -784,23 +981,28 @@ class MeasurementStore(StoreView):
     
     @contextmanager
     def _check_new(self, key):
+        """Fire :attr:`on_new_item` when an operation creates a new `key`."""
         is_new = self._key(key) not in self.store
         yield
         if is_new:
             self.on_new_item(self, key)
+            
+    @contextmanager
+    def force_save(self):
+        """Context manager to temporarily set `save=True`."""
+        save = self.save
+        self.save = True
+        try:
+            yield
+        finally:
+            self.save = save
         
     def put(self, *args, **kwargs):
-        '''
-        Put data to the store, discarding previously written data.
-        Inherited coordinates are prepended.
+        """put(key=None, value)
         
-        Input:
-            key (str, optional) - table in the store to append to, relative to
-                the default path of the measurement. The default path is the
-                concatenation of the data directories of all parents and self.
-            frame (DataFrame) - data to append
-        '''
-        if self.is_dummy:
+        Set element `key` to `value`, prepending `coordinates` to the index.
+        """
+        if not self.save:
             return
         key, value, kwargs = self._interpret_args(*args, **kwargs)
         value = self._prepend_coordinates(value)
@@ -808,16 +1010,11 @@ class MeasurementStore(StoreView):
             self.store.put(self._key(key), value, **kwargs)
         
     def append(self, *args, **kwargs):
-        '''
-        Append data to the store, prepending inherited coordinates.
+        """append(key=None, value)
         
-        Input:
-            key (str, optional) - table in the store to append to, relative to
-                the default path of the measurement. The default path is the
-                concatenation of the data directories of all parents and self.
-            frame (DataFrame) - data to append
-        '''
-        if self.is_dummy:
+        Append `value` to element `key`, prepending `coordinates` to the index.
+        """
+        if not self.save:
             return
         # append data to store
         key, value, kwargs = self._interpret_args(*args, **kwargs)
@@ -826,7 +1023,6 @@ class MeasurementStore(StoreView):
             self.store.append(self._key(key), value, **kwargs)
 
 
-   
 #
 #
 # File name generator
@@ -844,7 +1040,7 @@ class DateTimeGenerator:
         arguments are taken from config.file_name_generator_kwargs, any passed
         values are ignored.
         
-        Input:
+        Parameters:
             datesubdir (bool): whether to create a subdirectory for the date
             timesubdir (bool): whether to create a subdirectory for the time
         '''
@@ -854,7 +1050,7 @@ class DateTimeGenerator:
         '''
         Create and return a new data directory.
 
-        Input:
+        Parameters:
             name (string): optional name of measurement
             basedir (string): base directory, use value specified in the constructor
                 if None

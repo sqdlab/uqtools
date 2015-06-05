@@ -1,6 +1,11 @@
-'''
+"""
 IPython widgets compatibility layer
-'''
+
+Provides IPython 3.x widgets when running in IPython 2.x. 
+The style attributes are not supported, so the user interface looks somewhat 
+ugly in IPython 2.x.
+"""
+
 from IPython.html import widgets
 import IPython
 
@@ -80,6 +85,6 @@ if hasattr(Widget, '__del__'):
     del Widget.__del__
 
 def close_all():
-    ''' close all active widgets. '''
+    """Close all active widgets."""
     for widget in Widget.widgets.values():
         widget.close()

@@ -1,17 +1,18 @@
-'''Interactive plotting tool based on IPython.widgets
+"""
+Interactive plotting tools.
+"""
 
-Authors:
- * Markus Jerger, 2015
-'''
+__all__ = ['Figure', 'Plot']
 
 import numpy as np
 import matplotlib.pyplot as plt
-    
+
 from IPython.display import display, clear_output, HTML, Javascript
 from IPython.core.ultratb import VerboseTB
 import IPython.utils.traitlets as traitlets
 from collections import OrderedDict
 
+import types
 import inspect
 import os
 import sys
@@ -25,18 +26,52 @@ from . import widgets
 def set_limits(self, min, max):
     ''' set min and max simultaneously '''
     if min < self.max:
-        self.min = min
-        self.max = max
+        self.min = float(min)
+        self.max = float(max)
     else:
-        self.max = max
-        self.min = min
+        self.max = float(max)
+        self.min = float(min)
 widgets.BoundedFloatText.set_limits = set_limits
 
 
-
 class Figure(widgets.DOMWidget):
+    """
+    An IPython widget showing a matplotlib `Figure`, with zooming and cursors.
+    
+    In the notebook, `Axes` within the `Figure` are zoomed by drawing a zoom
+    rectancle with the mouse. The zoom is reset by double-clicking the `Axes`.
+    Zooming can be limited to the x or y axis by holding the control or shift
+    keys while drawing the rectangle.
+    
+    Rulers are created by clicking and dragging the top or left borders into
+    the `Axes`. Cursors are created by dragging the little square at the
+    intersection of the top and left borders into the `Axes`. Rulers and
+    cursors are removed by dragging them out of the `Axes`.
+    
+    A context menu provides additional options.
+    
+    Notes
+    -----
+    `Figure` currently works best with Firefox and has a few issues with
+    webkit-based browsers such as Chrome and Safari.
+    
+    Parameters
+    ----------
+    fig : `matplotlib.Figure`
+        The displayed figure.
+        
+    Examples
+    --------
+    >>> import matplotlib.pyplot as plt
+    >>> fig, ax = plt.subplots()
+    >>> plt.close(fig)
+    >>> xs = np.linspace(0, 5*np.pi)
+    >>> ax.plot(xs, np.sin(xs))
+    >>> uqtools.Figure(fig)
+    """
+    
     #_view_name = traitlets.Unicode('FigureView', sync=True)
-    #_view_name = traitlets.Unicode('ZoomFogireView', sync=True)
+    #_view_name = traitlets.Unicode('ZoomFigureView', sync=True)
     _view_name = traitlets.Unicode('ZoomCursorFigureView', sync=True)
     _format = traitlets.Unicode('png', sync=True)
     _b64image = traitlets.Unicode(sync=True)
@@ -165,9 +200,7 @@ class Figure(widgets.DOMWidget):
         self.on_msg(self._handle_messages)
         
     def compile(self):
-        '''
-        push CSS and JS to the browser
-        '''
+        """Push style sheets and JavaScript to the browser."""
         # load and display js
         plotpy_fn = inspect.getfile(inspect.currentframe())
         plotpy_path = os.path.dirname(os.path.abspath(plotpy_fn))
@@ -204,26 +237,33 @@ class Figure(widgets.DOMWidget):
             self.close()
         
     def on_zoom(self, callback, remove=False):
-        """Register a callback to execute when Axes are zoomed.
+        """Register a callback executed when `Axes` are zoomed.
 
         The callback will be called with three arguments,
         the axis index, new xlim and new ylim.
 
         Parameters
         ----------
-        remove : bool (optional)
-            Set to true to remove the callback from the list of callbacks."""
+        remove : `bool` (optional)
+            Set to True to remove the callback from the list of callbacks.
+        """
         self._zoom_handlers.register_callback(callback, remove=remove)
         
     def zoom(self, axis, xlim=None, ylim=None, update=True, **kwargs):
-        ''' 
-        Set axis limits.
+        """ 
+        Set `Axes` limits.
         
-        Input:
-            axis (int) - axis index
-            u_min, u_max (float) - horizontal axis limits
-            v_min, v_max (float) - vertical axis limits
-        '''
+        Parameters
+        ----------
+        axis : `int`
+            `Axes` index
+        xlim : `tuple of float`, optional
+            Horizontal axis limits.
+        ylim : `tuple of float`, optional
+            Vertical axis limits.
+        update : `bool`, default True
+            If False, do not update the figure display.
+        """
         # set limits on figure
         ax = self.fig.get_axes()[axis]
         if xlim is not None:
@@ -240,37 +280,49 @@ class Figure(widgets.DOMWidget):
                 for ax in self.axes]
 
     def _zoom_to(self, idx):
-        ''' set zoom to _zoom_history item at idx '''
+        """Set zoom to _zoom_history item at idx."""
         for axis, limits in enumerate(self._zoom_history[idx]):
             self.zoom(axis, *limits, update=False)
         self.update()
         
     def zoom_reset(self):
-        ''' reset zoom to its initial value when the fig was set '''
+        """Reset zoom to its initial value when the fig was set."""
         self._zoom_to(0)
         
     def zoom_prev(self):
-        ''' zoom to previous item in the zoom history '''
+        """Zoom to previous item in the zoom history."""
         if self._zoom_index > -len(self._zoom_history):
             self._zoom_to(self._zoom_index-1)
         
     def zoom_next(self):
-        ''' zoom to next item in the zoom history '''
+        """Zoom to next item in the zoom history."""
         if self._zoom_index < -1:
             self._zoom_to(self._zoom_index+1)
 
 
 
 class AxisWidget(widgets.Box):
-    '''
-    An axis selecting and limit setting widget.
+    """
+    An axis selection and limit setting widget.
+    
     Combines a drop-down, min/max float inputs and an autoscale flag.
 
-    Traits:
-        axis (Integer) - selected axis
-        min, max (Float) - limit box
-        scaling (Integer) - autoscale mode (SCALING_ constants) 
-    '''
+    Parameters
+    ----------
+    description : `str`
+        Descriptive text.
+    options : `{str: int} dict`
+        Axis label to index map.
+    
+    Attributes
+    ----------
+    axis : `Integer`
+        Selected axis
+    min, max : `Float
+        Axis limits.
+    scaling : `Integer`
+        Autoscale mode, one of SCALING_MANUAL, SCALING_AUTO, SCALING_FULL.
+    """
     axis = traitlets.Any()#Integer(allow_none=True)
     min = traitlets.Float()
     max = traitlets.Float()
@@ -282,11 +334,6 @@ class AxisWidget(widgets.Box):
     SCALING_FULL = 2
     
     def __init__(self, description, options, **kwargs):
-        '''
-        Input:
-            description (str) - descriptive text
-            options (str:int dict) - axis labels
-        '''
         axis = kwargs.pop('axis', options.values()[0])
         scaling = kwargs.pop('scaling', self.SCALING_AUTO)
         options = OrderedDict(options)
@@ -329,24 +376,36 @@ class AxisWidget(widgets.Box):
         for item in iterable:
             yield item, idx
             idx += 1
-            
-            
+             
 
 class FunctionWidget(widgets.FlexBox):
-    '''
-    A function selector widget.
-    A select box combined with a code editor.
+    """
+    A function selection widget, a select box combined with a code editor.
     
-    Traits:
-        function - selected function
-    '''
+    Functions can be selected in the select box or defined in the code editor
+    and activated by clicking compile.    
+    
+    Parameters
+    ----------
+    module : Python `module`, optional
+        The function select box is populated with all functions in `module`.
+        Defaults to `__main__`. Pass None to suppress the default.
+    
+    Attributes
+    ----------
+    function : `callable`
+        Curently selected function.
+        
+    Notes
+    -----
+    Functions `default`, `real`, `imag`, `abs`, `arg`, `arg_xref`, `arg_zref`,
+    `dB_from_P`, `dB_from_V` are always available.
+    
+    """
+    
     function = traitlets.Any()
     
-    def __init__(self, module=None):
-        '''
-        Input:
-            module - functions from module are added to the select box 
-        '''
+    def __init__(self, **kwargs):
         super(FunctionWidget, self).__init__(orientation='horizontal')
         self.functions = imp.new_module('functions')
         self.sources = imp.new_module('sources')
@@ -363,8 +422,13 @@ class FunctionWidget(widgets.FlexBox):
         self.compile('def real(zs):\n  return np.real(zs)')
         self.default = self.functions.default
         # load functions from module
-        if module is not None:
-            self.load_module(module)
+        if 'module' in kwargs:
+            module = kwargs.get('module')
+            if module is not None:
+                self.load_module(module)
+        else:
+            import __main__
+            self.load_module(__main__)
         # create ui
         self._w_select = widgets.Select()
         self._w_select.width = '150px'
@@ -389,13 +453,13 @@ class FunctionWidget(widgets.FlexBox):
         self.update()
             
     def _on_select(self, _, function):
-        ''' show source code when a function is selected '''
+        """Show source code when a function is selected."""
         if function is not None:
             self._w_source.value = getattr(self.sources, function.__name__)
             self._w_output.visible = False
         
     def _on_compile(self, _):
-        # compile code
+        """Compile source code and update function."""
         source = self._w_source.value
         try:
             function = self.compile(source)
@@ -408,7 +472,7 @@ class FunctionWidget(widgets.FlexBox):
         self.update(function)
         
     def format_exception(self, err):
-        ''' pretty-print common compiler exceptions '''
+        """Pretty-print common compiler exceptions."""
         parts = []
         parts.append('<span class="ansired">{0}</span>'.
                      format(err.__class__.__name__))
@@ -425,29 +489,32 @@ class FunctionWidget(widgets.FlexBox):
         return ' '.join(parts)
     
     def update(self, function=None):
-        ''' update select box, set current selection to function '''
+        """Update select box, set current selection to function."""
         functions = OrderedDict([(name, func) for name, func 
                                  in sorted(self.functions.__dict__.iteritems()) 
                                  if not name.startswith('__')])
         self._w_select.options = functions
-        self._w_select.values = functions # IPython 2 compat
         if function is not None:
             self._w_select.value = function
         elif self.default is not None:
             self._w_select.value = self.default
     
     def compile(self, source):
-        '''
-        compile source code
+        """
+        Compile source code
         
-        the source code is stored in self.sources, the compiled function is 
-        stored in self.functions.
+        The source code is stored in `self.sources`, the compiled function is 
+        stored in `self.functions`.
         
-        Input:
-            source (str) - source code
-        Returns:
-            compiled function object
-        '''
+        Parameters
+        ----------
+        source : `str`
+            Source code.
+            
+        Returns
+        -------
+        compiled function
+        """
         code = compile(source, '<string>', 'single')
         if len(code.co_names) != 1:
             raise ValueError('source code must define exactly one name')
@@ -457,49 +524,58 @@ class FunctionWidget(widgets.FlexBox):
         return getattr(self.functions, name)
     
     def load_module(self, module):
-        ''' 
-        examine all callables in a module and add them to the list
-        of functions.
+        """
+        Add all functions in module to the list of functions.
         
-        Input:
-            module - any object that has a __dict__
-        Remarks:
-        '''
+        Parameters
+        ----------
+        module : any object that has a `__dict__`
+            Module to inspect.
+        """
         for key in module.__dict__.keys():
             if key.startswith('__'):
                 continue
             func = getattr(module, key)
-            if not callable(func):
+            if not callable(func) or not isinstance(func, types.FunctionType):
                 continue
             # store functions and code in internal modules
-            setattr(self.functions, func.__name__, func)
-            source = inspect.cleandoc(inspect.getsource(func))
-            setattr(self.sources, func.__name__, source)
+            setattr(self.functions, key, func)
+            try:
+                source = inspect.getsource(func)
+                setattr(self.sources, key, source)
+            except:
+                setattr(self.sources, key, '# source code unavailable')
         if 'default' in module.__dict__:
             self.default = getattr(module, 'default')
             
             
-                        
 class FloatTextSliderWidget(widgets.FlexBox):
-    '''
-    A slider with associated float input box.
+    """
+    A slider with an associated float input box.
     The components update each other.
 
-    Traits:
-        index - slider position
-        value - text box value (not guaranteed to be an element of values)
-    '''
+    Parameters
+    ----------
+    description : `str`
+        Descriptive text.
+    values : `tuple of float`
+        Valid slider values.
+    
+    Attributes
+    ----------
+    index : `Integer`
+        Slider position.
+    values : `tuple of Float`
+        When `index` is changed, `value` is set to `values[index]`.
+    value : `Float`
+        Text box value (not guaranteed to be an element of values)
+    """
     index = traitlets.Integer()
     value = traitlets.Float()
     values = traitlets.Tuple()
     disabled = traitlets.Bool()
     
     def __init__(self, description, values=[0], **kwargs):
-        '''
-        Input:
-            description - descriptive text
-            values (tuple) - valid float values
-        '''
         super(FloatTextSliderWidget, self).__init__(orientation='horizontal',
                                                     **kwargs)
         # create widgets    
@@ -520,36 +596,39 @@ class FloatTextSliderWidget(widgets.FlexBox):
         self.index = 0
     
     def _on_values_change(self, _, values):
-        ''' update ranges on values change '''
+        """Update ranges on values change."""
         self._w_slider.max = len(values)-1
         self._w_text.set_limits(min(values), max(values))
         self._on_index_change()
         
     def _on_index_change(self):
-        ''' set value on index change '''
+        """Set value on index change."""
         value = self.values[self.index]
         self._w_text.value = value
             
     def _on_value_change(self):
-        ''' set index on value change '''
+        """Set index on value change."""
         values = np.array(self.values)
         self.index = np.argmin(np.abs(values-self.value))
 
 
-
 class Plot(object):
-    '''
+    """
     An interactive plotting widget.
-    '''
+    
+    Parameters
+    ----------
+    frame : `DataFrame`
+        Data to be plotted.
+    module : Python `module`, optional
+        If given, load data functions from `module` instead of `__main__`.
+    """
+    
     AXIS_NONE = -1
     
-    def __init__(self, cs, ds):
-        '''
-        Input:
-            cs - coordinate dictionary
-            ds - data dictionary
-        '''
+    def __init__(self, frame, **kwargs):
         # check inputs
+        cs, ds = frame.to_csds()
         self._check_inputs(cs, ds)
         # separate keys and values, support str and Parameter dicts
         self.labels = [label.name if hasattr(label, 'name') else label
@@ -565,7 +644,7 @@ class Plot(object):
             self.axes.pop(1)
         self.indices = [0]*self.ndim
         # initialize widgets
-        self._ui()
+        self._ui(**kwargs)
         
     @staticmethod
     def _check_inputs(cs, ds):
@@ -586,7 +665,7 @@ class Plot(object):
                 raise ValueError('all coordinate and data matrices '+
                                  'must have the same shape.')
         
-    def _ui(self):
+    def _ui(self, **kwargs):
         ''' create widget ui '''
         # axes panel
         w_axes = []
@@ -602,20 +681,20 @@ class Plot(object):
         w_axes.append(AxisWidget('z axis', axis=self.axes[-1], options=values))
         self.w_axes = widgets.FlexBox(orientation='horizontal', children=w_axes)
         for axis, w_axis in enumerate(w_axes):
-            w_axis.on_trait_change(fix_args(self.on_axis_change, plot_axis=axis), 'axis')
-            w_axis.on_trait_change(self.on_limit_change, ('min', 'max'))
-            w_axis.on_trait_change(self.on_scaling_change, 'scaling')
+            w_axis.on_trait_change(fix_args(self._on_axis_change, plot_axis=axis), 'axis')
+            w_axis.on_trait_change(self._on_limit_change, ('min', 'max'))
+            w_axis.on_trait_change(self._on_scaling_change, 'scaling')
         # coordinate sliders
         sliders = []
         for axis, coordinate in enumerate(self.labels[:self.ndim]):
             slider = FloatTextSliderWidget(description=coordinate)
-            slider.on_trait_change(fix_args(self.on_slider_change, data_axis=axis), 'index')
+            slider.on_trait_change(fix_args(self._on_slider_change, data_axis=axis), 'index')
             sliders.append(slider)
         self.w_sliders = widgets.Box()
         self.w_sliders.children = sliders
         # functions on data
-        self.w_functions = FunctionWidget()
-        self.w_functions.on_trait_change(self.on_function_change, 'function')
+        self.w_functions = FunctionWidget(**kwargs)
+        self.w_functions.on_trait_change(self._on_function_change, 'function')
         # cursors
         self.w_cursors = widgets.HTML()
         self.w_cursors.align = 'center'
@@ -626,8 +705,8 @@ class Plot(object):
                                     self.w_sliders, self.w_cursors]
         # plot panel
         self.w_plot = Figure()
-        self.w_plot.on_zoom(self.on_zoom)
-        self.w_plot.on_trait_change(self.on_cursors_change, 'cursors')
+        self.w_plot.on_zoom(self._on_zoom)
+        self.w_plot.on_trait_change(self._on_cursors_change, 'cursors')
         # application window
         self.w_app = widgets.Box()
         self.w_app.children = [self.w_controls, self.w_plot]
@@ -642,18 +721,18 @@ class Plot(object):
         self.w_controls.set_title(3, 'Cursors')
 
     def update(self):
-        self.update_sliders()
-        self.update_ranges()
-        self.update_plot()
+        self._update_sliders()
+        self._update_ranges()
+        self._update_plot()
     
-    def update_plot(self):
+    def _update_plot(self):
         ''' update plot in widget ui '''
         #png_data = StringIO()
         #self.plot().canvas.print_png(png_data)
         #self.w_plot.value = png_data.getvalue()
         self.w_plot.fig = self.plot()
 
-    def update_sliders(self):
+    def _update_sliders(self):
         ''' update slider ranges and states '''
         for idx, slider in enumerate(self.w_sliders.children):
             # update value ranges of all sliders
@@ -663,7 +742,7 @@ class Plot(object):
             # disable sliders for the current plot axes
             slider.disabled = idx in self.axes
 
-    def update_ranges(self):
+    def _update_ranges(self):
         ''' update x/y/zlim boxes '''
         for w_axis, axis in zip(self.w_axes.children, self.axes):
             # don't update limits of disabled axes
@@ -689,9 +768,9 @@ class Plot(object):
                 # manual scaling
                 continue
             # update limits
-            w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), True)
+            w_axis.on_trait_change(self._on_limit_change, ('min', 'max'), True)
             w_axis.set_limits(np.min(xs), np.max(xs))
-            w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), False)
+            w_axis.on_trait_change(self._on_limit_change, ('min', 'max'), False)
     
     #
     # Figure callbacks
@@ -707,20 +786,20 @@ class Plot(object):
     def cursors(self, cursors):
         self.w_plot.cursors = [cursors]
     
-    def on_zoom(self, _, xlim, ylim):
+    def _on_zoom(self, _, xlim, ylim):
         ''' update limit text boxes when a zoom event occurs '''
         w_xaxis, w_yaxis = self.w_axes.children[:2]
         for w_axis, lim in [(w_xaxis, xlim), (w_yaxis, ylim)]:
             # update scaling button
-            w_axis.on_trait_change(self.on_scaling_change, 'scaling', True)
+            w_axis.on_trait_change(self._on_scaling_change, 'scaling', True)
             w_axis.scaling = AxisWidget.SCALING_MANUAL
-            w_axis.on_trait_change(self.on_scaling_change, 'scaling', False)
+            w_axis.on_trait_change(self._on_scaling_change, 'scaling', False)
             # update axis values
-            w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), True)
+            w_axis.on_trait_change(self._on_limit_change, ('min', 'max'), True)
             w_axis.set_limits(lim[0], lim[1])
-            w_axis.on_trait_change(self.on_limit_change, ('min', 'max'), False)
+            w_axis.on_trait_change(self._on_limit_change, ('min', 'max'), False)
         
-    def on_cursors_change(self, _, __, cursors):
+    def _on_cursors_change(self, _, __, cursors):
         ''' update cursors table when a cursor is created/moved '''
         # html short-hands
         def tag(tag, content, style=None):
@@ -756,7 +835,7 @@ class Plot(object):
     # 
     # Axis selection tab callbacks
     #
-    def on_axis_change(self, plot_axis, _, old_axis, new_axis):
+    def _on_axis_change(self, plot_axis, _, old_axis, new_axis):
         ''' value of axis selection dropdown changed handler '''
         if new_axis in self.axes:
             # first axis must not be disabled
@@ -779,14 +858,14 @@ class Plot(object):
                     self.axes[plot_axis] = self.AXIS_NONE
                 self.w_axes.children[plot_axis].disabled = \
                     (new_axis == self.AXIS_NONE)
-                self.update_sliders()
+                self._update_sliders()
             # update plot
-            self.update_ranges()
+            self._update_ranges()
             if (plot_axis != self.AXIS_NONE) and (plot_axis != len(self.axes)-1):
-                self.update_sliders()
-            self.update_plot()
+                self._update_sliders()
+            self._update_plot()
         
-    def on_limit_change(self, plot_axis, old, new):
+    def _on_limit_change(self, plot_axis, old, new):
         ''' value of axis min/max input box changed handler '''
         w_xaxis, w_yaxis = self.w_axes.children[:2]
         self.w_plot.zoom(0, 
@@ -794,23 +873,23 @@ class Plot(object):
                          (w_yaxis.min, w_yaxis.max))
         #self.update_plot()
     
-    def on_scaling_change(self):
+    def _on_scaling_change(self):
         ''' axis autoscale state changed handler '''
-        self.update_ranges()
-        self.update_plot()
+        self._update_ranges()
+        self._update_plot()
 
     #
     # Function tab callbacks
     #
-    def on_function_change(self):
+    def _on_function_change(self):
         ''' data function changed handler '''
-        self.update_ranges()
-        self.update_plot()
+        self._update_ranges()
+        self._update_plot()
     
     #
     # Slider tab callbacks
     #
-    def on_slider_change(self, data_axis, _, index):
+    def _on_slider_change(self, data_axis, _, index):
         ''' excess coordinate slider changed handler '''
         # set current slider value
         self.indices[data_axis] = index
@@ -822,7 +901,7 @@ class Plot(object):
     #
     @property
     def slice(self):
-        ''' return nd slice for the current selection '''
+        """Return nd slice for the current selection."""
         slice_ = list(self.indices)
         for axis in self.axes[:-1]:
             if axis != self.AXIS_NONE:
@@ -831,7 +910,7 @@ class Plot(object):
     
     @property
     def data_slice(self):
-        ''' return slices of the data matrices for all active axes '''
+        """Return slices of the data matrices for all active axes."""
         axes = [ax for ax in self.axes if ax != self.AXIS_NONE]
         # extract input data
         xss = [self.data[axis][self.slice] for axis in axes]
@@ -842,15 +921,20 @@ class Plot(object):
     
     @staticmethod
     def pcolor_matrices(xs, ys):
-        '''
+        """
         Generate corner points of quadrilaterals that have the input points
         in their centers.
         
-        Input:
-            xs, ys: (N,M) coordinate matrices
-        Output:
-            xs, ys: (N+1,M+1) coordinate matrices
-        '''
+        Parameters
+        ----------
+        xs, ys: `ndarray`
+            (N, M) coordinate matrices
+        
+        Returns
+        -------
+        xs, ys: `ndarray`
+            (N+1, M+1) coordinate matrices
+        """
         shape_out = [l+1 for l in xs.shape]
         xs_out = np.empty(shape_out)
         ys_out = np.empty(shape_out)
@@ -867,19 +951,22 @@ class Plot(object):
         return xs_out, ys_out
     
     def function(self, *xss):
-        ''' run selected function on data '''
+        """Run selected function on data."""
         function = self.w_functions.function
         # pass the required number of function arguments
         argspec = inspect.getargspec(function)
+        nargs = len(argspec.args)
+        if argspec.defaults is not None:
+            nargs -= len(argspec.defaults)
         try:
-            if len(argspec.args) == 0:
+            if nargs == 0:
                 raise ValueError('Data function must accept at least one ' + 
-                                 'argument.')
-            if len(argspec.args) == 1:
+                                 'non-default argument.')
+            if nargs == 1:
                 zs = self.w_functions.function(xss[-1])
-            elif (len(argspec.args) == 2) and (len(xss) > 1):
+            elif (nargs == 2) and (len(xss) > 1):
                 zs = self.w_functions.function(xss[0], xss[-1])
-            elif (len(argspec.args) == 3) and (len(xss) > 2):
+            elif (nargs == 3) and (len(xss) > 2):
                 zs = self.w_functions.function(xss[0], xss[1], xss[2])
             else:
                 raise ValueError('Data function requires more arguments than' +
@@ -896,7 +983,7 @@ class Plot(object):
         return self.w_functions.function.__name__
     
     def plot(self):
-        ''' return a figure containing a 1d or 2d plot of the selection '''
+        """Return a figure containing a 1d or 2d plot of the selection."""
         xss = self.data_slice
         
         fig = plt.figure(figsize=(10,6))

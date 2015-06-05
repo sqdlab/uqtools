@@ -17,6 +17,9 @@ from uqtools import Measurement
 
 class NoFlowMeasurement(Measurement):
     flow = None
+    
+    def _measure(self, **kwargs):
+        return None
 
 
 

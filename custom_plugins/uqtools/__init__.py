@@ -1,98 +1,120 @@
-# return sub-modules when module is reloaded
-#import logging
-#import types
-#for k, v in locals().items():
-#    if isinstance(v, types.ModuleType) and v.__name__.startswith(__name__):
-#        reload(v)
-#        logging.debug(__name__ + ': reloading {0}'.format(v.__name__))
-#del logging, types, k, v
-
-# reload sub-modules in fixed order
 import logging
-import sys
-for key in ('config', 'helpers', 'parameter', 'context', 'data', 'pandas', 'store', 
-            'widgets', 'progress', 'measurement', 'basics', 'buffer', 'process', 
-            'fpga', 'fsv', 'simulation', 'plot', 'calibrate', 'pulselib', 
-            'awg'):
-    #key = 'uqtools.' + key
-    if ('uqtools.' + key in sys.modules) and (key in locals()):
-        #del(sys.modules[key])
-        #reload(sys.modules[key])
-        #if key in locals():
-        logging.debug(__name__ + ': forcing reload of {0}'.format(key))
-        reload(locals()[key])
-del key
+import importlib
 
+def reimport(module):
+    '''import a module, reloading it if was already imported'''
+    if module in globals():
+        logging.debug(__name__ + ': forcing reload of {0}'.format(module))
+        reload(globals()[module])
+    else:
+        globals()[module] = importlib.import_module('.'+module, __package__)
 
-from . import config
+reimport('config')
 
-from . import parameter
-from .parameter import (Parameter, OffsetParameter, ScaledParameter, LinkedParameter,
+reimport('parameter')
+from .parameter import (Parameter, LinkedParameter,
+                        OffsetParameter, ScaledParameter,
                         TypedList, ParameterList, ParameterDict)
 
-from . import helpers
+reimport('helpers')
 
-from . import context
-from .context import (NullContextManager, SimpleContextManager, nested, 
-                      SetInstrument, RevertInstrument, SetParameter, RevertParameter)
+reimport('context')
+from .context import (SimpleContextManager, nested, 
+                      SetInstrument, RevertInstrument, 
+                      SetParameter, RevertParameter)
 
-from . import data
+reimport('widgets')
 
-try:
-    from . import pandas
-    from . import store
-    from .store import MemoryStore, CSVStore, HDFStore
-except ImportError:
-    logging.warning(__name__ + ': failed to import store.')
+reimport('progress')
+from .progress import ContinueIteration, BreakIteration, Flow, RootFlow
 
-from . import widgets
+reimport('pandas')
 
-from . import progress
-from .progress import ContinueIteration, BreakIteration, Flow
+reimport('store')
+from .store import MemoryStore, CSVStore, HDFStore
 
-from . import measurement
+reimport('measurement')
 from .measurement import Measurement
 
-from . import basics
-from .basics import Delay, ParameterMeasurement 
-from .basics import MeasurementArray, Sweep, MultiSweep
+reimport('basics')
+from .basics import Constant, Function, Buffer, ParameterMeasurement
 
-from . import buffer
-from .buffer import Buffer
+reimport('control')
+from .control import Delay, MeasurementArray, Sweep, MultiSweep, Average
 
-from . import process
-from .process import apply_decorator, Apply, Add, Multiply, Divide
-from .process import Reshape, Integrate, Accumulate
+reimport('apply')
+from .apply import (Apply, Add, Subtract, Multiply, Divide, Integrate, Reshape,
+                    Expectation)
 
-from . import fpga
-from .fpga import CorrelatorMeasurement, TvModeMeasurement, HistogramMeasurement
-from .fpga import FPGAStart, FPGAStop
-from .fpga import AveragedTvModeMeasurement
+reimport('fpga')
+from .fpga import (FPGAStart, FPGAStop, 
+                   TvModeMeasurement, AveragedTvModeMeasurement, 
+                   CorrelatorMeasurement, HistogramMeasurement)
 
-from . import fsv 
+reimport('fsv') 
 from .fsv import FSVTrace, FSVMeasurement as FSVWait
 
-from . import simulation
-from .simulation import Constant, Function, DatReader
-
-from . import calibrate
-from .calibrate import FittingMeasurement, CalibrateResonator, Minimize, MinimizeIterative
-from .calibrate import Interpolate
-
-from . import plot
+reimport('plot')
 from .plot import Plot, Figure, Figure as FigureWidget
 
+reimport('calibrate')
+from .calibrate import Fit, Fit as FittingMeasurement, Minimize, MinimizeIterative
 try:
-    import pulselib
+    from .calibrate import CalibrateResonator
 except ImportError:
-    # pulselib already generates a log entry
     pass
 
 try:
-    from . import awg
-    from .awg import (ProgramAWG, ProgramAWGParametric,
+    reimport('awg')
+    from .awg import (ZeroAWG, ProgramAWG, ProgramAWGParametric,
                       ProgramAWGSweep, MeasureAWGSweep, MultiAWGSweep, 
-                      NormalizeAWG, PlotSequence)
+                      NormalizeAWG, SingleShot, PlotSequence)
 except ImportError:
     # awg already generates a log entry
     pass
+
+try:
+    reimport('qtlab')
+    from .qtlab import Instrument, instruments
+except ImportError as err:
+    logging.warn(__name__ + ': ' + err.message)
+    del err
+    # QTLab integration is without an alternative at this time
+    class Instruments:
+        def settings(self, key=None):
+            return {}
+    instruments = Instruments()
+    del Instruments
+
+# clean module namespace
+del reimport
+del importlib
+
+@context.contextlib.contextmanager
+def debug(level=1):
+    '''
+    debug(level=1)
+    
+    Debugging context manager.
+    
+    Temporarily sets the global and Measurement local logger filter to DEBUG and 
+    the DEBUG flags of uqtools submodules to level.
+    '''
+    # set module debug flags
+    context.DEBUG = level
+    # set local logger
+    local_level = Measurement.log_level
+    Measurement.log_level = logging.DEBUG
+    # set global logger
+    global_log = logging.getLogger()
+    global_level = global_log.level
+    global_log.setLevel(logging.DEBUG)
+    # notify user
+    logging.info('DEBUG mode enabled')
+    try:
+        yield
+    finally:
+        logging.info('DEBUG mode disabled')
+        global_log.setLevel(global_level)
+        Measurement.log_level = local_level 
+        context.DEBUG = level

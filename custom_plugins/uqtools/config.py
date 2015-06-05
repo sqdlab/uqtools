@@ -1,26 +1,30 @@
-'''
-UQTools default configuration
-'''
+"""
+uqtools configuration file
+"""
+import logging
 
 try:
     from qt import config as qt_config
     datadir = qt_config['datadir']
-except ImportError:
+except (ImportError, TypeError, KeyError):
     datadir = '.'
 
-# str, DataManager class returned by DataManagerFactory.factory
-data_manager = 'QTLabDataManager'
-data_compression = False
+#. `int`, log level for logs in measurement folders
+local_log_level = logging.INFO
 
-# str, Store class returned by StoreFactory.factory
+#. `str`, Store class returned by StoreFactory.factory
 store = 'CSVStore'
-# dict, keyword arguments passed to Store constructor
-store_kwargs = {'ext': '.dat', 'unpack_complex': True}
+#. `dict`, keyword arguments passed to Store constructor
+store_kwargs = {'ext': '.dat'}
+#. `str`, default key used by MeasurementStore.
+#. Start with '/' to move the primary data file into the same directory as
+#. additional data files and plots.
+store_default_key = ''
 
-# str, FileNameGenerator class used by store.file_name_generator
+#. `str`, FileNameGenerator class used by store.file_name_generator
 file_name_generator = 'DateTimeGenerator'
-# dict, keyword arguments passed to FileNameGenerator constructor
+#. `dict`, keyword arguments passed to FileNameGenerator constructor
 file_name_generator_kwargs = {}
 
-# bool, enable IPython notebook widget UI 
+#. `bool`, enable IPython notebook widget UI 
 enable_widgets = True

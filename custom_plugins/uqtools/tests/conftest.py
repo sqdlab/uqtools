@@ -1,7 +1,18 @@
 # py.test configuration file
-import pytest
+from pytest import fixture
 
-# buffer measured data in memory
 from uqtools import config
-config.data_manager = 'MemoryDataManager'
 
+# set a temporary data directory
+@fixture(scope='session', autouse=True)
+def datadir(request):
+    # hack tmpdir fixture
+    tmpdir = request.config._tmpdirhandler.mktemp('data', numbered=False)
+    config.datadir = str(tmpdir)
+    return tmpdir
+
+# buffer measured data in memory by default
+@fixture(scope='session', autouse=True)
+def use_memory_store():
+    config.store = 'MemoryStore'
+    config.store_kwargs = {}
