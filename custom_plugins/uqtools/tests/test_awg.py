@@ -27,7 +27,7 @@ def pulse_config(nchpairs):
     pulse_config = {
         # pulse config
         'pulse_shape': pulsegen.SquarePulse,
-        'if_freq': 2*math.pi*100e6,
+        'if_freq': 100e6,
         'length': 100e-9,
         'separation': 5e-9,
         'pi_amp': 1.,

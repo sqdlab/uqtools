@@ -374,7 +374,7 @@ class Fit(Plotting):
             len([n for n in frame.index.levshape if n != 1]) > 1):
             logging.warning(__name__ + ': data is multi-dimensional. ' + 
                 'taking the mean of all excess dimensions.')
-            frame = frame.mean(self.indep)
+            frame = frame.mean(level=self.indep)
         # pick coordinate and data arrays
         xs = frame.index.get_level_values(self.indep).values
         ys = frame[self.dep].values
@@ -803,7 +803,7 @@ class MinimizeIterative(Sweep):
                              name=name, data_directory='')
         # generate iteration sweep
         super(MinimizeIterative, self).__init__(self.iteration, range(iterations),
-                                                minimizer, **kwargs)
+                                                minimizer, name=name, **kwargs)
     
     _minimize_attrs = ('c0', 'c1', 'dep', 'preprocess', 'popt_out', 
                        'smoothing', 'plot_format')

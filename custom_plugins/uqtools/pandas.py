@@ -44,7 +44,7 @@ def unpack_complex(frame, copy=False):
                        if dtype in complex_dtypes]
     if copy and len(complex_columns):
         frame = frame.copy(deep=False)
-    for idx in complex_columns:
+    for idx in reversed(complex_columns):
         name = frame.columns[idx]
         data = frame.pop(name)
         frame.insert(idx, 'imag({0})'.format(name), data.imag)

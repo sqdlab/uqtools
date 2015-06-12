@@ -195,8 +195,10 @@ class Parameter(ParameterBase):
         returns and files etc.
     set_func : `callable`, optional
         `set_func(value, \*\*kwargs)` is called when the parameter is set.
+        If False, `set` will raise a `ValueError` when called.
     get_func : `callable`, optional
         `get_func(\*\*kwargs)` is called to retrieve the parameter value.
+        If False, `get` will raise a `ValueError` when called.
     value : `any`
         Initial value returned by `get()` if no `get_func` is defined.
     options
@@ -255,7 +257,11 @@ class Parameter(ParameterBase):
                  **options):
         super(Parameter, self).__init__(name, **options)
         # assign self.get
-        if get_func is None:
+        if get_func is False:
+            def get(**kwargs):
+                raise ValueError("get is not implemented for '{0}'."
+                                 .format(self.name))
+        elif get_func is None:
             def get(**kwargs):
                 return self.value
         else:
@@ -264,7 +270,11 @@ class Parameter(ParameterBase):
                 return get_func(**kwargs)
         self.get = get
         # assign self.set
-        if set_func is None:
+        if set_func is False:
+            def set(**kwargs):
+                raise ValueError("set is not implemented for '{0}'."
+                                 .format(self.name))
+        elif set_func is None:
             def set(value, **kwargs):
                 self.value = value
         else:

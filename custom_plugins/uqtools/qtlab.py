@@ -50,9 +50,9 @@ class Instrument(object):
         """Query value of parameter `pname`"""
         return self._ins.get(pname, **kwargs)
     
-    def set(self, pname, value, **kwargs):
+    def set(self, pname, *args, **kwargs):
         """Set value of parameter `pname` to `value`."""
-        return self._ins.set(pname, value, **kwargs)
+        return self._ins.set(pname, *args, **kwargs)
     
     def __dir__(self):
         attrs = dir(super(Instrument, self))

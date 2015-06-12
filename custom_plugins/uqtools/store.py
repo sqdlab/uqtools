@@ -719,12 +719,13 @@ class HDFStore(pd.HDFStore, Store):
     kwargs
         Passed to parent constructor.
     '''
-    def __init__(self, directory, filename, mode=None, title=None, ext='.h5', **kwargs):
+    def __init__(self, directory, filename, mode=None, title=None, ext='.h5', index=True, **kwargs):
         # create containing directory in write modes
         if (mode is None) or ('r' not in mode):
             if not os.path.isdir(directory):
                 os.makedirs(directory)
         self._directory = directory
+        self.index = index
         pd.HDFStore.__init__(self, os.path.join(directory, filename+ext), mode,
                              title=title, **kwargs)
 
@@ -746,7 +747,12 @@ class HDFStore(pd.HDFStore, Store):
     @unpack_complex_decorator    
     def put(self, key, value, format='table', **kwargs):
         return super(HDFStore, self).put(key, value, format=format, **kwargs)
-    append = unpack_complex_decorator(pd.HDFStore.append)
+
+    @unpack_complex_decorator    
+    def append(self, key, value, **kwargs):
+        index = kwargs.pop('index', self.index)
+        return super(HDFStore, self).append(key, value, index=index, **kwargs)
+        
     append_to_multiple = unpack_complex_decorator(pd.HDFStore.append_to_multiple)
     
 

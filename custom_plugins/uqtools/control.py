@@ -202,7 +202,8 @@ class Sweep(Measurement):
         # create output buffer if output is requested
         output_data = kwargs.get('output_data', False)
         if output_data:
-            store = MeasurementStore(MemoryStore(), '/data', self.coordinates)
+            store = MeasurementStore(MemoryStore(), '/data', 
+                                     ParameterList(self.coordinates[:1]))
         # sweep coordinate
         try:
             for x in self.range:
