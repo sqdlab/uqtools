@@ -99,6 +99,6 @@ class FSVTrace(FSVMeasurement):
         self._wait()
         # retrieve data, save to file and return
         ys = self.fsv.get_data(self.trace)
-        frame = pd.DataFrame([ys], index=index, columns=self.values.names()[:1])
+        frame = pd.DataFrame(ys, index=index, columns=self.values.names()[:1])
         self.store.append(frame)
         return frame
