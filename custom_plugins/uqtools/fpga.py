@@ -193,9 +193,9 @@ class CorrelatorMeasurement(FPGAMeasurement):
         # set number of segments if given
         if segments is not None:
             with RevertInstrument(self._fpga, corr_segments=segments):
-                return super(TvModeMeasurement, self)._measure(**kwargs)
+                return super(CorrelatorMeasurement, self)._measure(**kwargs)
         else:
-            return super(TvModeMeasurement, self)._measure(**kwargs)
+            return super(CorrelatorMeasurement, self)._measure(**kwargs)
 
         
 def AveragedTvModeMeasurement(fpga, **kwargs):
