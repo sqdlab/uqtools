@@ -499,8 +499,11 @@ class ProgramAWGSweep(ProgramAWG):
         ranges = self.ranges
         range_len = np.prod([len(range_) for range_ in ranges])
         if len(ranges) > 1:
-            range_prod = [arr.ravel() for arr in  
-                          np.meshgrid(*ranges, indexing='ij')]
+            idxss = np.mgrid[tuple(slice(len(r)) for r in ranges)]
+            range_prod = [np.array(arr)[idxs].ravel() for arr, idxs in 
+                          zip(ranges, idxss)]
+            #range_prod = [arr.ravel() for arr in  
+            #              np.meshgrid(*ranges, indexing='ij')]
         else:
             range_prod = ranges
         map_frame = pd.DataFrame(dict(zip(self.range_args, range_prod)), 
@@ -624,7 +627,9 @@ class MeasureAWGSweep(Reshape):
                 ranges_ = [(r() if callable(r) else resolve_value(r)) 
                            for r in ranges]
                 if len(ranges_) > 1:
-                    return np.meshgrid(*ranges_, indexing='ij')[idx].ravel()
+                    #return np.meshgrid(*ranges_, indexing='ij')[idx].ravel()
+                    slices = tuple(slice(len(range_)) for range_ in ranges_)
+                    return np.array(ranges_[idx])[np.mgrid[slices][idx]].ravel()
                 else:
                     return ranges_[idx]
             return map
