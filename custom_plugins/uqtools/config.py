@@ -15,7 +15,10 @@ local_log_level = logging.INFO
 #. `str`, Store class returned by StoreFactory.factory
 store = 'CSVStore'
 #. `dict`, keyword arguments passed to Store constructor
-store_kwargs = {'ext': '.dat'}
+if store == 'CSVStore':
+    store_kwargs = {'ext': '.dat'}
+elif store == 'HDFStore':
+    store_kwargs = {'complib': 'blosc', 'index': False}
 #. `str`, default key used by MeasurementStore.
 #. Start with '/' to move the primary data file into the same directory as
 #. additional data files and plots.
