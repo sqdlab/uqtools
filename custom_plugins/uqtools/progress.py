@@ -364,7 +364,7 @@ if 'widgets' in globals():
         '''
         Global event handler and GUI generator based on IPython notebook widgets
         '''
-        EVENTS = ['stop']
+        EVENTS = ['abort']
         
         def __init__(self):
             super(RootWidgetFlow, self).__init__()
@@ -372,9 +372,9 @@ if 'widgets' in globals():
 
         def stop(self):
             super(RootWidgetFlow, self).stop()
-            self.events['stop'].clear()
+            self.events['abort'].clear()
 
-        def on_stop(self):
+        def on_abort(self):
             ''' stop button pressed. raise a KeyboardInterrupt '''
             raise KeyboardInterrupt('Human abort.')
 
@@ -401,7 +401,7 @@ if 'widgets' in globals():
                 root (Measurement) - root of the measurement tree
             '''
             stop = widgets.Button(description='stop')
-            stop.on_click(lambda _: self.events['stop'].set())
+            stop.on_click(lambda _: self.events['abort'].set())
             stop.margin = '0px 10px 0px 0px'
             vbox = widgets.FlexBox()
             vbox.children = self._traverse_widget(root)
