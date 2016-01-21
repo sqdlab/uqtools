@@ -527,7 +527,7 @@ class TestNormalize(MeasurementTests):
         assert len(seq.sequences[2*chpair].segments) == 2
 
     def test_gepulses_list(self):
-        measurement = NormalizeAWG(g_pulses=[pulsegen.piy], e_pulses=[pulsegen.pix], chpair=0)
+        measurement = NormalizeAWG(g_pulses=[pulsegen.pix], e_pulses=[pulsegen.piy], chpair=0)
         seq = measurement.template_func()
         seq.sample()
         # pix is in I, and piy in Q
@@ -535,5 +535,14 @@ class TestNormalize(MeasurementTests):
         assert np.all(sseqs[0].waveforms[0] == -sseqs[1].waveforms[1])
         assert np.all(sseqs[1].waveforms[0] == -sseqs[0].waveforms[1])
 
+    def test_gepulses_dict(self):
+        measurement = NormalizeAWG(g_pulses={0: pulsegen.pix, 1: pulsegen.piy}, 
+                                   e_pulses={0: pulsegen.piy, 1: pulsegen.pix})
+        seq = measurement.template_func()
+        seq.sample()
+        sseqs = seq.sampled_sequences()
+        assert np.all(sseqs[0].waveforms[0] == -sseqs[1].waveforms[1])
+        assert np.all(sseqs[1].waveforms[0] == -sseqs[0].waveforms[1])
+        
     # g_pulses, e_pulses, chpair (int, optional) Channel pair g_pulses or e_pulses are appended to if they are lists.
     

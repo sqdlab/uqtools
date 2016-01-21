@@ -214,8 +214,19 @@ class StoreTests:
         store[key] = frame
         st_frame = store[key]
         assert frame.index.equals(st_frame.index)
-        assert np.all(frame.columns == st_frame.columns)
+        assert np.all(frame.columns.values == st_frame.columns.values)
         assert np.all(np.isclose(frame.values, st_frame.values))
+
+        def test_column_multiindex(self, store):
+        key = '/data'
+        columns = pd.MultiIndex.from_tuples([('A', 'a'), ('A', 'b'), ('', 'a')])
+        frame = pd.DataFrame([range(3)], columns=columns)
+        store[key] = frame
+        st_frame = store[key]
+        print frame
+        print st_frame
+        assert np.all(frame.columns.values == st_frame.columns.values)
+        assert np.all(frame.values == st_frame.values)
         
     def test_complex_data(self, store, frame):
         # store complex column data
@@ -224,7 +235,7 @@ class StoreTests:
         store[key] = frame
         st_frame = store[key]
         assert frame.index.equals(st_frame.index)
-        assert np.all(frame.columns == st_frame.columns)
+        assert np.all(frame.columns.values == st_frame.columns.values)
         assert (np.all(np.isclose(frame.values.real, st_frame.values.real)) and
                 np.all(np.isclose(frame.values.imag, st_frame.values.imag)))
     
@@ -410,7 +421,8 @@ class TestStoreView(StoreTests):
         getattr(store, method)(frame)
         assert frame.equals(store.get())
         
-    def test_interpret_args(self, store):
+    @mark.parametrize('kws', [{}, {'foo': True}], ids=['{}', '{foo}'])
+    def test_interpret_args(self, store, kws):
         key, value = ('key', 'value')
         good_variants = [
             ((key, value), {}),
@@ -418,7 +430,8 @@ class TestStoreView(StoreTests):
             ((), {'key': key, 'value': value})
         ]
         for args, kwargs in good_variants:
-            assert (key, value) == store._interpret_args(*args, **kwargs)
+            kwargs.update(kws)
+            assert (key, value, kws) == store._interpret_args(*args, **kwargs)
         bad_variants = [
             ((), {}),
             ((), {'key': key}),
@@ -427,6 +440,7 @@ class TestStoreView(StoreTests):
             ((), {'key': key, 'value': value, 'foo': 'bar'})
         ]
         for args, kwargs in bad_variants:
+            kwargs.update(kws)
             with raises(TypeError):
                 store._interpret_args(*args, **kwargs)
 

@@ -663,8 +663,14 @@ class CSVStore(Store):
         frame = pd.read_csv(path, sep='\t', comment='#', header=None,
                             compression=compression, skip_blank_lines=True, 
                             names=names, index_col=index_cols, **kwargs)
+        # convert pairs of real columns to complex columns
         if self.unpack_complex:
             frame = pack_complex(frame)
+        # support string MultiIndex on the columns
+        frame.columns = [(tuple(column[2:-2].split("', '"))  
+                          if re.match("\('[^']*'(?:, '[^']*')*\)", column)
+                          else column)
+                         for column in frame.columns]
         # perform selection
         if where is not None:
             return frame.query(where)

@@ -68,8 +68,8 @@ class Instrument(object):
             kwargs = dict(self._ins.get_parameter_options(pname))
             kwargs['name'] = '{0}.{1}'.format(self._name, pname)
             kwargs['dtype'] = kwargs.pop('type', None)
-            kwargs['get_func'] = getattr(self._ins, 'get_{0}'.format(pname), None)
-            kwargs['set_func'] = getattr(self._ins, 'set_{0}'.format(pname), None)
+            kwargs['get_func'] = getattr(self._ins, 'get_{0}'.format(pname), False)
+            kwargs['set_func'] = getattr(self._ins, 'set_{0}'.format(pname), False)
             return Parameter(**kwargs)
         if pname in self._ins.get_function_names():
             return getattr(self._ins, pname)
