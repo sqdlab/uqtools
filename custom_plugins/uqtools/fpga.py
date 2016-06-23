@@ -28,6 +28,14 @@ class FPGAMeasurement(Measurement):
         returning it. The user is responsible for manually stopping acquisition
         between FPGA measurements with different experimental parameters or
         acquisition settings.
+    blocking : `bool`, default False
+        If True, use fpga.get_data_blocking to perform a measurement and retrieve
+        the data in one go. Will cause timeout errors if individual measurements 
+        take more than two seconds. The UI will not be responsive during FPGA
+        measurements.
+    buffering: `bool`, default False
+        If True, only retrieve the data index from the FPGA once and reuse it in
+        following measurements.
         
     Examples
     --------
@@ -44,10 +52,13 @@ class FPGAMeasurement(Measurement):
     >>> uqtools.Sweep(some_param, some_range, av)
     """
     
-    def __init__(self, fpga, overlapped=False, **kwargs):
+    def __init__(self, fpga, overlapped=False, blocking=False, buffering=False, 
+                 **kwargs):
         super(FPGAMeasurement, self).__init__(**kwargs)
         self._fpga = fpga
         self.overlapped = overlapped
+        self.blocking = blocking
+        self.buffering = buffering
         with self.context:
             self._check_mode()
             dims = self._fpga.get_data_dimensions()
@@ -79,32 +90,36 @@ class FPGAMeasurement(Measurement):
         #dims = self._fpga.get_data_dimensions()
         #self.coordinates = dims[:-1]
         #self.values = (dims[-1],)
-        if self.overlapped:
-            self._fpga.stop()
+        self._index = None
+        self._fpga.stop()
         super(FPGAMeasurement, self)._setup()
         
     def _measure(self, **kwargs):
         # in non-overlapped mode, we always start a new measurement before
         # retrieving data. in overlapped mode, we assume that the current
         # measurement was started by us in the previous iteration
-        if not self.overlapped:
-            self._fpga.stop()
-            self._fpga.start()
-        else:
-            if not self._fpga.get('app_running'):
-                # perform fpga measurement
+        if not self.blocking:
+            if not self.overlapped:
                 self._fpga.start()
-        while not self._fpga.finished():
-            self.flow.sleep(10e-3)
-        self._fpga.stop()
+            else:
+                if not self._fpga.get('app_running'):
+                    # perform fpga measurement
+                    self._fpga.start()
+            while not self._fpga.finished():
+                self.flow.sleep(10e-3)
+            self._fpga.stop()
+            data = self._fpga.get_data()
+        else:
+            data = self._fpga.get_data_blocking()
         # retrieve measured data
-        dims = self._fpga.get_data_dimensions()
-        index = pd.MultiIndex.from_product(
-            [dim['value'] for dim in dims[:-1]], 
-            names=[dim['name'] for dim in dims[:-1]]
-        )
-        frame = pd.DataFrame(self._fpga.get_data().ravel(),
-                             index=index, columns=[dims[-1]['name']])
+        if not self.buffering or self._index is None:
+            dims = self._fpga.get_data_dimensions()
+            self._index = pd.MultiIndex.from_product(
+                [dim['value'] for dim in dims[:-1]], 
+                names=[dim['name'] for dim in dims[:-1]]
+            )
+        frame = pd.DataFrame(data.ravel(),
+                             index=self._index, columns=[self.values[0].name])
         # start a new measurement in overlapped mode
         if self.overlapped:
             self._fpga.start()
@@ -205,7 +220,10 @@ def AveragedTvModeMeasurement(fpga, **kwargs):
     A convenience function combining :class:`TvModeMeasurement` with an
     :class:`~uqtools.apply.Integrate` over all samples with `average=True`.
     """
-    tv = TvModeMeasurement(fpga, data_save=False)
+    tv_kwargs = dict((k, kwargs.pop(k)) 
+                     for k in kwargs.keys() 
+                     if k in ['overlapped', 'blocking', 'buffering'])
+    tv = TvModeMeasurement(fpga, data_save=False, **tv_kwargs)
     time = tv.coordinates[-1]
     name = kwargs.pop('name', 'AveragedTvMode')
     return Integrate(tv, time, average=True, name=name, **kwargs)
