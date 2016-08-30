@@ -83,7 +83,7 @@ class FSVTrace(FSVMeasurement):
         # TODO: the axes may be different in some modes
         with self.context:
             self.coordinates.append(Parameter('frequency'))
-            self.values.append(Parameter('data', unit=fsv.get_unit()))
+            self.values.append(Parameter('data', unit=fsv.get('unit')))
 
     def _measure(self, **kwargs):
         # start a new measurement
@@ -91,9 +91,9 @@ class FSVTrace(FSVMeasurement):
         # calculate frequency points
         # (get_frequencies returns the frequencies truncated to float32, which
         #  provides insufficient precision in some cases)
-        xs = np.linspace(self.fsv.get_freq_start(), 
-                         self.fsv.get_freq_stop(), 
-                         self.fsv.get_sweep_points())
+        xs = np.linspace(self.fsv.get('freq_start'), 
+                         self.fsv.get('freq_stop'), 
+                         self.fsv.get('sweep_points'))
         index = pd.Index(xs, name=self.coordinates[0].name)
         # wait for measurement to finish
         self._wait()
