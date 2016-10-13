@@ -217,7 +217,7 @@ class StoreTests:
         assert np.all(frame.columns.values == st_frame.columns.values)
         assert np.all(np.isclose(frame.values, st_frame.values))
 
-        def test_column_multiindex(self, store):
+    def test_column_multiindex(self, store):
         key = '/data'
         columns = pd.MultiIndex.from_tuples([('A', 'a'), ('A', 'b'), ('', 'a')])
         frame = pd.DataFrame([range(3)], columns=columns)
