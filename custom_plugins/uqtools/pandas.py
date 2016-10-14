@@ -19,7 +19,7 @@ import numpy as np
 
 from . import Parameter, ParameterDict
 
-def unpack_complex(frame, copy=False):
+def unpack_complex(frame, inplace=False):
     """ 
     Convert complex columns in `frame` to pairs of real columns.
     
@@ -31,8 +31,8 @@ def unpack_complex(frame, copy=False):
     ----------
     frame : `DataFrame`
         `DataFrame` with complex columns to be converted.
-    copy : `bool`
-        If False, `frame` is modified in-place.
+    inplace : `bool`
+        If True, `frame` is modified in-place.
         
     Returns
     -------
@@ -42,7 +42,7 @@ def unpack_complex(frame, copy=False):
     complex_columns = [idx 
                        for idx, dtype in enumerate(frame.dtypes) 
                        if dtype in complex_dtypes]
-    if copy and len(complex_columns):
+    if not inplace and len(complex_columns):
         frame = frame.copy(deep=False)
     for idx in reversed(complex_columns):
         name = frame.columns[idx]
@@ -55,11 +55,11 @@ def unpack_complex_decorator(function):
     """Wrap :func:`unpack_complex` around `function`."""
     @wraps(function)
     def unpack_complex_decorated(self, key, value, *args, **kwargs):
-        value = unpack_complex(value, copy=True)
+        value = unpack_complex(value, inplace=False)
         return function(self, key, value, *args, **kwargs)
     return unpack_complex_decorated
 
-def pack_complex(frame, copy=False):
+def pack_complex(frame, inplace=False):
     """ 
     Convert pairs of real columns in `frame` to complex columns.
     
@@ -75,7 +75,7 @@ def pack_complex(frame, copy=False):
     -------
     `DataFrame` with every pair of real columns replaced by a complex column.
     """
-    matches = [re.match(r'real\((.*)\)|imag\((.*)\)', name) 
+    matches = [re.match(r'real\((.*)\)|imag\((.*)\)', str(name)) 
                for name in frame.columns]
     matches = [m for m in matches if m is not None]
     reals = dict((m.group(1), m.group(0)) 
@@ -83,7 +83,7 @@ def pack_complex(frame, copy=False):
     imags = dict((m.group(2), m.group(0)) 
                  for m in matches if m.group(2) is not None)
     columns = set(reals.keys()).intersection(set(imags.keys()))
-    if copy and len(columns):
+    if not inplace and len(columns):
         frame = frame.copy(deep=False)
     for name in columns:
         frame.insert(list(frame.columns).index(reals[name]), name, 
@@ -93,11 +93,11 @@ def pack_complex(frame, copy=False):
     return frame
 
 def pack_complex_decorator(function):
-    """Wrap :func:`pack_complex` around `function`."""
+    """Wrap inplace :func:`pack_complex` around `function`."""
     @wraps(function)
     def pack_complex_decorated(*args, **kwargs):
         value = function(*args, **kwargs)
-        return pack_complex(value)
+        return pack_complex(value, inplace=True)
     return pack_complex_decorated
 
 def index_concat(left, right):

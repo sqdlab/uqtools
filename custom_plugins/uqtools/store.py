@@ -595,7 +595,7 @@ class CSVStore(Store):
             else:
                 value = value.to_frame()
         if self.unpack_complex:
-            value = unpack_complex(value, copy=True)
+            value = unpack_complex(value)
         return value
     
     def put(self, key, value):

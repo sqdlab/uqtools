@@ -73,15 +73,21 @@ def test_index_squeeze(shape_):
     assert squeezed.nlevels == max(1, len([n for n in shape_ if n>1]))
 
 @mark.parametrize(
-    'function',
-    (lambda self, key, value: unpack_complex(value),
-     unpack_complex_decorator(lambda self, key, value: value)),
-    ids=('function', 'decorator'))
-def test_unpack_complex(function):    
+    'function,inplace',
+    ((lambda self, key, value: unpack_complex(value), False),
+     (lambda self, key, value: unpack_complex(value, inplace=True), True),
+     (unpack_complex_decorator(lambda self, key, value: value), False)),
+    ids=('function', 'inplace', 'decorator'))
+def test_unpack_complex(function, inplace):    
     frame_in = pd.DataFrame(data={'a': [1.], 'b': [2.+3.j], 'real(d)': [6.], 
                                   'imag(e)': [7.]}, 
                             columns=['a', 'b', 'real(d)', 'imag(e)'])
+    frame_in_copy = frame_in.copy()
     frame = function(None, None, frame_in)
+    if inplace:
+        assert frame_in.equals(frame)
+    else:
+        assert frame_in.equals(frame_in_copy)
     assert list(frame['a']) == [1.]
     assert list(frame['real(b)']) == [2.]
     assert list(frame['imag(b)']) == [3.]
@@ -90,15 +96,22 @@ def test_unpack_complex(function):
     assert list(frame.columns) == ['a', 'real(b)', 'imag(b)', 'real(d)', 'imag(e)']
 
 @mark.parametrize(
-    'function',
-    (pack_complex, pack_complex_decorator(lambda frame: frame)),
-    ids=('function', 'decorator'))
-def test_pack_complex(function):
+    'function,inplace',
+    ((pack_complex, False),
+     (lambda frame: pack_complex(frame, inplace=True), True),
+     (pack_complex_decorator(lambda frame: frame), True)),
+    ids=('function', 'inplace', 'decorator'))
+def test_pack_complex(request, function, inplace):
     frame_in = pd.DataFrame(data=np.arange(1., 8.)[np.newaxis, :], 
                             index=[0.],
                             columns=['a', 'real(b)', 'imag(b)', 'imag(c)', 
                                      'real(c)', 'real(d)', 'imag(e)'])
+    frame_in_copy = frame_in.copy()
     frame = function(frame_in)
+    if inplace:
+        assert frame_in.equals(frame)
+    else:
+        assert frame_in.equals(frame_in_copy)
     assert list(frame['a']) == [1.]
     assert list(frame['b']) == [2.+3.j]
     assert list(frame['c']) == [5.+4.j]

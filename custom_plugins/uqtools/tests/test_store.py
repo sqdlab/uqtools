@@ -232,8 +232,10 @@ class StoreTests:
         # store complex column data
         key = '/data'
         frame['z'] = frame['z1'] + 1j*frame['z2']
+        cp_frame = frame.copy()
         store[key] = frame
         st_frame = store[key]
+        assert frame.equals(cp_frame)
         assert frame.index.equals(st_frame.index)
         assert np.all(frame.columns.values == st_frame.columns.values)
         assert (np.all(np.isclose(frame.values.real, st_frame.values.real)) and
