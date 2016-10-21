@@ -9,7 +9,10 @@ import matplotlib.pyplot as plt
 
 from IPython.display import display, clear_output, HTML, Javascript
 from IPython.core.ultratb import VerboseTB
-import IPython.utils.traitlets as traitlets
+try:
+    import traitlets
+except ImportError:
+    import IPython.utils.traitlets as traitlets
 from collections import OrderedDict
 
 import types
