@@ -204,7 +204,7 @@ class Figure(widgets.DOMWidget):
         # load and display js
         plotpy_fn = inspect.getfile(inspect.currentframe())
         plotpy_path = os.path.dirname(os.path.abspath(plotpy_fn))
-        js_fn = os.path.join(plotpy_path, 'widgets', 'FigureWidget.js')
+        js_fn = os.path.join(plotpy_path, 'FigureWidget.js')
         js = Javascript(file(js_fn).read())
         display(js)
         # display css
