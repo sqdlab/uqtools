@@ -37,7 +37,7 @@ import json
 import pandas as pd
 import numpy as np
 
-from .import config
+from . import config
 from .helpers import sanitize, DocStringInheritor, CallbackDispatcher
 from .pandas import (pack_complex, pack_complex_decorator, 
                      unpack_complex, unpack_complex_decorator, 
@@ -734,6 +734,9 @@ class HDFStore(pd.HDFStore, Store):
         self.index = index
         pd.HDFStore.__init__(self, os.path.join(directory, filename+ext), mode,
                              title=title, **kwargs)
+
+    def __del__(self):
+        self.close()
 
     def filename(self, key=None):
         return super(HDFStore, self).filename
