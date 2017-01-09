@@ -1,4 +1,6 @@
-//require(["widgets/js/widget"], function(WidgetManager) {
+require.undef('uqtools')
+define('uqtools', ["jupyter-js-widgets"], function(widgets) {
+
     function Axes(view, ax) {
         // copy attributes: index, limits, navigable, zoomable, polar
         $.extend(this, ax);
@@ -95,7 +97,7 @@
     }
     
     
-    var FigureView = IPython.DOMWidgetView.extend({
+    var FigureView = widgets.DOMWidgetView.extend({
         render: function() {
             /**
              * Create plot image
@@ -169,7 +171,7 @@
 
     });
 
-
+    
     var ZoomFigureView = FigureView.extend({
         render: function() {
             ZoomFigureView.__super__.render.apply(this);
@@ -601,9 +603,7 @@
         }
     
     });
-    
-    
-    
+
     var CursorCollectionView = Backbone.View.extend({
         
         initialize: function(options) {
@@ -673,8 +673,6 @@
             }
         }
     });
-    
-    
     
     var ZoomCursorFigureView = ZoomFigureView.extend({
         render: function() {
@@ -752,10 +750,12 @@
             this.touch();
         }
     });
-        
     
-    // Register the views with the widget manager.
-    IPython.WidgetManager.register_widget_view('FigureView', FigureView);
-    IPython.WidgetManager.register_widget_view('ZoomFigureView', ZoomFigureView);
-    IPython.WidgetManager.register_widget_view('ZoomCursorFigureView', ZoomCursorFigureView);
-//});
+    
+    return {
+        FigureView: FigureView,
+        ZoomFigureView: ZoomFigureView,
+        ZoomCursorFigureView: ZoomCursorFigureView
+    };
+    
+});

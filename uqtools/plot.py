@@ -2,6 +2,8 @@
 Interactive plotting tools.
 """
 
+from __future__ import print_function
+
 __all__ = ['Figure', 'Plot']
 
 import numpy as np
@@ -73,16 +75,17 @@ class Figure(widgets.DOMWidget):
     >>> uqtools.Figure(fig)
     """
     
-    #_view_name = traitlets.Unicode('FigureView', sync=True)
-    #_view_name = traitlets.Unicode('ZoomFigureView', sync=True)
-    _view_name = traitlets.Unicode('ZoomCursorFigureView', sync=True)
-    _format = traitlets.Unicode('png', sync=True)
-    _b64image = traitlets.Unicode(sync=True)
-    #width = Integer(sync=True)
-    #height = Integer(sync=True)
-    limits = traitlets.Dict(sync=True)
-    cursors = traitlets.List(traitlets.List(traitlets.List), sync=True)
-    axes = traitlets.List(traitlets.Dict, sync=True)
+    #_view_name = traitlets.Unicode('FigureView').tag(sync=True)
+    #_view_name = traitlets.Unicode('ZoomFigureView').tag(sync=True)
+    _view_name = traitlets.Unicode('ZoomCursorFigureView').tag(sync=True)
+    _view_module = traitlets.Unicode('uqtools').tag(sync=True)
+    _format = traitlets.Unicode('png').tag(sync=True)
+    _b64image = traitlets.Unicode().tag(sync=True)
+    #width = Integer().tag(sync=True)
+    #height = Integer().tag(sync=True)
+    limits = traitlets.Dict().tag(sync=True)
+    cursors = traitlets.List(traitlets.List(traitlets.List())).tag(sync=True)
+    axes = traitlets.List(traitlets.Dict()).tag(sync=True)
     
     _style = HTML(
         '''<style type="text/css">
@@ -196,7 +199,7 @@ class Figure(widgets.DOMWidget):
         self._zoom_history = []
         self._zoom_index = -1
         if fig is not None:
-            kwargs['fig'] = fig
+            self.fig = fig
         super(Figure, self).__init__(**kwargs)
         self._zoom_handlers = widgets.CallbackDispatcher()
         self.on_zoom(self.zoom)
@@ -219,7 +222,7 @@ class Figure(widgets.DOMWidget):
         # display self
         super(Figure, self)._ipython_display_()
         
-    def _handle_messages(self, _, content):
+    def _handle_messages(self, _, content, *args):
         if content.get('event', None) == 'zoom':
             # zoom to rectangle drawn by user
             axis = content['axis']
@@ -326,7 +329,8 @@ class AxisWidget(widgets.Box):
     scaling : `Integer`
         Autoscale mode, one of SCALING_MANUAL, SCALING_AUTO, SCALING_FULL.
     """
-    axis = traitlets.Any()#Integer(allow_none=True)
+    #axis = traitlets.Any()#Integer(allow_none=True)
+    axis = traitlets.Integer(allow_none=True)
     min = traitlets.Float()
     max = traitlets.Float()
     scaling = traitlets.Integer(allow_none=True)
@@ -337,9 +341,8 @@ class AxisWidget(widgets.Box):
     SCALING_FULL = 2
     
     def __init__(self, description, options, **kwargs):
-        axis = kwargs.pop('axis', options.values()[0])
+        axis = int(kwargs.pop('axis', options.values()[0]))
         scaling = kwargs.pop('scaling', self.SCALING_AUTO)
-        options = OrderedDict(options)
         super(AxisWidget, self).__init__(axis=axis, scaling=scaling, **kwargs)
         self._w_select = widgets.Dropdown(description=description, 
                                           options=options)
@@ -353,8 +356,9 @@ class AxisWidget(widgets.Box):
                                             ('auto', self.SCALING_AUTO),
                                             ('full', self.SCALING_FULL)))
         traitlets.link((self, 'scaling'), (self._w_auto, 'value'))
-        traitlets.link((self, 'disabled'), (self._w_auto, 'disabled'),
-                       (self._w_min, 'disabled'), (self._w_max, 'disabled'))
+        traitlets.link((self, 'disabled'), (self._w_auto, 'disabled'))
+        traitlets.link((self, 'disabled'), (self._w_min, 'disabled'))
+        traitlets.link((self, 'disabled'), (self._w_max, 'disabled'))
         self.children = (self._w_select, self._w_min, self._w_max, self._w_auto)
         self.on_trait_change(self._on_limit_change, ('min', 'max'))
     
@@ -449,7 +453,7 @@ class FunctionWidget(widgets.FlexBox):
         self._w_compile_box = widgets.Box()
         self._w_compile_box.children = [self._w_compile, self._w_output]
         self.children = (self._w_select, self._w_source, self._w_compile_box)
-        traitlets.link((self, 'function'), (self._w_select, 'value'))
+        traitlets.link((self._w_select, 'value'), (self, 'function'))
         # install event handlers
         self._w_select.on_trait_change(self._on_select, 'value')
         # populate select box
@@ -592,8 +596,8 @@ class FloatTextSliderWidget(widgets.FlexBox):
         self._w_slider.on_trait_change(self._on_index_change, 'value')
         self._w_text.on_trait_change(self._on_value_change, 'value')
         self.on_trait_change(self._on_values_change, 'values')
-        traitlets.link((self._w_text, 'disabled'), (self._w_slider, 'disabled'),
-                       (self, 'disabled'))
+        traitlets.link((self, 'disabled'), (self._w_text, 'disabled'))
+        traitlets.link((self, 'disabled'), (self._w_slider, 'disabled'))
         # store values and trigger range update
         self.values = values
         self.index = 0
@@ -612,7 +616,7 @@ class FloatTextSliderWidget(widgets.FlexBox):
     def _on_value_change(self):
         """Set index on value change."""
         values = np.array(self.values)
-        self.index = np.argmin(np.abs(values-self.value))
+        self.index = int(np.argmin(np.abs(values-self.value)))
 
 
 class Plot(object):
@@ -672,7 +676,7 @@ class Plot(object):
         ''' create widget ui '''
         # axes panel
         w_axes = []
-        values = OrderedDict([(label, axis) 
+        values = OrderedDict([('{} ({})'.format(str(label), axis), axis) 
                               for axis, label in enumerate(self.labels[:self.ndim])
                               if self.shape[axis] > 1])
         if self.ndim > 0:
@@ -690,7 +694,7 @@ class Plot(object):
         # coordinate sliders
         sliders = []
         for axis, coordinate in enumerate(self.labels[:self.ndim]):
-            slider = FloatTextSliderWidget(description=coordinate)
+            slider = FloatTextSliderWidget(description=str(coordinate))
             slider.on_trait_change(fix_args(self._on_slider_change, data_axis=axis), 'index')
             sliders.append(slider)
         self.w_sliders = widgets.Box()
@@ -976,7 +980,7 @@ class Plot(object):
                                  'available.')
         except:
             tb = VerboseTB()
-            print tb.text(*sys.exc_info(), tb_offset=1)
+            print(tb.text(*sys.exc_info(), tb_offset=1))
             # return a matrix of NaNs
             zs = np.full_like(xss[0], np.nan)
         return zs
