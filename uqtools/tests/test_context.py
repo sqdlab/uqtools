@@ -15,7 +15,7 @@ class Instrument:
         self._parameters = {}
 
     def has_parameter(self, name):
-        return self._parameters.has_key(name)
+        return name in self._parameters
         
     def get(self, name, query=True, fast=False, **kwargs):
         return self._parameters[name]

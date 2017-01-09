@@ -133,7 +133,7 @@ class TestParameter:
             (p / 0.).get()
         #with raises(ZeroDivisionError):
         #    (0. / p).set(3.)
-        #    print p.get()
+        #    print (p.get())
 
 class TestOffsetParameter:
     @fixture

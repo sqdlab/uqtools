@@ -1,3 +1,4 @@
+from __future__ import print_function
 from pytest import fixture, raises, mark
 import time
 import timeit
@@ -10,7 +11,7 @@ try:
     from uqtools.progress import (RootWidgetFlow, ProgressBarWidgetFlow, 
                                   FileLinkWidgetFlow)
 except ImportError:
-    print 'Widget flows are unavailable.'
+    print('Widget flows are unavailable.')
 from uqtools import Measurement
 
 
@@ -47,7 +48,7 @@ class TestBaseFlow:
         assert abs(timer.timeit(3)/3. - 100e-3) < 10e-3
     
     def on_test(self):
-        print 'call'
+        print('call')
         self.on_test_called = True
         
     def test_process_events(self, flow):

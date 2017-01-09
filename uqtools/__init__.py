@@ -1,16 +1,17 @@
 import logging
 import importlib
 
-def reimport(module):
+def reimport(module, package=__package__):
     '''import a module, reloading it if was already imported'''
+    module = package + '.' + module
     if module in globals():
         logging.debug(__name__ + ': forcing reload of {0}'.format(module))
         reload(globals()[module])
     else:
-        globals()[module] = importlib.import_module('.'+module, __package__)
+        globals()[module] = importlib.import_module(module, package)
 
 reimport('config')
-
+    
 reimport('parameter')
 from .parameter import (Parameter, LinkedParameter,
                         OffsetParameter, ScaledParameter,
@@ -41,7 +42,7 @@ from .basics import Constant, Function, Buffer, ParameterMeasurement
 
 reimport('control')
 from .control import Delay, MeasurementArray, Sweep, MultiSweep, Average
-
+    
 reimport('apply')
 from .apply import (Apply, Add, Subtract, Multiply, Divide, Integrate, Reshape,
                     Expectation)
@@ -53,10 +54,10 @@ from .fpga import (FPGAStart, FPGAStop,
 
 reimport('fsv') 
 from .fsv import FSVTrace, FSVMeasurement as FSVWait
-
+    
 reimport('plot')
 from .plot import Plot, Figure, Figure as FigureWidget
-
+    
 reimport('calibrate')
 from .calibrate import Fit, Fit as FittingMeasurement, Minimize, MinimizeIterative
 try:
@@ -72,20 +73,19 @@ try:
 except ImportError:
     # awg already generates a log entry
     pass
-
+    
 try:
     reimport('qtlab')
     from .qtlab import Instrument, instruments
-except ImportError as err:
-    logging.warn(__name__ + ': ' + err.message)
-    del err
+except ImportError:
+    logging.warn(__name__ + ': ' + 'QTLab integration is unavailable.')
     # QTLab integration is without an alternative at this time
     class Instruments:
         def settings(self, key=None):
             return {}
     instruments = Instruments()
     del Instruments
-
+    
 # clean module namespace
 del reimport
 del importlib

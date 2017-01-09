@@ -6,6 +6,7 @@ them in the browser, program them on AWG instruments and process the segmented
 data that these measurements produce.
 """
 
+from __future__ import print_function
 from __future__ import absolute_import
 
 __all__ = ['ZeroAWG', 'ProgramAWG', 'ProgramAWGParametric', 'ProgramAWGSweep',
@@ -343,10 +344,10 @@ class ProgramAWGParametric(ProgramAWG):
         kwargs
             Passed to :class:`PlotSequence`
         """
-        print 'plotting sequence for parameters:'
+        print('plotting sequence for parameters:')
         for key, arg in self.seq_kwargs.iteritems():
             arg_str = repr(arg).replace('\n', '\n\t\t')
-            print '\t{0}: {1}'.format(key, arg_str)
+            print('\t{0}: {1}'.format(key, arg_str))
         # plot sequence
         return PlotSequence(self.sequence, **kwargs)
 
@@ -556,11 +557,11 @@ class ProgramAWGSweep(ProgramAWG):
         # evaluate parameters
         ranges = self.ranges
         pulse_kwargs = self.pulse_kwargs
-        print 'plotting sequence for parameters:'
+        print('plotting sequence for parameters:')
         for items in [zip(self.range_args, ranges), pulse_kwargs.items()]:
             for key, arg in items:
                 arg_str = repr(arg).replace('\n', '\n\t\t')
-                print '\t{0}: {1}'.format(key, arg_str)
+                print('\t{0}: {1}'.format(key, arg_str))
         # regenerate sequence
         seq = self.sequence(ranges, pulse_kwargs)
         # plot sequence

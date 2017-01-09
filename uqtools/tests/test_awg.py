@@ -1,3 +1,4 @@
+from __future__ import print_function
 from pytest import fixture, mark, skip, xfail, raises
 import os
 import math
@@ -182,7 +183,7 @@ class TestProgramAWGParametric(MeasurementTests):
         #self.seq_kwargs_received = kwargs
         seq_len = kwargs.get('seq_len', self.seq_len.get())
         seq = pulsegen.MultiAWGSequence()
-        print seq_len
+        print(seq_len)
         for _ in range(seq_len):
             seq.append_pulses([pulsegen.pix], chpair=0)
         return seq
@@ -455,7 +456,7 @@ class TestMeasureAWGSweep(AWGSweepTests, MeasurementTests):
     @mark.parametrize('normalize', [None], ids=[''])
     def test_reshape(self, measurement, ranges):
         frame = measurement(output_data=True)
-        print frame
+        print(frame)
         for column in frame.columns[:-1]:
             assert all(frame.index.get_level_values(column) == frame[column])
     
@@ -532,8 +533,8 @@ class TestNormalize(MeasurementTests):
         seq.sample()
         # pix is in I, and piy in Q
         sseqs = seq.sampled_sequences  
-        assert np.all(sseqs[0].waveforms[0] == -sseqs[1].waveforms[1])
-        assert np.all(sseqs[1].waveforms[0] == -sseqs[0].waveforms[1])
+        assert np.allclose(sseqs[0].waveforms[0], -sseqs[1].waveforms[1])
+        assert np.allclose(sseqs[1].waveforms[0], -sseqs[0].waveforms[1])
 
     def test_gepulses_dict(self):
         measurement = NormalizeAWG(g_pulses={0: pulsegen.pix, 1: pulsegen.piy}, 
@@ -541,8 +542,8 @@ class TestNormalize(MeasurementTests):
         seq = measurement.template_func()
         seq.sample()
         sseqs = seq.sampled_sequences()
-        assert np.all(sseqs[0].waveforms[0] == -sseqs[1].waveforms[1])
-        assert np.all(sseqs[1].waveforms[0] == -sseqs[0].waveforms[1])
+        assert np.allclose(sseqs[0].waveforms[0], -sseqs[1].waveforms[1])
+        assert np.allclose(sseqs[1].waveforms[0], -sseqs[0].waveforms[1])
         
     # g_pulses, e_pulses, chpair (int, optional) Channel pair g_pulses or e_pulses are appended to if they are lists.
     

@@ -219,7 +219,7 @@ class Parameter(ParameterBase):
     
     >>> def set_voltage(voltage):
     ...     # send some command to the device to set the voltage
-    ...     print 'voltage set to {0}.'.format(voltage)
+    ...     print('voltage set to {0}.'.format(voltage))
     >>> voltage = uqtools.Parameter('voltage', set_func=set_voltage)
     >>> response = uqtools.Parameter('response', 
     ...                              get_func=lambda: voltage.get()**2)

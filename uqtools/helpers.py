@@ -329,7 +329,7 @@ class CallbackDispatcher(list):
     --------
     >>> from uqtools.helpers import CallbackDispatcher
     >>> def callback(message):
-    ...     print message
+    ...     print(message)
     >>> dispatcher = CallbackDispatcher()
     >>> dispatcher.append(callback)
     >>> dispatcher('Boo!')

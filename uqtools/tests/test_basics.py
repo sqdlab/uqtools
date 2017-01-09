@@ -337,7 +337,7 @@ class TestAverage(MeasurementTests):
     def test_store(self, measurement):
         store = measurement()
         rframe = pd.DataFrame({'count': range(10)},
-                              pd.Index(range(10), 'average'))
+                              pd.Index(range(10), name='average'))
         for key in ('/Counting', '/Counting2'):
             assert store[key + '/iterations'].equals(rframe)
             assert store[key].equals(self.mframe(0, 9))

@@ -272,7 +272,7 @@ class ParameterMeasurement(Measurement):
     def __init__(self, *values, **kwargs):
         #if not len(values):
         #    raise ValueError('At least one Parameter object must be specified.')
-        if not kwargs.has_key('name'):
+        if not 'name' in kwargs:
             if len(values) == 1:
                 kwargs['name'] = values[0].name
             elif len(values) > 1:
