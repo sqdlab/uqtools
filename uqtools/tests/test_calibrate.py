@@ -7,12 +7,17 @@ from uqtools import config
 from uqtools import (Parameter, Constant, Function, Delay, Sweep, MultiSweep,
                      ParameterMeasurement, BreakIteration, ContinueIteration)
 from uqtools import FittingMeasurement, Minimize, MinimizeIterative
-from fitting import Lorentzian, PeakFind
+try:
+    import fitting
+    from fitting import Lorentzian, PeakFind
+except ImportError:
+    pass
 
 from .lib import MeasurementTests, CountingMeasurement
 
 #    def __init__(self, indep=None, dep=None, test=None,
 # fail_func=ContinueIteration, popt_out=None, **kwargs):
+@mark.skipif('fitting' not in globals(), reason='fitting library not available')
 class TestFittingMeasurement(MeasurementTests):
     # Test cases:
     # explicit dep/indep
@@ -451,6 +456,6 @@ class TestMinimizeIterative(TestMinimize): #MeasurementTests):
         store = measurement()
         frame = store[store.keys()[0]]
         iterations = range(1, 1+kwargs['iterations'])
-        assert list(frame['plot'].values) == iterations
+        assert list(frame['plot'].values) == list(iterations)
         for it in iterations:
             assert os.path.isfile(store.directory() +'/plot_{0}.png'.format(it))

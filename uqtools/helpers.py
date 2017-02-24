@@ -8,7 +8,9 @@ from abc import ABCMeta
 import unicodedata
 import string
 import math
+#from functools import partial as fix_args
 
+import six
 import numpy as np
 
 from . import ParameterDict
@@ -47,7 +49,7 @@ def round(x, xlim, precision=3):
     else:
         code = 'f'
     return '{0:.{1}{2}}'.format(x, max(0, digits), code)
-        
+
 def fix_args(f=None, **__fixed):
     '''
     Return a wrapper to a function with the arguments listed in fixed
@@ -135,9 +137,9 @@ def fix_args(f=None, **__fixed):
     source_dict = {'in': ', '.join(args_in), 
                    'out': ', '.join(args_out)}
     source = 'def fixed_kwargs_f({in}): return f({out})'.format(**source_dict)
-    exec source in locals()
-    return fixed_kwargs_f
-
+    namespace = {}
+    six.exec_(source, locals(), namespace)
+    return namespace['fixed_kwargs_f']
 
 def coordinate_concat(*css):
     '''
@@ -154,7 +156,7 @@ def coordinate_concat(*css):
     '''
     # check inputs
     for cs in css:
-        for k, c in cs.iteritems():
+        for k, c in cs.items():
             if not isinstance(c, np.ndarray):
                 c = np.array(c)
                 cs[k] = c
@@ -168,7 +170,7 @@ def coordinate_concat(*css):
     reshaped_cs = []
     pdim = 0
     for cs in css:
-        for k, c in cs.iteritems():
+        for k, c in cs.items():
             newshape = np.ones(ndim)
             newshape[pdim:(pdim+c.ndim)] = c.shape
             reshaped_c = np.reshape(c, newshape)
@@ -304,8 +306,9 @@ def parameter_name(attr, doc=None):
 def sanitize(name):
     """sanitize `name` so it can safely be used as a part of a file name."""
     # remove accents etc.
-    name = unicodedata.normalize('NFKD', unicode(name))
-    name = name.encode('ASCII', 'ignore')
+    name = six.text_type(name) # unicode
+    name = unicodedata.normalize('NFKD', name)
+    name = name.encode('ASCII', 'ignore').decode()
     # retain only white listed characters
     whitelist = '_(),.' + string.ascii_letters + string.digits
     name = ''.join([c for c in name if c in whitelist])

@@ -10,12 +10,15 @@ import pandas as pd
 
 from .lib import MeasurementTests, CaptureMeasurement
 
-import pulsegen
-from uqtools import (config, Parameter, Constant, Sweep, ProgramAWG, ZeroAWG, 
-                     ProgramAWGParametric, ProgramAWGSweep, MeasureAWGSweep,
-                     MultiAWGSweep, NormalizeAWG)
-from uqtools.helpers import resolve_value
-
+try:
+    import pulsegen
+    from uqtools import (config, Parameter, Constant, Sweep, ProgramAWG, ZeroAWG, 
+                         ProgramAWGParametric, ProgramAWGSweep, MeasureAWGSweep,
+                         MultiAWGSweep, NormalizeAWG)
+    from uqtools.helpers import resolve_value
+except ImportError:
+    pytestmark = mark.skip()
+    
 # switch to CSVStore for tests that need the file system
 @fixture
 def filesystem(monkeypatch, tmpdir):
@@ -237,7 +240,7 @@ class TestProgramAWGParametric(MeasurementTests):
             elif not cache or (cache is None and not seq_kwargs):
                 assert len(set(awg.seq_files)) == 3, \
                     'A previous file was reprogrammed but cache=False.'
-                assert list(frame['index'].values) == range(3)
+                assert list(frame['index'].values) == list(range(3))
             else:
                 raise ValueError('untested fixture combination')
 
@@ -269,7 +272,7 @@ class AWGSweepTests(object):
     @fixture
     def pulse_func(self, ranges, pulse_kwargs):
         def pulse_func(seq, idx, **kwargs):
-            assert set(list(ranges[::2]) + pulse_kwargs.keys()) == set(kwargs.keys()), \
+            assert set(list(ranges[::2]) + list(pulse_kwargs.keys())) == set(kwargs.keys()), \
                 'keywords passed to pulse_func differ from pulse_kwargs.'
             self.pulse_func_idxs.append(idx)
             self.pulse_func_kwargs.append(kwargs)
@@ -280,7 +283,7 @@ class AWGSweepTests(object):
     def marker_func(self, ranges, pulse_kwargs):
         def marker_func(seq, idx, **kwargs):
             assert (set(pulse_kwargs.keys()) == set(kwargs.keys()) or
-                    set(list(ranges[::2]) + pulse_kwargs.keys()) == set(kwargs.keys())), \
+                    set(list(ranges[::2]) + list(pulse_kwargs.keys())) == set(kwargs.keys())), \
                 'keywords passed to marker_func differ from pulse_kwargs.'
             self.marker_func_idxs.append(idx)
             seq.append_markers([[pulsegen.marker(10e-9)], [pulsegen.marker(20e-9)]], ch=0)
@@ -332,18 +335,18 @@ class TestProgramAWGSweep(AWGSweepTests, MeasurementTests):
         if len(ranges) > 1:
             ranges = [r.ravel() for r in np.meshgrid(*ranges, indexing='ij')]
         length = len(ranges[0])
-        assert self.pulse_func_idxs == range(length)
-        assert self.marker_func_idxs == range(length)
+        assert self.pulse_func_idxs == list(range(length))
+        assert self.marker_func_idxs == list(range(length))
         for coord, range_exp in zip(coords, ranges):
             range_act = [kwargs[coord] for kwargs in self.pulse_func_kwargs] 
-            assert np.all(range_act == range_exp), \
+            assert np.all(list(range_act) == list(range_exp)), \
                 'range for {0} is wrong.'.format(coord)
         assert awgs[0].lengths[-1] == length
 
     # output data        
     def test_values(self, measurement, pulse_kwargs):
         measurement()
-        for key, value in pulse_kwargs.iteritems():
+        for key, value in pulse_kwargs.items():
             assert measurement.values[key].value == resolve_value(value) 
         
     @AWGSweepTests.all_ranges
@@ -364,9 +367,11 @@ class TestProgramAWGSweep(AWGSweepTests, MeasurementTests):
             frame = sw(output_data=True)
         else:
             frame = sw()['/c0']
-        ref_frame = pd.DataFrame({'index': range(3), 'segments':[3]*3, 'kwarg':range(1, 4)},
+        ref_frame = pd.DataFrame({'index': list(range(3)), 'segments':[3]*3, 'kwarg':list(range(1, 4))},
                                  pd.Index(range(1, 4), name='pkwarg'),
                                  columns=['index', 'segments', 'kwarg'])
+        print(ref_frame._data)
+        print(frame._data)
         assert ref_frame.equals(frame)
 
     # sequence template
@@ -389,8 +394,8 @@ class TestProgramAWGSweep(AWGSweepTests, MeasurementTests):
         self.template_func_calls = 0
         pawg_factory(template_func=template_func)()
         assert self.template_func_calls == 1
-        assert self.pulse_func_idxs == range(1,4)
-        assert self.marker_func_idxs == range(4)
+        assert self.pulse_func_idxs == list(range(1,4))
+        assert self.marker_func_idxs == list(range(4))
         assert awgs[0].lengths[-1] == 4
 
     @mark.parametrize('cache', [True, False], ids=['cache', 'nocache'])
@@ -416,7 +421,7 @@ class TestProgramAWGSweep(AWGSweepTests, MeasurementTests):
             else:
                 assert len(set(awg.seq_files)) == 3, \
                     'A previous file was reprogrammed but cache=False.'
-                assert list(frame['index'].values) == range(3)
+                assert list(frame['index'].values) == list(range(3))
 
 
 class TestMeasureAWGSweep(AWGSweepTests, MeasurementTests):
@@ -433,9 +438,9 @@ class TestMeasureAWGSweep(AWGSweepTests, MeasurementTests):
         store = pawg_factory(**kwargs)()
         frame = store['/map']
         if normalize is None:
-            frame['data'] = range(len(frame))
+            frame['data'] = list(range(len(frame)))
         else:
-            frame['data'] = [-1, 1] + range(len(frame)-2)
+            frame['data'] = [-1, 1] + list(range(len(frame)-2))
         return Constant(frame)
     
     @fixture(params=[None, NormalizeAWG()], ids=['', 'normalize'])
@@ -450,7 +455,7 @@ class TestMeasureAWGSweep(AWGSweepTests, MeasurementTests):
     def test_normalize(self, measurement):
         frame = measurement(output_data=True)
         assert len(frame)
-        assert all(frame['data'].values == range(len(frame))) 
+        assert all(frame['data'].values == list(range(len(frame)))) 
         
     @AWGSweepTests.all_ranges
     @mark.parametrize('normalize', [None], ids=[''])
@@ -469,6 +474,7 @@ class TestMeasureAWGSweep(AWGSweepTests, MeasurementTests):
         assert cm.kwargs['segments'] == resolve_value(segments)
 
 
+@mark.skip
 class TestMultiAWGSweep():
     #TODO
     pass
@@ -482,10 +488,10 @@ class TestNormalize(MeasurementTests):
         prefix, suffix = request.param
         levels = []
         if prefix:
-            levels.append(('x', range(2)))
-        levels.append(('segment', range(10)))
+            levels.append(('x', list(range(2))))
+        levels.append(('segment', list(range(10))))
         if suffix:
-            levels.append(('y', range(3)))
+            levels.append(('y', list(range(3))))
         names, levels = zip(*levels)
         index = pd.MultiIndex.from_product(levels, names=names)
         segment_labels = index.get_level_values('segment').values
@@ -534,16 +540,16 @@ class TestNormalize(MeasurementTests):
         # pix is in I, and piy in Q
         sseqs = seq.sampled_sequences  
         assert np.allclose(sseqs[0].waveforms[0], -sseqs[1].waveforms[1])
-        assert np.allclose(sseqs[1].waveforms[0], -sseqs[0].waveforms[1])
+        assert np.allclose(sseqs[1].waveforms[0], sseqs[0].waveforms[1])
 
     def test_gepulses_dict(self):
-        measurement = NormalizeAWG(g_pulses={0: pulsegen.pix, 1: pulsegen.piy}, 
-                                   e_pulses={0: pulsegen.piy, 1: pulsegen.pix})
+        measurement = NormalizeAWG(g_pulses={0: [pulsegen.pix], 1: [pulsegen.piy]}, 
+                                   e_pulses={0: [pulsegen.piy], 1: [pulsegen.pix]})
         seq = measurement.template_func()
         seq.sample()
-        sseqs = seq.sampled_sequences()
+        sseqs = seq.sampled_sequences
         assert np.allclose(sseqs[0].waveforms[0], -sseqs[1].waveforms[1])
-        assert np.allclose(sseqs[1].waveforms[0], -sseqs[0].waveforms[1])
+        assert np.allclose(sseqs[1].waveforms[0], sseqs[0].waveforms[1])
         
     # g_pulses, e_pulses, chpair (int, optional) Channel pair g_pulses or e_pulses are appended to if they are lists.
     

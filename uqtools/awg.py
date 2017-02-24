@@ -29,7 +29,6 @@ from contextlib import contextmanager
 from . import Parameter, Measurement, Reshape, widgets, Figure
 try:
     import pulsegen
-    from pulsegen import MultiAWGSequence
 except ImportError:
     logging.warning(__name__ + ': Failed to import pulsegen. ' + 
                     'Not loading awg library.')
@@ -215,7 +214,7 @@ class ZeroAWG(ProgramAWG):
     def sequence(self):
         """Generate a sequence with spacer pulses on all channels."""
         seq = pulsegen.MultiAWGSequence()
-        for chpair in range(len(seq.channels) / 2):
+        for chpair in range(len(seq.channels) // 2):
             seq.append_pulses([pulsegen.mwspacer(0)], chpair=chpair)
         marker_func = (self.marker_func if self.marker_func is not None else
                        default_marker_func)
@@ -261,7 +260,7 @@ class ProgramAWGParametric(ProgramAWG):
     def seq_kwargs(self):
         """Keyword arguments for `seq_func`. Resolved on read."""
         seq_kwargs = {}
-        for key, arg in self._seq_kwargs.iteritems():
+        for key, arg in self._seq_kwargs.items():
             value = resolve_value(arg)
             seq_kwargs[key] = value
             self.values[key].set(value)
@@ -345,7 +344,7 @@ class ProgramAWGParametric(ProgramAWG):
             Passed to :class:`PlotSequence`
         """
         print('plotting sequence for parameters:')
-        for key, arg in self.seq_kwargs.iteritems():
+        for key, arg in self.seq_kwargs.items():
             arg_str = repr(arg).replace('\n', '\n\t\t')
             print('\t{0}: {1}'.format(key, arg_str))
         # plot sequence
@@ -445,7 +444,7 @@ class ProgramAWGSweep(ProgramAWG):
         Resolved on read.
         """
         return dict((key, resolve_value(value)) 
-                    for key, value in self._pulse_kwargs.iteritems())
+                    for key, value in self._pulse_kwargs.items())
         
     @pulse_kwargs.setter
     def pulse_kwargs(self, pulse_kwargs):
@@ -462,7 +461,7 @@ class ProgramAWGSweep(ProgramAWG):
             kwargs = self.pulse_kwargs
         # create empty or template sequence
         if self.template_func is None:
-            seq = MultiAWGSequence()
+            seq = pulsegen.MultiAWGSequence()
         else:
             seq = self.template_func(marker_func=self.marker_func, **kwargs)
         # iterate through outer product of all ranges
@@ -635,7 +634,7 @@ class MeasureAWGSweep(Reshape):
                     return ranges_[idx]
             return map
         args = list(args)
-        args[1::2] = [map_factory(args[1::2], idx) for idx in range(len(args)/2)]
+        args[1::2] = [map_factory(args[1::2], idx) for idx in range(len(args)//2)]
         super(MeasureAWGSweep, self).__init__(source, 'segment', *args, **kwargs)
         
     def _measure(self, segments=None, **kwargs):
@@ -860,11 +859,11 @@ class NormalizeAWG(Measurement):
         seq = pulsegen.MultiAWGSequence()
         mwspacer = pulsegen.mwspacer(0)
         # ground state pulses and markers
-        for chpair in range(len(seq.channels) / 2):
+        for chpair in range(len(seq.channels) // 2):
             seq.append_pulses(self.g_pulses.get(chpair, [mwspacer]), chpair=chpair)
         marker_func(seq, 0, **kwargs)
         # excited state pulses and markers
-        for chpair in range(len(seq.channels) / 2):
+        for chpair in range(len(seq.channels) // 2):
             seq.append_pulses(self.e_pulses.get(chpair, [mwspacer]), chpair=chpair)
         marker_func(seq, 1, **kwargs)
         return seq    
@@ -1068,11 +1067,11 @@ class SingleShot(Measurement):
         for readout in self.readouts:
             mwspacer = pulsegen.mwspacer(-readout[0])
             # ground state calibration
-            for chpair in range(len(seq.channels) / 2):
+            for chpair in range(len(seq.channels) // 2):
                 seq.append_pulses(self.g_pulses.get(chpair, []) + [mwspacer], 
                                   chpair=chpair)
             # excited state calibration
-            for chpair in range(len(seq.channels) / 2):
+            for chpair in range(len(seq.channels) // 2):
                 seq.append_pulses(self.e_pulses.get(chpair, []) + [mwspacer], 
                                   chpair=chpair)
         # add markers
@@ -1143,7 +1142,7 @@ class SingleShot(Measurement):
                               np.arange(nreadouts),
                               segment_labels % nreadouts))
         # build new index
-        new_index = zip(index.names, index.levels, index.labels)
+        new_index = list(zip(index.names, index.levels, index.labels))
         new_index = new_index[:segment_lev] + add_index + new_index[1+segment_lev:]
         new_kwargs = dict(zip(['names', 'levels', 'labels'], zip(*new_index)))
         return pd.MultiIndex(**new_kwargs)
@@ -1275,7 +1274,7 @@ class PlotSequence(object):
         self.segment = segment
         self.size = size
         if channels is None:
-            channels = range(self.nchannels)
+            channels = tuple(range(self.nchannels))
         if markers is None:
             markers = (0, 1)
         self._ui(channels, markers)
@@ -1514,7 +1513,8 @@ class PlotSequence(object):
                 marker_axes[chpair][m_idx] = ax
                 
             # manipulate labels, ticks and spines
-            axs = waveform_axes[chpair].values() + marker_axes[chpair].values()
+            axs = (list(waveform_axes[chpair].values()) + 
+                   list(marker_axes[chpair].values()))
             axs[0].set_ylabel('channel pair {0}'.format(chpair))
             for ax in axs[:-1]:
                 # only the bottom axis has tick labels
@@ -1544,8 +1544,8 @@ class PlotSequence(object):
         '''
         artists = []
         # plot waveforms
-        for chpair, axes in waveform_axes.iteritems():
-            for ch_idx, ax in axes.iteritems():
+        for chpair, axes in waveform_axes.items():
+            for ch_idx, ax in axes.items():
                 ch = 2*chpair+ch_idx
                 if len(self._seqs[ch].waveforms) <= self.segment:
                     continue
@@ -1560,8 +1560,8 @@ class PlotSequence(object):
                 artists.append(ax.plot(ts, wf, color=color))
                 
         # plot marker waveforms
-        for chpair, axes in marker_axes.iteritems():
-            for m_idx, ax in axes.iteritems():
+        for chpair, axes in marker_axes.items():
+            for m_idx, ax in axes.items():
                 ch = 2*chpair + m_idx/2
                 if len(self._seqs[ch].markers) <= self.segment:
                     continue

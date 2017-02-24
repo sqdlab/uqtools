@@ -33,7 +33,9 @@ from functools import wraps
 from contextlib import contextmanager
 import types
 import json
+import inspect
 
+import six
 import pandas as pd
 import numpy as np
 
@@ -45,7 +47,7 @@ from .pandas import (pack_complex, pack_complex_decorator,
 
 def sanitize_key(key):
     """Remove leading and double separators from `key`."""
-    if not isinstance(key, str) and not isinstance(key, unicode):
+    if not isinstance(key, six.string_types):
         raise TypeError('String key expected.')
     # remove leading and double but not trailing separators 
     key_parts = key.split('/')
@@ -124,6 +126,7 @@ class JSONDict(dict):
 # Stores
 #
 #
+@six.add_metaclass(DocStringInheritor)
 class Store(object):
     """
     A dict-like store for DataFrame objects.
@@ -221,10 +224,6 @@ class Store(object):
      u'list': [0.0, 0.25, 0.5, 0.75, 1.0],
      u'string': u"I'm a comment."}
     """
-    
-    #__metaclass__ = ABCMeta
-    __metaclass__ = DocStringInheritor # includes ABCMeta
-    
     @abstractmethod
     def __init__(self, directory, filename, title=None):
         pass
@@ -323,7 +322,7 @@ class Store(object):
         return key in self.keys()
         
     def __len__(self):
-        return len(self.keys())
+        return len(list(self.keys()))
 
 
 class MemoryStore(Store):
@@ -399,7 +398,7 @@ class MemoryStore(Store):
         self._attrs.pop(key, None)
     
     def __repr__(self):
-        keys = self.keys()
+        keys = list(self.keys())
         if len(keys) > 10:
             keys = keys[:10]
             keys.append('...')
@@ -509,7 +508,7 @@ class CSVStore(Store):
                 os.makedirs(dirname)
         # support compression
         if path.endswith('.gz'):
-            return gzip.open(path, mode, self.complevel)
+            return gzip.open(path, (mode + 't') if six.PY3 else mode, self.complevel)
         else:
             return open(path, mode)
 
@@ -690,7 +689,7 @@ class CSVStore(Store):
         it = self.iterkeys()
         for _ in range(10):
             try:
-                keys.append(it.next())
+                keys.append(six.next(it))
             except StopIteration:
                 break
         else:
@@ -770,9 +769,8 @@ class StoreFactory(object):
     """Store factory."""
     classes = {}
     # auto-discovery of Store subclasses
-    for key, cls in globals().iteritems():
-        if (isinstance(cls, (type, types.ClassType)) and
-            issubclass(cls, Store) and (cls != Store)):
+    for key, cls in globals().items():
+        if (inspect.isclass(cls) and issubclass(cls, Store) and (cls != Store)):
             classes[key] = cls
     del cls
 
@@ -788,7 +786,7 @@ class StoreFactory(object):
         :data:`uqtools.config.store_kwargs`.
         """
         cls = StoreFactory.classes[config.store]
-        for suffix in xrange(100):
+        for suffix in six.moves.range(100):
             directory = file_name_generator.generate_directory_name(
                 name, suffix=str(suffix) if suffix else None
             )

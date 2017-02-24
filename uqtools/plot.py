@@ -6,6 +6,7 @@ from __future__ import print_function
 
 __all__ = ['Figure', 'Plot']
 
+from six import StringIO
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -22,7 +23,6 @@ import inspect
 import os
 import sys
 import imp
-from cStringIO import StringIO
 from base64 import b64encode
 
 from .helpers import fix_args
@@ -341,7 +341,7 @@ class AxisWidget(widgets.Box):
     SCALING_FULL = 2
     
     def __init__(self, description, options, **kwargs):
-        axis = int(kwargs.pop('axis', options.values()[0]))
+        axis = int(kwargs.pop('axis', list(options.values())[0]))
         scaling = kwargs.pop('scaling', self.SCALING_AUTO)
         super(AxisWidget, self).__init__(axis=axis, scaling=scaling, **kwargs)
         self._w_select = widgets.Dropdown(description=description, 
@@ -498,7 +498,7 @@ class FunctionWidget(widgets.FlexBox):
     def update(self, function=None):
         """Update select box, set current selection to function."""
         functions = OrderedDict([(name, func) for name, func 
-                                 in sorted(self.functions.__dict__.iteritems()) 
+                                 in sorted(self.functions.__dict__.items()) 
                                  if not name.startswith('__')])
         self._w_select.options = functions
         if function is not None:
@@ -526,7 +526,7 @@ class FunctionWidget(widgets.FlexBox):
         if len(code.co_names) != 1:
             raise ValueError('source code must define exactly one name')
         name, = code.co_names
-        exec code in globals(), self.functions.__dict__
+        exec(code, globals(), self.functions.__dict__)
         setattr(self.sources, name, source)
         return getattr(self.functions, name)
     
@@ -639,8 +639,8 @@ class Plot(object):
         self._check_inputs(cs, ds)
         # separate keys and values, support str and Parameter dicts
         self.labels = [label.name if hasattr(label, 'name') else label
-                       for label in cs.keys()+ds.keys()]
-        self.data = cs.values()+ds.values()
+                       for label in list(cs.keys())+list(ds.keys())]
+        self.data = list(cs.values())+list(ds.values())
         # initial display: select longest two axes, select first item on remaining axes
         self.shape = ds.values()[0].shape
         self.ndim = len(self.shape) # data dimensions
@@ -658,16 +658,16 @@ class Plot(object):
         if not len(ds):
             raise ValueError('ds can not be empty')
         # silently cast all inputs to ndarray (this modifies the input dicts)
-        for key, value in cs.iteritems():
+        for key, value in cs.items():
             cs[key] = np.array(value)
-        for key, value in ds.iteritems():
+        for key, value in ds.items():
             ds[key] = np.array(value)
         # check shapes
-        shape = ds.values()[0].shape
+        shape = list(ds.values())[0].shape
         if len(cs) != len(shape):
             raise ValueError('the number of dimensions of all arrays '+
                              'must be equal to the number of coordinates.')
-        for arr in cs.values()+ds.values():
+        for arr in list(cs.values())+list(ds.values()):
             if arr.shape != shape:
                 raise ValueError('all coordinate and data matrices '+
                                  'must have the same shape.')

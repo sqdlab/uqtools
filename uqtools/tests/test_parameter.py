@@ -12,6 +12,13 @@ class TestParameter:
     def p(self):
         return Parameter('test')
     
+    def test_name(self, p):
+        assert p.name == 'test'
+        
+    def test_rename(self, p):
+        pp = p.rename('test2')
+        assert pp.name == 'test2'
+    
     def test_as_buffer(self, p):
         p.set(-1)
         assert p.get() == -1
@@ -70,15 +77,17 @@ class TestParameter:
                       [('__add__', 3. + 2., 3. - 2.), # p' = p + x # p = p' - p
                        ('__sub__', 3. - 2., 3. + 2.), # p' = p - x # p = p' + x
                        ('__mul__', 3. * 2., 3. / 2.), # p' = p * x # p = p' / x
-                       ('__div__', 3. / 2., 3. * 2.), # p' = p / x # p = p' * x
+                       ('__truediv__', 3. / 2., 3. * 2.), # p' = p / x # p = p' * x
                        ('__pow__', 3.**2., 3**(1/2.)), # p' = p ** x # p = p' ** (1/x)
+                       ('__floordiv__', 3. // 2., 3. * 2.), # p' = p / x # p = p' * x
                        ('__radd__', 2. + 3., 3. - 2.), # p' = x + p # p = p' - x
                        ('__rsub__', 2. - 3., 2. - 3.), # p' = x - p # p = x - p'
                        ('__rmul__', 2. * 3., 3. / 2.), # p' = x * p # p = p' / x
-                       ('__rdiv__', 2. / 3., 2. / 3.), # p' = x / p # p = x / p'
+                       ('__rtruediv__', 2. / 3., 2. / 3.), # p' = x / p # p = x / p'
+                       ('__rfloordiv__', 2. // 3., 2. / 3.), # p' = x / p # p = x / p'
                        ('__rpow__', 2.**3., math.log(3.)/math.log(2.))], # p' = x ** p # p = log p' / log x
-                      ids=['add', 'sub', 'mul', 'div', 'pow', 
-                           'radd', 'rsub', 'rmul', 'rdiv', 'rpow'])
+                      ids=['add', 'sub', 'mul', 'truediv', 'floordiv', 'pow', 
+                           'radd', 'rsub', 'rmul', 'rtruediv', 'rfloordiv', 'rpow'])
     def test_binary_operators(self, p, operator, operand, forward, reverse):
         # same test as test_operators_readable, but also for parameter operand
         p_result = getattr(p, operator)(operand)
@@ -108,6 +117,8 @@ class TestParameter:
         assert (2. * p).get() == 2. * 3.
         assert (p / 2.).get() == 3. / 2.
         assert (2. / p).get() == 2. / 3.
+        assert (p // 2.).get() == 3. // 2.
+        assert (2. // p).get() == 2. // 3.
         # backward == wicked
         (p + 2.).set(3.)
         assert p.get() == 3. - 2.
@@ -124,6 +135,10 @@ class TestParameter:
         (p / 2.).set(3.)
         assert p.get() == 3. * 2.
         (2. / p).set(3.)
+        assert p.get() == 2. / 3.
+        (p // 2.).set(3.)
+        assert p.get() == 3. * 2.
+        (2. // p).set(3.)
         assert p.get() == 2. / 3.
         with raises(ZeroDivisionError):
             (p * 0.).set(3.)

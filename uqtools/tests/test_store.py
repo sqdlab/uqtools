@@ -4,7 +4,6 @@ import tempfile
 import os
 import shutil
 from contextlib import contextmanager
-import cStringIO
 
 import pandas as pd
 import numpy as np
@@ -184,7 +183,7 @@ class StoreTests:
         
     def test_keys(self, store, frame, key):
         store[key] = frame
-        key = store.keys()[0]
+        key = list(store.keys())[0]
         assert frame.equals(store[key])
         
     @mark.parametrize('keys',
@@ -201,13 +200,13 @@ class StoreTests:
     def test_keys_delitem_contains(self, store, frame):
         key = '/data'
         assert key not in store
-        assert store.keys() == []
+        assert list(store.keys()) == []
         store[key] = frame
         assert key in store
-        assert store.keys() == [key]
+        assert list(store.keys()) == [key]
         del store[key]
         assert key not in store
-        assert store.keys() == []
+        assert list(store.keys()) == []
     
     def test_float_data(self, store, frame):
         key = '/data'
@@ -398,7 +397,7 @@ class TestStoreView(StoreTests):
     def test_prefix_prop(self, store):
         for set, get in {'prefix': '/prefix',
                          '/prefix2': '/prefix2',
-                         '//prefix3/': '/prefix3'}.iteritems():
+                         '//prefix3/': '/prefix3'}.items():
             store.prefix = set
             assert store.prefix == get
         

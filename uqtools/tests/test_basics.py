@@ -3,6 +3,7 @@ import timeit
 from contextlib import contextmanager
 from copy import copy
 
+import six
 import numpy as np
 import pandas as pd
 
@@ -29,7 +30,7 @@ class CheckSequenceContext:
         
     def __enter__(self):
         try:
-            assert self.iter.next() == self.parameter.get()
+            assert six.next(self.iter) == self.parameter.get()
         except StopIteration:
             raise AssertionError('Check requested but no more values left.')
         
@@ -140,7 +141,7 @@ class TestParameterMeasurement(MeasurementTests):
 
     def test_saved_data(self, measurement):
         store = measurement()
-        frame = store[store.keys()[0]]
+        frame = store[list(store.keys())[0]]
         self.check_result(frame)
 
 
@@ -179,16 +180,19 @@ def iteration():
 
 class TestSweepRanges(MeasurementTests):
     ''' Test different range types '''
-    @fixture(params=[range(10), xrange(10), lambda: range(10)],
+    @fixture(params=[list(range(10)), None, lambda: range(10)],
              ids=['list', 'iterator', 'callable'])
     def measurement(self, request, iteration):
+        if request.param_index == 1:
+            # create a fresh iterator every time
+            request.param = iter(range(10))
         return Sweep(iteration, request.param, CountingMeasurement())
     
     def test_parameter_set(self, measurement):
         ''' check that the sweep parameter is set on every iteration '''
         p = measurement.coordinates['iteration']
         m = measurement.measurements[0]
-        m.context = CheckSequenceContext(p, values=range(10))
+        m.context = CheckSequenceContext(p, values=list(range(10)))
         measurement()
         # make sure context manager was executed 10 times
         with raises(AssertionError), m.context:
@@ -198,8 +202,8 @@ class TestSweepRanges(MeasurementTests):
         # index 
         frame = measurement(output_data=True)
         assert frame.index.names[0] == measurement.coordinate.name
-        assert np.all(frame.index.get_level_values(0) == range(10))
-        assert np.all(frame['count'] == range(10))
+        assert np.all(frame.index.get_level_values(0) == list(range(10)))
+        assert np.all(frame['count'] == list(range(10)))
 
 
 
@@ -216,13 +220,13 @@ class TestSweepDims(MeasurementTests):
             ref_data = np.arange(4)
         elif request.param == 'vector':
             index = pd.Int64Index(range(2), name='x')
-            frame = pd.DataFrame({'data': range(1, 3)}, index)
+            frame = pd.DataFrame({'data': np.arange(1, 3, dtype=np.int64)}, index)
             ref_index = from_product([range(4), range(2)], 
                                      names=['iteration', 'x'])
             ref_data = (np.arange(4)[:, np.newaxis]*np.arange(1, 3)).ravel()
         elif request.param == 'matrix':
             index = from_product([range(2), range(3)], names='xy')
-            frame = pd.DataFrame({'data': range(6)}, index)
+            frame = pd.DataFrame({'data': np.arange(6, dtype=np.int64)}, index)
             ref_index = from_product([range(4), range(2), range(3)],
                                      names=['iteration', 'x', 'y'])
             ref_data = (np.arange(4)[:, np.newaxis]*np.arange(6)).ravel()
@@ -258,7 +262,7 @@ class TestSweepExceptions:
         sw = Sweep(iteration, range(10), m)
         frame = sw(output_data=True)
         assert m.counter.get() == 4
-        assert list(frame['count']) == range(4)
+        assert list(frame['count']) == list(range(4))
         
     def test_continue(self, iteration):
         ''' ContinueIteration with one nested measurement. '''
@@ -267,7 +271,7 @@ class TestSweepExceptions:
         sw = Sweep(iteration, range(10), m)
         frame = sw(output_data=True)
         assert m.counter.get() == 9
-        assert list(frame['count']) == range(4) + range(5, 10)
+        assert list(frame['count']) == list(range(4)) + list(range(5, 10))
 
     def test_continue2(self, iteration):
         ''' ContinueIteration with three nested measurements. '''
@@ -278,9 +282,9 @@ class TestSweepExceptions:
         sw = Sweep(iteration, range(10), [m1, m2, m3])
         store = sw()
         # check that the data vectors are correct
-        for key, reference in [('/m1', range(1, 10)), 
-                               ('/m2', range(4) + range(5, 9)), 
-                               ('/m3', range(4) + range(4, 8))]:
+        for key, reference in [('/m1', list(range(1, 10))), 
+                               ('/m2', list(range(4)) + list(range(5, 9))), 
+                               ('/m3', list(range(4)) + list(range(4, 8)))]:
             assert list(store[key]['count']) == reference
 
 
@@ -336,7 +340,7 @@ class TestAverage(MeasurementTests):
         
     def test_store(self, measurement):
         store = measurement()
-        rframe = pd.DataFrame({'count': range(10)},
+        rframe = pd.DataFrame({'count': np.arange(10, dtype=np.int64)},
                               pd.Index(range(10), name='average'))
         for key in ('/Counting', '/Counting2'):
             assert store[key + '/iterations'].equals(rframe)

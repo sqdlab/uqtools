@@ -32,6 +32,9 @@ from collections import deque
 import contextlib
 from abc import ABCMeta, abstractmethod
 import warnings
+import sys
+
+import six
 
 from .helpers import resolve_value
 
@@ -47,19 +50,28 @@ class nested:
         self.stack = []
         
     def __enter__(self):
-        mgr = contextlib.nested(*self.managers)
-        self.stack.append(mgr)
-        return mgr.__enter__()
+        if six.PY2:
+            stack = contextlib.nested(*self.managers)
+            stack.__enter__()
+        elif six.PY3:
+            stack = contextlib.ExitStack()
+            stack.__enter__()
+            try:
+                for mgr in self.managers:
+                    stack.enter_context(mgr)
+            except:
+                stack.__exit__(*sys.exc_info())
+                raise
+        self.stack.append(stack)
     
     def __exit__(self, *exc):
         mgr = self.stack.pop()
         mgr.__exit__(*exc)
     
-    
+
+@six.add_metaclass(ABCMeta)
 class SetRevertBase(object):
     """Abstract base class of :class:`Set` and :class:`Revert`."""
-
-    __metaclass__ = ABCMeta
     name = None
     #_parameters must be provided by child class constructor
     
@@ -85,7 +97,7 @@ class SetRevertBase(object):
         if self.name is not None:
             return
         import __main__
-        for key, value in __main__.__dict__.iteritems():
+        for key, value in __main__.__dict__.items():
             if value is self:
                 self.name = key
                 break
@@ -151,7 +163,7 @@ class Revert(SetRevertBase):
     def __exit__(self, exc_type, exc_value, traceback):
         """Reset parameters to their initial values."""
         revert_dict = self._revert_stack.pop()
-        for key, value in revert_dict.iteritems():
+        for key, value in revert_dict.items():
             old_value = self._update_value(key, value)
             self._debug_print('Reverted {key} to {value}, was {old_value}.', 
                               key=key, value=value, old_value=old_value)
@@ -186,7 +198,7 @@ class ParameterHandler(object):
 
     def __init__(self, *pv_pairs):
         super(ParameterHandler, self).__init__()
-        self._parameters = zip(pv_pairs[::2], pv_pairs[1::2])
+        self._parameters = list(zip(pv_pairs[::2], pv_pairs[1::2]))
         if len(pv_pairs) % 2:
             self._parameters.extend(pv_pairs[-1].items())
         for parameter, _ in self._parameters:
@@ -242,7 +254,7 @@ class InstrumentHandler(object):
         if (not hasattr(ins, 'get') or 
             not hasattr(ins, 'set')):
             raise TypeError('ins must have get and set methods.')
-        self._parameters = (zip(pv_pairs[::2], pv_pairs[1::2]))
+        self._parameters = list(zip(pv_pairs[::2], pv_pairs[1::2]))
         self._parameters.extend(parameter_dict.items())
         for key, _ in self._parameters:
             if hasattr(ins, key):

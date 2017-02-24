@@ -396,10 +396,10 @@ class Fit(Plotting):
         for idx, p_opt, p_cov in zip(range(len(p_opts)), p_opts, p_covs):
             p_std = np.sqrt(p_cov.diagonal())
             p_test = self.test(xs=xs, ys=ys, p_opt=p_opt, p_std=p_std,
-                               p_est=p_est.values())
+                               p_est=list(p_est.values()))
             
             # build output DataFrame
-            ritems = zip(self.fitter.PARAMETERS, p_opt)
+            ritems = list(zip(self.fitter.PARAMETERS, p_opt))
             ritems += [('{0}_std'.format(key), [value])
                         for key, value in zip(self.fitter.PARAMETERS, p_std)]
             ritems += [('fit_ok', [1 if p_test else 0])]
@@ -421,7 +421,7 @@ class Fit(Plotting):
             # only if the fit was successful
             if p_test:
                 # save data to popts_out values
-                for p, k in self.popt_out.iteritems():
+                for p, k in self.popt_out.items():
                     p.set(rframe.get(k)[idx])
                 # run nested measurements
                 if len(self.measurements):
@@ -746,7 +746,7 @@ class Minimize(Plotting):
         # save fit to: user-provided parameters
         popt_keys = ['c0', 'c1', 'min', 'fit_ok']
         popt_dict = dict(zip(popt_keys, results))
-        for parameter, key in self.popt_out.iteritems():
+        for parameter, key in self.popt_out.items():
             parameter.set(popt_dict[key])
         # save fit to: file
         items = [(k, [v]) for k, v in zip(self.values.names(), results)]
@@ -821,8 +821,8 @@ class MinimizeIterative(Sweep):
         """Pass certain attributes to :class:`Minimize`."""
         if attr in self._minimize_attrs:
             return getattr(self.measurements[0], attr)
-        raise KeyError('{0} object has no attribute {1}.'
-                       .format(type(self).__name__, attr))
+        #raise KeyError('{0} object has no attribute {1}.'
+        #               .format(type(self).__name__, attr))
         return object.__getattribute__(self, attr)
         
     def _range_func(self, axis):
@@ -957,14 +957,14 @@ class Interpolate(Measurement):
                     # append new calibration point to interpolators
                     table_row = self.table.row
                     for dict_ in (indep_dict, dep_dict):
-                        for k, v in dict_.iteritems():
+                        for k, v in dict_.items():
                             table_row[k] = v
                     table_row.append()
                     self.table.flush()
                     self._update_interpolators()
                 break
         # save calibration point to file
-        self._data.add_data_point(*(indep_dict.values()+dep_dict.values()))
+        self._data.add_data_point(*(list(indep_dict.values())+list(dep_dict.values())))
         # return calibration point
         return (indep_dict, dep_dict)
     
@@ -979,10 +979,10 @@ class Interpolate(Measurement):
     def _set_deps(self, dep_dict):
         ''' set values of dependent variables (including p_out) '''
         # save to: internal parameters
-        for p, v in dep_dict.iteritems():
+        for p, v in dep_dict.items():
             p.set(v)
         # save to: additional outputs
-        for p, k in self.p_out.iteritems():
+        for p, k in self.p_out.items():
             p.set(dep_dict[k])
         
     def interpolate(self):
@@ -1035,14 +1035,14 @@ class Interpolate(Measurement):
             pass
         class DummyRow(dict):
             def append(self_):
-                for k,v in self_.iteritems():
+                for k,v in self_.items():
                     getattr(self.table.cols, k.name).append(v)
         self.table = DummyTable()
         self.table.row = DummyRow()
         self.table.cols = DummyCols()
-        for c, cv in df_cs.iteritems():
+        for c, cv in df_cs.items():
             setattr(self.table.cols, c.name, list(cv.ravel()))
-        for c, dv in df_ds.iteritems():
+        for c, dv in df_ds.items():
             setattr(self.table.cols, c.name, list(dv.ravel()))
     
     def _save(self, fn):

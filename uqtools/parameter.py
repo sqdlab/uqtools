@@ -1,6 +1,7 @@
 """
 Named parameters, lists and dicts.
 """
+from __future__ import division
 
 __all__ = ['Parameter', 'ParameterBase', 'LinkedParameter', 'OffsetParameter', 
            'ScaledParameter', 'TypedList', 'ParameterList', 'ParameterDict']
@@ -10,15 +11,14 @@ from copy import copy
 from functools import wraps
 from abc import ABCMeta
 
+import six
 import numpy as np
 
+@six.add_metaclass(ABCMeta)
 class ParameterBase(object):
     """
     Abstract base class of :class:`Parameter` and :class:`LinkedParameter`.
     """
-    
-    __metaclass__ = ABCMeta
-    
     def __init__(self, name, **options):
         self.name = name
         self.options = options
@@ -30,6 +30,12 @@ class ParameterBase(object):
     def get(self, **kwargs):
         """Return value of the parameter."""
         raise NotImplementedError
+    
+    def rename(self, name):
+        """Return a copy of self with a new name"""
+        p = copy(self)
+        p.name = name
+        return p
     
     def __repr__(self):
         """Return a human-readable representation of self."""
@@ -116,7 +122,7 @@ class ParameterBase(object):
     
     __rmul__ = __mul__
     
-    def __div__(self, other):
+    def __truediv__(self, other):
         """`self` / `other`"""
         if hasattr(other, 'get'):
             name = '({0}/{1})'.format(self.name, other.name)
@@ -128,7 +134,7 @@ class ParameterBase(object):
             set_func = lambda value, **kwargs: self.set(value * other, **kwargs) 
         return Parameter(name, get_func=get_func, set_func=set_func)
     
-    def __rdiv__(self, other):
+    def __rtruediv__(self, other):
         """`other` / `self`"""
         if hasattr(other, 'get'):
             name = '({1}/{0})'.format(self.name, other.name)
@@ -140,6 +146,34 @@ class ParameterBase(object):
             set_func = lambda value, **kwargs: self.set(other / value, **kwargs) 
         return Parameter(name, get_func=get_func, set_func=set_func)
 
+    def __floordiv__(self, other):
+        """`self` / `other`"""
+        if hasattr(other, 'get'):
+            name = '({0}/{1})'.format(self.name, other.name)
+            get_func = lambda **kwargs: self.get(**kwargs) // other.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(value * other.get(), **kwargs)
+        else:
+            name = '({0}/{1})'.format(self.name, other)
+            get_func = lambda **kwargs: self.get(**kwargs) // other
+            set_func = lambda value, **kwargs: self.set(value * other, **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
+    
+    def __rfloordiv__(self, other):
+        """`other` / `self`"""
+        if hasattr(other, 'get'):
+            name = '({1}/{0})'.format(self.name, other.name)
+            get_func = lambda **kwargs: other.get(**kwargs) // self.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(other.get() / value, **kwargs)
+        else:
+            name = '({1}/{0})'.format(self.name, other)
+            get_func = lambda **kwargs: other // self.get(**kwargs)
+            set_func = lambda value, **kwargs: self.set(other / value, **kwargs) 
+        return Parameter(name, get_func=get_func, set_func=set_func)
+    
+    # Parameter always uses Python 3 division 
+    __div__ = __truediv__
+    __rdiv__ = __rtruediv__
+    
     def __pow__(self, other):
         """`self` \*\* `other`"""
         if hasattr(other, 'get'):
@@ -180,7 +214,7 @@ class Parameter(ParameterBase):
     transfer data between measurements, e.g. to use a fit result as the central
     point for a sweep.
     
-    `Parameter` supports the -, +, *, /, ** and abs operations between two  
+    `Parameter` supports the -, +, *, /, //, ** and abs operations between two  
     `Parameter` objects or between a `Parameter` and any other object. Every 
     time `get()` of a `Parameter` that is the result of an expression is 
     invoked, the current values of all `Parameter` operands is determined. When 
@@ -203,6 +237,11 @@ class Parameter(ParameterBase):
         Initial value returned by `get()` if no `get_func` is defined.
     options
         Extra descriptive information. May be stored in data files.
+        
+    Note
+    ----
+    No checking is performed when setting values, i.e. abs(p).set(-1) and
+    (p//2).set(0.5) will proceed but p.get() will not return the set value.
         
     Examples
     --------
@@ -428,6 +467,9 @@ class TypedList(MutableSequence):
             return self.data == other.data
         else:
             return self.data == other
+        
+    def __ne__(self, other):
+        return not self.__eq__(other)
     
     def __add__(self, other):
         result = copy(self)
@@ -525,6 +567,9 @@ class ParameterDict(OrderedDict):
             if np.any(self[key] != other[key]):
                 return False
         return True
+    
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def _repr_pretty_(self, p, cycle):
         """IPython pretty representation of the dict."""

@@ -1,8 +1,9 @@
+# -*- coding: UTF-8 -*-
 from pytest import mark
 from inspect import ArgSpec, getargspec
 from pytest import raises
 
-from uqtools.helpers import fix_args
+from uqtools.helpers import fix_args, sanitize
 
 class TestFixArgs:
     def test_posargs(self):
@@ -101,7 +102,11 @@ class TestFixArgs:
 
 
 
-@mark.xfail
 def test_sanitize():
-    assert False
+    assert sanitize('') == ''
+    assert sanitize('abc') == 'abc'
+    # remove diacritics
+    assert sanitize(u'äáàâ') == 'aaaa'
+    # invalid in windows file names
+    assert sanitize(r'a\b/c:d*e?f"g>h<i|j') == 'abcdefghij'
     

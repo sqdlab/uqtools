@@ -65,7 +65,16 @@ class TestNested:
         with ctx:
             pass
         assert (cnt.enter_count == 2) and (cnt.exit_count == 2)
-
+        
+    def test_reentrace(self):
+        cnt = CountingContextManager()
+        ctx = nested(cnt)
+        with ctx:
+            with ctx:
+                assert cnt.enter_count == 2
+            assert cnt.exit_count == 1
+        assert cnt.exit_count == 2
+        
 
 class TestSetInstrument:
     def test_init(self, instrument):

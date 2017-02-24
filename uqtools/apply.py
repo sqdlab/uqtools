@@ -189,7 +189,7 @@ class Apply(Measurement):
     def _measure(self, output_data=True, **kwargs):
         # resolve all args and call function
         args = [self._resolve_value(arg, kwargs)
-                for arg in list(self.func_args) + self.func_kwargs.values()]
+                for arg in list(self.func_args) + list(self.func_kwargs.values())]
         # squeeze indices
         if self.squeeze_index:
             for idx, arg in enumerate(args[1:], 1):
@@ -390,12 +390,12 @@ class Reshape(Measurement):
         `callable` and `Parameter` values are resolved on read.
         '''
         return OrderedDict((key, val() if callable(val) else resolve_value(val))
-                           for key, val in self._out_maps.iteritems())
+                           for key, val in self._out_maps.items())
     
     @out_maps.setter
     def out_maps(self, out_maps):
         # check out_maps
-        for out_name, out_map in out_maps.iteritems():
+        for out_name, out_map in out_maps.items():
             if callable(out_map):
                 out_map = out_map()
             if not hasattr(resolve_value(out_map), '__getitem__'):

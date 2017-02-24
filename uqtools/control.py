@@ -271,7 +271,7 @@ def MultiSweep(*args, **kwargs):
             raise TypeError('measurement argument is missing.')
         m = kwargs.pop('measurement')
     # generate hierarchy of Sweeps
-    for coord, range_ in reversed(zip(coords, ranges)):
+    for coord, range_ in reversed(list(zip(coords, ranges))):
         m = Sweep(coord, range_, m, **kwargs)
     return m
 
@@ -384,7 +384,7 @@ class Average(Measurement):
         for m in self.measurements:
             for child in m.get_all_measurements():
                 if (hasattr(child, 'buf') and 
-                    child.buf in self.mean_buffers.values()):
+                    child.buf in list(self.mean_buffers.values())):
                     break
             else:
                 primaries.append(child)

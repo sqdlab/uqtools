@@ -215,7 +215,7 @@ class TestReshape(MeasurementTests):
         if (frame.index.nlevels == 1) and not len(out_maps) and droplevel:
             xfail('Scalar output is not supported.')
         out = []
-        for out_name, out_map in out_maps.iteritems():
+        for out_name, out_map in out_maps.items():
             out.extend((out_name, out_map))
         return Reshape(Constant(frame), level, *out, droplevel=droplevel)
 

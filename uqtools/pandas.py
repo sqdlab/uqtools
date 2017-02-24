@@ -188,7 +188,7 @@ def dataframe_from_csds(cs, ds):
     `DataFrame` with a `MultiIndex` generated from `cs` and data taken from `ds`.
     """
     frame = pd.DataFrame(OrderedDict((p.name, d.ravel())
-                         for p, d in ds.iteritems()))
+                         for p, d in ds.items()))
     if len(cs):
         index_arrs = [np.asarray(c).ravel() for c in cs.values()]
         index_names = cs.names()

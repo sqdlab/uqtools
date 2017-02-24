@@ -8,6 +8,8 @@ from functools import wraps
 from warnings import warn
 from threading import Event
 
+import six
+
 from . import config
 from .helpers import Singleton, CallbackDispatcher
 
@@ -83,7 +85,7 @@ class BaseFlow(object):
     def reset(self):
         ''' Indicate start of the top-level measurement. '''
         self.running = False
-        for event in self.events.itervalues():
+        for event in self.events.values():
             event.clear()
         
     def start(self):
@@ -140,7 +142,7 @@ class BaseFlow(object):
     def _process_events(self):
         ''' run own event loop '''
         # process local events
-        for key, event in self.events.iteritems():
+        for key, event in self.events.items():
             if event.is_set():
                 try:
                     result = getattr(self, 'on_'+key)()
@@ -151,13 +153,11 @@ class BaseFlow(object):
                     raise err
 
 
-
+@six.add_metaclass(Singleton)
 class RootConsoleFlow(BaseFlow):
     '''
     Global event handler and GUI generator.
     '''
-    __metaclass__ = Singleton
-    
     def __init__(self):
         super(RootConsoleFlow, self).__init__()
         self.on_show = CallbackDispatcher()
@@ -603,7 +603,7 @@ if 'widgets' in globals():
         def _limit_rate(callback):
             @wraps(callback)
             def _rate_limited_callback(self, *args, **kwargs):
-                timestamp_attr = '_{0}_timestamp'.format(callback.func_name)
+                timestamp_attr = '_{0}_timestamp'.format(callback.__name__)
                 last_update = getattr(self, timestamp_attr, 0)
                 if (not kwargs.pop('force', False) and
                     (time.time()-last_update < self.UPDATE_INTERVAL)):

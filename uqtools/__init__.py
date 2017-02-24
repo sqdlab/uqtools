@@ -1,12 +1,14 @@
 import logging
 import importlib
 
+import six
+
 def reimport(module, package=__package__):
     '''import a module, reloading it if was already imported'''
     module = package + '.' + module
     if module in globals():
         logging.debug(__name__ + ': forcing reload of {0}'.format(module))
-        reload(globals()[module])
+        six.moves.reload_module(globals()[module])
     else:
         globals()[module] = importlib.import_module(module, package)
 

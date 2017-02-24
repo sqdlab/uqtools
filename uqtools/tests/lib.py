@@ -1,6 +1,7 @@
 from pytest import mark
 import logging
-from StringIO import StringIO
+import six
+from six.moves import StringIO
 
 import pandas as pd
 import numpy as np

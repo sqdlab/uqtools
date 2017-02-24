@@ -25,6 +25,8 @@ class NoFlowMeasurement(Measurement):
 
 
 class TestBaseFlow:
+    MAX_TIMING_ERROR = 12e-3
+
     @fixture
     def measurement(self):
         return NoFlowMeasurement(name='test')
@@ -43,9 +45,9 @@ class TestBaseFlow:
     def test_sleep(self, flow):
         # make sure sleep is not too slow or too inaccurate
         timer = timeit.Timer(flow.sleep)
-        assert timer.timeit(100)/100. < 10e-3
+        assert timer.timeit(100)/100. < self.MAX_TIMING_ERROR
         timer = timeit.Timer(lambda: flow.sleep(100e-3))
-        assert abs(timer.timeit(3)/3. - 100e-3) < 10e-3
+        assert abs(timer.timeit(3)/3. - 100e-3) < self.MAX_TIMING_ERROR
     
     def on_test(self):
         print('call')
@@ -106,12 +108,12 @@ class TestLoopFlow(TestBaseFlow):
 
 
 class TestTimingFlow(TestLoopFlow):
-    MAX_TIMING_ERROR = 10e-3
+    MAX_TIMING_ERROR = 12e-3
     SLEEP = 25e-3
     
     @fixture
     def flow(self, measurement):
-        TimingFlow.TIMING_AVERAGES = 3.
+        TimingFlow.TIMING_AVERAGES = 3
         return TimingFlow(iterations=10)
     
     def test_time_elapsed(self, flow):
@@ -206,7 +208,7 @@ class TestProgressBarWidgetFlow(TestLoopFlow):
     
     @fixture
     def flow(self, measurement):
-        ProgressBarWidgetFlow.TIMING_AVERAGES = 3.
+        ProgressBarWidgetFlow.TIMING_AVERAGES = 3
         return ProgressBarWidgetFlow(10)
     
     def test_widget(self, flow):

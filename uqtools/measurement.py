@@ -12,8 +12,11 @@ from abc import ABCMeta, abstractmethod
 from collections import Counter
 import inspect
 
+import six
+
 from . import config, TypedList, ParameterList, Flow, RootFlow
 from .store import StoreFactory, MeasurementStore
+from .context import nested
 from .helpers import sanitize, make_iterable
 
 def _call_nested_optional(func, nested, **kwargs):
@@ -23,6 +26,7 @@ def _call_nested_optional(func, nested, **kwargs):
     else:
         return func(**kwargs)
 
+@six.add_metaclass(ABCMeta)
 class Measurement(object):
     """
     Abstract measurement base class.
@@ -67,8 +71,6 @@ class Measurement(object):
         succeed. See :mod:`uqtools.context`.
     
     """
-    __metaclass__ = ABCMeta
-    
     log_level = config.local_log_level
     """Minimum `level` of log entries written to the measurement log file."""
     
@@ -124,7 +126,7 @@ class Measurement(object):
     @property
     def context(self):
         """Context managers active during :meth:`_measure`."""
-        return contextlib.nested(*self._contexts)
+        return nested(*self._contexts)
     
     @context.setter
     def context(self, contexts):
