@@ -6,7 +6,7 @@ from __future__ import print_function
 
 __all__ = ['Figure', 'Plot']
 
-from six import StringIO
+from six import BytesIO
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -160,7 +160,7 @@ class Figure(widgets.DOMWidget):
         
     def update(self):
         # rasterize image
-        png_data = StringIO()
+        png_data = BytesIO()
         self.fig.canvas.print_png(png_data)
         self._b64image = b64encode(png_data.getvalue())
         _, height = self.fig.canvas.get_width_height()
@@ -208,11 +208,12 @@ class Figure(widgets.DOMWidget):
     def compile(self):
         """Push style sheets and JavaScript to the browser."""
         # load and display js
-        plotpy_fn = inspect.getfile(inspect.currentframe())
-        plotpy_path = os.path.dirname(os.path.abspath(plotpy_fn))
-        js_fn = os.path.join(plotpy_path, 'FigureWidget.js')
-        js = Javascript(file(js_fn).read())
-        display(js)
+        #plotpy_fn = inspect.getfile(inspect.currentframe())
+        #plotpy_path = os.path.dirname(os.path.abspath(plotpy_fn))
+        #js_fn = os.path.join(plotpy_path, 'FigureWidget.js')
+        #with open(js_fn) as code:
+        #    js = Javascript(code.read())
+        #    display(js)
         # display css
         display(self._style)
         
@@ -734,7 +735,7 @@ class Plot(object):
     
     def _update_plot(self):
         ''' update plot in widget ui '''
-        #png_data = StringIO()
+        #png_data = BytesIO()
         #self.plot().canvas.print_png(png_data)
         #self.w_plot.value = png_data.getvalue()
         self.w_plot.fig = self.plot()

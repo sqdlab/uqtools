@@ -120,3 +120,11 @@ def debug(level=1):
         global_log.setLevel(global_level)
         Measurement.log_level = local_level 
         context.DEBUG = level
+
+def _jupyter_nbextension_paths():
+    return [{
+        'section': 'notebook',
+        'src': 'static',
+        'dest': 'uqtools',
+        'require': 'uqtools/extension'
+    }]
