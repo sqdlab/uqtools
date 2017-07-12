@@ -125,7 +125,7 @@ setup(
     #license='',
     keywords='measurement, data acquisition, interactive, notebook',
     url='http://sqd.equs.org/',
-    packages=['uqtools'], 
+    packages=['uqtools', 'uqtools.tests'], 
     zip_safe=False, 
     cmdclass={
         'build_py': js_prerelease(build_py),
@@ -133,9 +133,9 @@ setup(
         'sdist': js_prerelease(sdist, strict=True),
         'jsdeps': NPM,
     },
-    #package_data={
-    #    '': ['*.js']
-    #}, 
+    package_data={
+        'uqtools': ['doc/Makefile', 'doc/conf.py', 'doc/*.rst']
+    }, 
     data_files=[
         ('share/jupyter/nbextensions/uqtools', [
             'uqtools/static/extension.js',

@@ -7,6 +7,7 @@ Emulates IPython 3.x widgets when running on IPython 2.x.
 The style attributes are not supported, so the user interface looks somewhat 
 ugly in IPython 2.x.
 """
+import inspect
 
 try:
     import ipywidgets as widgets
@@ -22,6 +23,20 @@ try:
         Widget, DOMWidget
     )
 
+    # ipywidgets 5.0 defined these as functions
+    if not inspect.isclass(HBox) or not inspect.isclass(VBox):
+        from traitlets import Unicode
+        
+        class HBox(Box):
+            """Displays multiple widgets horizontally using the flexible box model."""
+            _model_name = Unicode('HBoxModel').tag(sync=True)
+            _view_name = Unicode('HBoxView').tag(sync=True)
+
+        class VBox(Box):
+            """Displays multiple widgets vertically using the flexible box model."""
+            _model_name = Unicode('VBoxModel').tag(sync=True)
+            _view_name = Unicode('VBoxView').tag(sync=True)
+        
 except ImportError:
     try:
         from IPython.html import widgets
