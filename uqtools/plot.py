@@ -386,7 +386,7 @@ class AxisWidget(widgets.Box):
             idx += 1
              
 
-class FunctionWidget(widgets.FlexBox):
+class FunctionWidget(widgets.HBox):
     """
     A function selection widget, a select box combined with a code editor.
     
@@ -414,7 +414,7 @@ class FunctionWidget(widgets.FlexBox):
     function = traitlets.Any()
     
     def __init__(self, **kwargs):
-        super(FunctionWidget, self).__init__(orientation='horizontal')
+        super(FunctionWidget, self).__init__()
         self.functions = imp.new_module('functions')
         self.sources = imp.new_module('sources')
         # add a few default functions
@@ -557,7 +557,7 @@ class FunctionWidget(widgets.FlexBox):
             self.default = getattr(module, 'default')
             
             
-class FloatTextSliderWidget(widgets.FlexBox):
+class FloatTextSliderWidget(widgets.HBox):
     """
     A slider with an associated float input box.
     The components update each other.
@@ -584,8 +584,7 @@ class FloatTextSliderWidget(widgets.FlexBox):
     disabled = traitlets.Bool()
     
     def __init__(self, description, values=[0], **kwargs):
-        super(FloatTextSliderWidget, self).__init__(orientation='horizontal',
-                                                    **kwargs)
+        super(FloatTextSliderWidget, self).__init__(**kwargs)
         # create widgets    
         self._w_slider = widgets.IntSlider(description=description,
                                            min=0, value=0, readout=False)
@@ -687,7 +686,7 @@ class Plot(object):
             w_axes.append(AxisWidget('y axis', axis=self.axes[1], options=values))
         values = dict(AxisWidget.reverse_enumerate(self.labels[self.ndim:], self.ndim))
         w_axes.append(AxisWidget('z axis', axis=self.axes[-1], options=values))
-        self.w_axes = widgets.FlexBox(orientation='horizontal', children=w_axes)
+        self.w_axes = widgets.HBox(children=w_axes)
         for axis, w_axis in enumerate(w_axes):
             w_axis.on_trait_change(fix_args(self._on_axis_change, plot_axis=axis), 'axis')
             w_axis.on_trait_change(self._on_limit_change, ('min', 'max'))

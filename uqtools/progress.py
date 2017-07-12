@@ -403,9 +403,9 @@ if 'widgets' in globals():
             stop = widgets.Button(description='stop')
             stop.on_click(lambda _: self.events['abort'].set())
             stop.margin = '0px 10px 0px 0px'
-            vbox = widgets.FlexBox()
+            vbox = widgets.VBox()
             vbox.children = self._traverse_widget(root)
-            hbox = widgets.FlexBox(orientation='horizontal')
+            hbox = widgets.HBox()
             hbox.children = (stop, vbox)
             self._widgets = {'stop':stop, 'hbox':hbox, 'vbox':vbox}
             return hbox
@@ -558,10 +558,10 @@ if 'widgets' in globals():
             overlay.width = '350px'
             overlay.text_align = 'center'
             overlay.color = 'black'
-            progress_box = widgets.FlexBox(orientation='horizontal')
+            progress_box = widgets.HBox()
             progress_box.margin = '0px 5px 0px 0px'
             progress_box.children = (progress, overlay)
-            if isinstance(progress._css, tuple):
+            if hasattr(progress, '_css') and isinstance(progress._css, tuple):
                 # IPython 3.0 specific
                 progress._css = (('div.widget-progress', 'margin-top', '0px'),)
                 overlay._css = (('div', 'position', 'absolute'),
@@ -575,7 +575,7 @@ if 'widgets' in globals():
             stop = widgets.Button(description='break')
             stop.on_click(lambda _: self.events['break'].set())
             stop.height = '30px'
-            box = widgets.FlexBox(orientation='horizontal')
+            box = widgets.HBox()
             box.height = '35px'
             box.children = (label, progress_box, timer, stop)
             box.align = 'center'

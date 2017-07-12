@@ -13,7 +13,7 @@ try:
 
     from ipywidgets import (
         CallbackDispatcher, 
-        Box, FlexBox, Tab,
+        Box, HBox, VBox, Tab,
         Button, ToggleButtons, Checkbox, 
         IntText, IntSlider, BoundedIntText, IntProgress, 
         FloatText, FloatSlider, BoundedFloatText,

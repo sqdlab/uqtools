@@ -1373,10 +1373,10 @@ class PlotSequence(object):
         self._w_figure.on_zoom(self._w_figure.zoom, remove=True)
         self._w_figure.on_zoom(self._on_zoom)
         # plot and slider canvas
-        self._w_box = widgets.FlexBox()
+        self._w_box = widgets.VBox()
         self._w_box.children = [self._w_figure, self._w_sliders]
         # application widget
-        self._w_app = widgets.FlexBox(orientation='horizontal')
+        self._w_app = widgets.HBox()
         self._w_app.children = [self._w_channels, self._w_box]
     
     def _ipython_display_(self):
