@@ -31,3 +31,6 @@ file_name_generator_kwargs = {}
 
 #. `bool`, enable IPython notebook widget UI 
 enable_widgets = True
+
+#. `bool`, enable multithreading
+threads = True

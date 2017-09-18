@@ -19,6 +19,7 @@ from collections import OrderedDict
 from copy import copy
 import re
 import zipfile
+import threading
 
 import pandas as pd
 import numpy as np
@@ -26,7 +27,7 @@ import numpy as np
 # Plot interface
 from contextlib import contextmanager
 
-from . import Parameter, Measurement, Reshape, widgets, Figure
+from . import Parameter, Measurement, Reshape, widgets, Figure, config
 try:
     import pulsegen
 except ImportError:
@@ -151,6 +152,9 @@ class ProgramAWG(Measurement):
         Stops and programs each AWG first, then starts the AWGs in reverse
         order, wait()ing for each to finish before starting the next.
         
+        If config.threads is set, AWG programming will be delegated to 
+        multiple python threads.
+        
         Parameters
         ----------
         host_dir : `str`
@@ -163,6 +167,8 @@ class ProgramAWG(Measurement):
         '''
         host_file += '.seq'
         logging.debug(__name__ + ': Programming {0} AWGs.'.format(len(self.awgs)))
+        
+        threads = []
         for idx, awg in enumerate(self.awgs):
             awg.stop()
             host_path = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx))
@@ -170,10 +176,19 @@ class ProgramAWG(Measurement):
             if os.path.exists(host_fullpath):
                 logging.debug(__name__ + ': Programming file {1} on AWG #{0}.'
                               .format(idx, host_fullpath))
-                awg.load_sequence(host_path, host_file)
+                if hasattr(config, 'threads') and config.threads:
+                    thread = threading.Thread(name='AWG{}'.format(idx), 
+                                              target=awg.load_sequence, 
+                                              args=(host_path, host_file))
+                    thread.start()
+                    threads.append(thread)
+                else:
+                    awg.load_sequence(host_path, host_file)
             else:
                 logging.warning(__name__ + ': File {1} for AWG #{0} not found.'
                                 .format(idx, host_fullpath))
+        for thread in threads:
+            thread.join()
         for awg in reversed(self.awgs):
             awg.run()
             if wait and hasattr(awg, 'wait'):
