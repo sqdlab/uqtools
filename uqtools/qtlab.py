@@ -70,7 +70,9 @@ class Instrument(object):
             kwargs['dtype'] = kwargs.pop('type', None)
             kwargs['get_func'] = getattr(self._ins, 'get_{0}'.format(pname), False)
             kwargs['set_func'] = getattr(self._ins, 'set_{0}'.format(pname), False)
-            return Parameter(**kwargs)
+            p = Parameter(**kwargs)
+            p.__doc__ = kwargs.get('doc')
+            return p
         if pname in self._ins.get_function_names():
             return getattr(self._ins, pname)
         raise AttributeError('Instrument {0} has no parameter or function {1}.'

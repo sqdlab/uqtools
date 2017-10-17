@@ -1352,7 +1352,7 @@ class PlotSequence(object):
         Generate the user interface and store it in self._w_app.
         '''
         # channel and marker selection
-        self._w_channels = widgets.Box()
+        self._w_channels = widgets.VBox()
         cbs = []
         for ch in range(self.nchannels):
             cbs.append(widgets.Checkbox(description='channel {0}'.format(ch),

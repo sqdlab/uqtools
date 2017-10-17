@@ -33,4 +33,4 @@ file_name_generator_kwargs = {}
 enable_widgets = True
 
 #. `bool`, enable multithreading
-threads = True
+threads = False
