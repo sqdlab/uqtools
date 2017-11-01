@@ -9,7 +9,7 @@ from .lib import MeasurementTests
 class TestBuffer(MeasurementTests):
     @fixture
     def buffer(self):
-        index = pd.MultiIndex.from_product([range(2), range(2)], names='xy')
+        index = pd.MultiIndex.from_product([range(2), range(2)], names=['x', 'y'])
         frame = pd.DataFrame({'z': range(4)}, index=index)
         self.pscale = Parameter('scale', value=1)
         self.source = Function(lambda scale: frame * scale,

@@ -168,27 +168,27 @@ def frame_factory(shape, column='data', output='frame'):
         data = (xd,)
     elif shape == 'matrix':
         index = [xs, ys]
-        names = 'xy'
+        names = ['x', 'y']
         data = (xd, yd)
     elif shape == 'matrix_singleton':
         index = [xs, [0]]
-        names = 'xy'
+        names = ['x', 'y']
         data = (xd, yd[:1])
     elif shape == 'matrix_complex':
         index = [xs, ys]
-        names = 'xy'
+        names = ['x', 'y']
         data = (np.full((4,), 2.+1.j, np.complex128), yd)
     elif shape == 'matrix_transpose':
         index = [ys, xs]
-        names = 'yx'
+        names = ['y', 'x']
         data = (yd, xd)
     elif shape == '3darray':
         index = [xs, ys, zs]
-        names = 'xyz'
+        names = ['x', 'y', 'z']
         data = (xd, yd, zd)
     elif shape == '3darray_transpose':
         index = [ys, xs, zs]
-        names='yxz'
+        names=['y', 'x', 'z']
         data = (yd, xd, zd)
     # calculate n-dimensional outer product
     if len(data) == 1:

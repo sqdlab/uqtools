@@ -46,14 +46,14 @@ class TestFittingMeasurement(MeasurementTests):
             self.f0s = [0.]
             data = lorentzian(*self.f0s)
             if param == '2d>1d':
-                index = pd.MultiIndex.from_product((xs, self.f0s), names='xf')
+                index = pd.MultiIndex.from_product((xs, self.f0s), names=['x', 'f'])
             else:
-                index = pd.MultiIndex.from_product((self.f0s, xs), names='fx')
+                index = pd.MultiIndex.from_product((self.f0s, xs), names=['f', 'x'])
         elif param == '2d':
             # 2d data
             self.f0s = np.linspace(-3., 3., 5)
             data = np.array([lorentzian(f0) for f0 in self.fs]).ravel()
-            index = pd.MultiIndex.from_product((xs, self.f0s), names='xf')
+            index = pd.MultiIndex.from_product((xs, self.f0s), names=['x', 'f'])
         else:
             raise ValueError('Unsupported number of dimensions.')
         frame = pd.DataFrame({'data': data, 'reversed': data[::-1]}, index)

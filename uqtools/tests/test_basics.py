@@ -225,7 +225,7 @@ class TestSweepDims(MeasurementTests):
                                      names=['iteration', 'x'])
             ref_data = (np.arange(4)[:, np.newaxis]*np.arange(1, 3)).ravel()
         elif request.param == 'matrix':
-            index = from_product([range(2), range(3)], names='xy')
+            index = from_product([range(2), range(3)], names=['x', 'y'])
             frame = pd.DataFrame({'data': np.arange(6, dtype=np.int64)}, index)
             ref_index = from_product([range(4), range(2), range(3)],
                                      names=['iteration', 'x', 'y'])
