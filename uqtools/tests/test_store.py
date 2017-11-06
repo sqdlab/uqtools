@@ -375,6 +375,18 @@ class TestHDFStore(StoreTests):
             store.close()
             os.unlink(fullpath)
 
+    def test_title_arg(self, tmpdir):
+        title = 'My title.'
+        CSVStore(str(tmpdir), title=title)
+        store = CSVStore(str(tmpdir))
+        assert store.title == title
+
+    def test_title_prop(self, store):
+        assert store.title is None
+        title = 'My title.'
+        store.title = title
+        assert store.title == title
+
 
 
 class TestStoreView(StoreTests):

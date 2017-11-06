@@ -743,6 +743,17 @@ class HDFStore(pd.HDFStore, Store):
     def directory(self, key=None):
         return self._directory
         
+    @property
+    def title(self):
+        try:
+            return self.get_node('')._f_getattr('TITLE')
+        except AttributeError:
+            return None
+            
+    @title.setter
+    def title(self, title):
+        self.get_node('')._f_setattr('TITLE', title)
+    
     def attrs(self, key):
         return self.get_node(key + '/table').attrs
 

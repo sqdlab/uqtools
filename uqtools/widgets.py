@@ -16,7 +16,7 @@ try:
         CallbackDispatcher, 
         Box, HBox, VBox, Tab,
         Button, ToggleButtons, Checkbox, 
-        IntText, IntSlider, BoundedIntText, IntProgress, 
+        Text, IntText, IntSlider, BoundedIntText, IntProgress, 
         FloatText, FloatSlider, BoundedFloatText,
         Dropdown, Select, 
         HTML, Textarea, 
@@ -52,7 +52,7 @@ except ImportError:
             IntText, IntSlider, BoundedIntText, IntProgress, 
             FloatText, FloatSlider, BoundedFloatText,
             Dropdown, Select, 
-            HTML, Textarea, 
+            Text, HTML, Textarea, 
             Widget, DOMWidget
         )
     else:

@@ -403,12 +403,15 @@ if 'widgets' in globals():
             stop = widgets.Button(description='stop')
             stop.on_click(lambda _: self.events['abort'].set())
             stop.margin = '0px 10px 0px 0px'
-            vbox = widgets.VBox()
-            vbox.children = self._traverse_widget(root)
+            title = widgets.Text(description='Title', value=root.store.store.title)
+            title.layout.width = '100%'
+            title.observe(lambda msg: setattr(root.store.store, 'title', msg['new']), 'value')
             hbox = widgets.HBox()
-            hbox.children = (stop, vbox)
-            self._widgets = {'stop':stop, 'hbox':hbox, 'vbox':vbox}
-            return hbox
+            hbox.children = (stop, title)
+            vbox = widgets.VBox()
+            vbox.children = [hbox] + self._traverse_widget(root)
+            self._widgets = {'stop':stop, 'title': title, 'hbox':hbox, 'vbox':vbox}
+            return vbox
 
         def _traverse_hide(self, leaf, *path):
             ''' Traverse the measurement tree and hide all flows. '''
