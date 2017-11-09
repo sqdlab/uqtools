@@ -8,6 +8,14 @@ from contextlib import contextmanager
 import pandas as pd
 import numpy as np
 
+from .lib import mark_class
+# test for presence of pytables
+tables = None
+try:
+    import tables
+except Exception:
+    pass
+
 from uqtools.store import (MemoryStore, JSONDict, CSVStore, HDFStore,
                            StoreView, MeasurementStore, StoreFactory)
 from uqtools.parameter import Parameter, ParameterList, ParameterDict
@@ -357,6 +365,7 @@ class TestCSVStore(StoreTests):
 
 
 
+@mark_class(mark.skipif(tables is None, reason='HDFStore requires pytables'))
 class TestHDFStore(StoreTests):
     @yield_fixture
     def store(self):
