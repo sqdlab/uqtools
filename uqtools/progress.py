@@ -332,6 +332,8 @@ class TimingFlow(LoopFlow):
         the length of the output text is unbounded but will not exceed 9 
         characters for times <100h.
         '''
+        if interval is None:
+            return '0s'
         if interval >= 3600:
             return '{0:d}h {1:02d}min'.format(int(interval/3600), 
                                               int(interval/60%60))

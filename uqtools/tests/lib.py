@@ -160,11 +160,11 @@ def frame_factory(shape, column='data', output='frame'):
     # choose index and data shape
     if shape == 'scalar':
         index = []
-        names = 'x'
+        names = ['x']
         data = (np.array([1.]),)
     elif shape == 'vector':
         index = [xs]
-        names = 'x'
+        names = ['x']
         data = (xd,)
     elif shape == 'matrix':
         index = [xs, ys]

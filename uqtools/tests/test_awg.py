@@ -18,6 +18,8 @@ try:
     from uqtools.helpers import resolve_value
 except ImportError:
     pytestmark = mark.skip()
+# import Parameter, otherwise test collection fill fail when pulsegen is n/a
+from uqtools import Parameter
     
 # switch to CSVStore for tests that need the file system
 @fixture
@@ -368,7 +370,8 @@ class TestProgramAWGSweep(AWGSweepTests, MeasurementTests):
         else:
             frame = sw()['/c0']
         ref_frame = pd.DataFrame({'index': list(range(3)), 'segments':[3]*3, 'kwarg':list(range(1, 4))},
-                                 pd.Index(range(1, 4), name='pkwarg'),
+                                 #pd.Index(range(1, 4), name='pkwarg'),
+                                 pd.MultiIndex(levels=[range(1, 4)], labels=[range(3)], names=['pkwarg']),
                                  columns=['index', 'segments', 'kwarg'])
         print(ref_frame._data)
         print(frame._data)

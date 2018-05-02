@@ -117,7 +117,7 @@ def index_concat(left, right):
     concatenated : `MultiIndex`
     """
     def index_dissect(index):
-        if index.nlevels > 1:
+        if isinstance(index, pd.MultiIndex): #index.nlevels > 1:
             # input is a MultiIndex
             levels = index.levels
             labels = index.labels

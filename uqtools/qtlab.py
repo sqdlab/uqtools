@@ -158,7 +158,7 @@ class Instruments(Mapping):
         """
         ins = qt.instruments.get(key)
         if ins is None:
-            return None
+            raise ValueError('unknown instrument {}'.format(key))
         if (name is None) and (ins.has_parameter('friendly_name')):
             name = ins.get_friendly_name()
         return Instrument(ins, name=name)

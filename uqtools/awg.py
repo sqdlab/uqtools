@@ -114,7 +114,7 @@ class ProgramAWG(Measurement):
                      for fn in os.listdir(dn)]
         # add files to archive
         zip_fn = self.store.filename('sequence', '.zip')
-        with zipfile.ZipFile(zip_fn, 'a', zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(zip_fn, 'a', zipfile.ZIP_DEFLATED, True) as zf:
             for fn in awg_files:
                 zf.write(fn, fn[len(host_dir):])
         # delete files and directories

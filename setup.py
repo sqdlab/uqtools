@@ -8,7 +8,7 @@ import os
 import sys
 import platform
 
-# to generate a wheel, call: python setup.py python 
+# to generate a wheel, call: python setup.py bdist_wheel 
 
 # most of these are required to distribute interactive widgets with uqtools
 here = os.path.dirname(os.path.abspath(__file__))
@@ -150,7 +150,7 @@ setup(
     install_requires='''
         numpy
         scipy
-        pandas >=0.16
+        pandas >=0.16,!=0.21,!=0.22.0
         matplotlib
         IPython >=3.0
         six

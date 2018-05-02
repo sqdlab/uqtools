@@ -19,14 +19,21 @@ def mkindex(dim):
         return pd.Int64Index([0])
     elif dim == '1d':
         return pd.Float64Index([1., 2., 3.], name='X')
+    elif dim == '1dm':
+        return pd.MultiIndex(levels = ([1., 2., 3.],),
+                             labels = ([0, 1, 2],),
+                             names = ['X'])
     elif dim == '2d':
         return pd.MultiIndex(levels = ([0, 1], ['A', 'B']),
                              labels = ([1, 0, 1], [0, 1, 1]),
                              names = ['#', '@'])
 
 @mark.parametrize('n1, n2',
-                  [('0d', '1d'), ('1d', '0d'), ('0d', '2d'), ('2d', '0d'),
-                   ('1d', '1d'), ('1d', '2d'), ('2d', '1d'), ('2d', '2d')])
+                  [('0d', '1d'), ('0d', '1dm'), ('1d', '0d'), ('1dm', '0d'), 
+                   ('0d', '2d'), ('2d', '0d'), 
+                   ('1d', '1d'), ('1d', '1dm'), ('1dm', '1d'), ('1dm', '1dm'),
+                   ('1d', '2d'), ('1dm', '2d'), ('2d', '1d'), ('2d', '1dm'), 
+                   ('2d', '2d')])
 def test_index_concat(n1, n2):
     ''' concatenate indices of zero to two dimensions '''
     index1 = mkindex(n1)
@@ -127,6 +134,11 @@ def shape(request):
 def test_dataframe_from_csds(shape):
     cs, ds = frame_factory(shape, output='csds')
     ref_frame = frame_factory(shape)
+    if shape == 'vector':
+        # work-around for pandas failing to compare RangeIndex and MultiIndex
+        ref_frame.index = pd.MultiIndex(levels=[ref_frame.index.values], 
+                                        labels=[range(len(ref_frame))], 
+                                        names=[ref_frame.index.name])
     ref_index = ref_frame.index
     frame = dataframe_from_csds(cs, ds)
     index = frame.index
@@ -134,6 +146,8 @@ def test_dataframe_from_csds(shape):
         assert index.names[level] == ref_index.names[level]
         assert np.all(index.get_level_values(level) ==
                       ref_index.get_level_values(level))
+    print(frame.index)
+    print(ref_frame.index)
     for column in frame.columns:
         assert np.all(frame[column] == ref_frame[column])
     
