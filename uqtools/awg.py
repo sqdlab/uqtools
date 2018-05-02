@@ -64,7 +64,10 @@ class ProgramAWG(Measurement):
     sequence : `pulsegen.MultiAWGSequence`
         A populated sequence object.
     awgs : `iterable` of `Instrument` 
-        AWG instruments the sequence is distributed to
+        AWG instruments the sequence is distributed to. 
+        Any instrument in `awgs` that does not have a `load_sequence` method
+        is considered a virtual AWG that controls triggering  but does not 
+        output waveforms.
     wait : `bool`
         If True, call `wait()` on each AWG before starting the next.
     compress : `bool`
@@ -168,25 +171,28 @@ class ProgramAWG(Measurement):
         host_file += '.seq'
         logging.debug(__name__ + ': Programming {0} AWGs.'.format(len(self.awgs)))
         
+        idx = 0
         threads = []
-        for idx, awg in enumerate(self.awgs):
+        for awg in self.awgs:
             awg.stop()
-            host_path = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx))
-            host_fullpath = os.path.join(host_path, host_file)
-            if os.path.exists(host_fullpath):
-                logging.debug(__name__ + ': Programming file {1} on AWG #{0}.'
-                              .format(idx, host_fullpath))
-                if hasattr(config, 'threads') and config.threads:
-                    thread = threading.Thread(name='AWG{}'.format(idx), 
-                                              target=awg.load_sequence, 
-                                              args=(host_path, host_file))
-                    thread.start()
-                    threads.append(thread)
+            if hasattr(awg, 'load_sequence'):
+                host_path = os.path.join(host_dir, 'AWG_{0:0=2d}'.format(idx))
+                host_fullpath = os.path.join(host_path, host_file)
+                if os.path.exists(host_fullpath):
+                    logging.debug(__name__ + ': Programming file {1} on AWG #{0}.'
+                                  .format(idx, host_fullpath))
+                    if hasattr(config, 'threads') and config.threads:
+                        thread = threading.Thread(name='AWG{}'.format(idx), 
+                                                  target=awg.load_sequence, 
+                                                  args=(host_path, host_file))
+                        thread.start()
+                        threads.append(thread)
+                    else:
+                        awg.load_sequence(host_path, host_file)
                 else:
-                    awg.load_sequence(host_path, host_file)
-            else:
-                logging.warning(__name__ + ': File {1} for AWG #{0} not found.'
-                                .format(idx, host_fullpath))
+                    logging.warning(__name__ + ': File {1} for AWG #{0} not found.'
+                                    .format(idx, host_fullpath))
+                idx += 1                                    
         for thread in threads:
             thread.join()
         for awg in reversed(self.awgs):
