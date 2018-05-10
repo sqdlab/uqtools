@@ -45,11 +45,11 @@ class ParameterBase(object):
         return ' '.join(parts)
 
     @staticmethod
-    def is_compatible(obj):
+    def is_compatible(obj, gettable=True, settable=True):
         """Test `obj` for `name`, `get()` and `set()` attributes.""" 
         return (hasattr(obj, 'name') and
-                hasattr(obj, 'get') and callable(obj.get) and 
-                hasattr(obj, 'set') and callable(obj.set))
+                (not gettable or hasattr(obj, 'get') and callable(obj.get)) and 
+                (not settable or hasattr(obj, 'set') and callable(obj.set)))
 
     #
     # Arithmetic operators
@@ -501,8 +501,9 @@ class TypedList(MutableSequence):
 
 class ParameterList(TypedList):
     """A :class:`TypedList` containing :class:`Parameter` elements."""
-    def __init__(self, iterable=()):
-        super(ParameterList, self).__init__(Parameter.is_compatible, iterable)
+    def __init__(self, iterable=(), gettable=True, settable=True):
+        is_compatible_func = lambda obj: Parameter.is_compatible(obj, gettable, settable)
+        super(ParameterList, self).__init__(is_compatible_func, iterable)
         
     def __copy__(self):
         return type(self)(self.data)

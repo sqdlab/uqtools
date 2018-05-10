@@ -18,6 +18,7 @@ try:
     from uqtools.helpers import resolve_value
 except ImportError:
     pytestmark = mark.skip()
+    NormalizeAWG = lambda: False
 # import Parameter, otherwise test collection fill fail when pulsegen is n/a
 from uqtools import Parameter
     

@@ -272,7 +272,7 @@ class TestTypedList:
     
     def test_copy(self, def_list):
         copy_list = copy(def_list)
-        assert def_list.is_compatible_item == copy_list.is_compatible_item 
+        #assert def_list.is_compatible_item == copy_list.is_compatible_item 
         assert def_list == copy_list
         copy_list[1] = self.pN
         assert def_list[1] != copy_list[1]

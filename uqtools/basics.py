@@ -9,9 +9,10 @@ __all__ = ['ParameterMeasurement', 'Constant', 'Function', 'Buffer',
 
 import logging
 
+import numpy as np
 import pandas as pd
 
-from . import Parameter, Measurement
+from . import Parameter, Measurement, ParameterList
 from .helpers import resolve_value
 
 
@@ -247,12 +248,14 @@ class ParameterMeasurement(Measurement):
     A measurement that queries the value of
     :class:`~uqtools.parameter.Parameter` objects.
 
-    Generates a DataFrame with a single row and one column named p.name per
-    Parameter p.
+    Generates a DataFrame with one column named p.name per Parameter p.
+    If all parameters are scalar, the DataFrame will have a single row and a 
+    dummy index, if any parameter is a qc.ArrayParameter, all parameters must 
+    have the same shape and setpoints.
     
     Parameters
     ----------
-    p0[, p1, ...] : Parameter
+    p0[, p1, ...] : Parameter, qc.Parameter, qc.ArrayParameter
         Parameter objects to query.
     
     Notes
@@ -279,9 +282,97 @@ class ParameterMeasurement(Measurement):
                 kwargs['name'] = '(%s)'%(','.join([value.name for value in values]))
         super(ParameterMeasurement, self).__init__(**kwargs)
         self.values.extend(values)
+        if any(hasattr(v, 'shape') for v in values):
+            if any(not hasattr(v, 'shape') or (v.shape != values[0].shape) 
+                   for v in values):
+                raise ValueError('All measured parameters must have the same shape.')
+            names = values[0].setpoint_names
+            if names is None:
+                names = self.make_names(values[0].shape, values[0].setpoints, 
+                                        values[0].setpoint_names)
+            self.coordinates = [Parameter(n) for n in names]
     
     def _measure(self, **kwargs):
-        frame = pd.DataFrame(data=[self.values.values()],
-                             columns=self.values.names())
+        names = self.values.names()
+        values = self.values.values()
+        # if any value returned an array, make all values arrays and compare shape
+        shape = ()
+        if any(hasattr(v, 'shape') for v in values):
+            values = [np.array(v) for v in values]
+            shape = values[0].shape
+            if any((v.shape != shape) for v in values):
+                raise ValueError('All measured parameters must have the same shape.')
+        if shape == ():
+            frame = pd.DataFrame(dict((c, [v]) for c, v in zip(names, values)), 
+                                 columns=names)
+        else:
+            index = self.make_index(shape, self.values[0].setpoints, 
+                                    self.values[0].setpoint_names)
+            frame = pd.DataFrame(dict((c, v.ravel()) for c, v in zip(names, values)), 
+                                 index=index, columns=names)
         self.store.append(frame)
         return frame
+    
+    @property 
+    def values(self):
+        """A :class:`~uqtools.parameter.ParameterList` of the measurement's 
+        dependent parameters."""
+        return self._values
+
+    @values.setter
+    def values(self, iterable):
+        """Allow assignment to values."""
+        self._values = ParameterList(iterable, settable=False)
+
+    @staticmethod
+    def make_names(shape, setpoints=None, setpoint_names=None):
+        if setpoint_names is not None:
+            return setpoint_names
+        default_names = ParameterMeasurement.default_names(shape)
+        if setpoints is None:
+            return default_names
+        return [sp.name if hasattr(sp, 'name') and sp.name else dn 
+                for sp, dn in zip(setpoints, default_names)]
+
+    @staticmethod
+    def make_index(shape, setpoints=None, setpoint_names=None):
+        '''
+        Build a pandas MultiIndex from qcodes setpoint arrays.
+        
+        Input
+        -----
+        shape: `tuple` of `int`
+            Shape of the data.
+        setpoints: `tuple` of `ndarray`-like, optional
+            One coordinate array for each dimension of shape, with 
+            increasing number of dimensions from 1 to len(shape).
+            Defaults to a grid of integer ranges from 0..shape[i].
+        setpoint_names: `tuple` of `str`, optional
+            Names of the index levels.
+        '''
+        if setpoints is None:
+            return ParameterMeasurement.default_index(shape, setpoint_names)
+        setpoint_names = ParameterMeasurement.make_names(shape, setpoints, setpoint_names)
+        # check number of elements and shapes of setpoints
+        if len(shape) != len(setpoints):
+            raise ValueError('shape and setpoints must have the same number of dimensions.')
+        for ndim, setpoint in enumerate(setpoints):
+            if setpoint.shape != shape[:ndim+1]:
+                raise ValueError('Setpoint array {} must have shape {}.'
+                                .format(ndim, shape[:ndim+1]))
+        # broadcast setpoint arrays
+        setpoints = [sp[(slice(None),)*i + (None,)*(len(shape)-i)]
+                    for i, sp in enumerate(setpoints, 1)]
+        setpoints = [sp.ravel() for sp in np.broadcast_arrays(*setpoints)]
+        return pd.MultiIndex.from_arrays(setpoints, names=setpoint_names)
+                    
+    @staticmethod
+    def default_names(shape):
+        return ['index{}'.format(i) for i in range(len(shape))]
+
+    @staticmethod
+    def default_index(shape, names=None):
+        if names is None:
+            names = ParameterMeasurement.default_names(shape)
+        return pd.MultiIndex.from_product([np.arange(s) for s in shape], 
+                                        names=names)
