@@ -282,33 +282,43 @@ class ParameterMeasurement(Measurement):
                 kwargs['name'] = '(%s)'%(','.join([value.name for value in values]))
         super(ParameterMeasurement, self).__init__(**kwargs)
         self.values.extend(values)
-        if any(hasattr(v, 'shape') for v in values):
-            if any(not hasattr(v, 'shape') or (v.shape != values[0].shape) 
-                   for v in values):
+        # check all shapes against each other, then filter Nones
+        shapes = self.values.collect_attr('shape', 'shapes', False)
+        for s1, s2 in zip(shapes, shapes[1:]):
+            if s1 != s2:
                 raise ValueError('All measured parameters must have the same shape.')
-            names = values[0].setpoint_names
-            if names is None:
-                names = self.make_names(values[0].shape, values[0].setpoints, 
-                                        values[0].setpoint_names)
-            self.coordinates = [Parameter(n) for n in names]
+        shapes = [s for s in shapes if s is not None]
+        if shapes:
+            # get first not-None setpoint_names or None if none.
+            levels = (self.values.collect_attr('setpoint_names', 'setpoint_names') or [()])[0]
+            if not levels:
+                setpoints = self.values.collect_attr('setpoints', 'setpoints') or [None]
+                levels = self.make_names(shapes[0], setpoints[0])
+            print(shapes, levels)
+            self.coordinates = [Parameter(l) for l in levels]
     
     def _measure(self, **kwargs):
-        names = self.values.names()
-        values = self.values.values()
-        # if any value returned an array, make all values arrays and compare shape
-        shape = ()
-        if any(hasattr(v, 'shape') for v in values):
-            values = [np.array(v) for v in values]
-            shape = values[0].shape
-            if any((v.shape != shape) for v in values):
+        # collect all parameter names and values, setpoint names and values
+        names = self.values.collect_attr('name', 'names', False)
+        values = sum((tuple(p.get()) if hasattr(p, 'shapes') else (p.get(),) 
+                      for p in self.values), ())
+        setpoints = self.values.collect_attr('setpoints', 'setpoints')
+        levels = self.values.collect_attr('setpoint_names', 'setpoint_names')
+        # check all shapes against each other
+        shapes = self.values.collect_attr('shape', 'shapes', None)
+        for s1, s2 in zip(shapes, shapes[1:]):
+            if s1 != s2:
                 raise ValueError('All measured parameters must have the same shape.')
-        if shape == ():
+        shape = shapes[0] if shapes else ()
+
+        if (shape is None) or (shape == ()):
             frame = pd.DataFrame(dict((c, [v]) for c, v in zip(names, values)), 
                                  columns=names)
         else:
-            index = self.make_index(shape, self.values[0].setpoints, 
-                                    self.values[0].setpoint_names)
-            frame = pd.DataFrame(dict((c, v.ravel()) for c, v in zip(names, values)), 
+            index = self.make_index(shape, setpoints[0] if setpoints else None, 
+                                    levels[0] if levels else None)
+            frame = pd.DataFrame(dict((c, np.array(v).ravel()) 
+                                 for c, v in zip(names, values)), 
                                  index=index, columns=names)
         self.store.append(frame)
         return frame
@@ -322,7 +332,47 @@ class ParameterMeasurement(Measurement):
     @values.setter
     def values(self, iterable):
         """Allow assignment to values."""
-        self._values = ParameterList(iterable, settable=False)
+        self._values = self.QcParameterList(iterable)
+
+    class QcParameterList(ParameterList):
+        '''ParameterList with special handling for Qcodes parameters.'''
+        def __init__(self, iterable=()):
+            super(ParameterList, self).__init__(self.is_compatible_item, iterable)
+
+        def is_compatible_item(self, obj):
+            return Parameter.is_compatible(obj, True, False)
+
+        def collect_attr(self, attr, attrs, filter=True):
+            '''
+            Produce a flat list of tuple attributes `attrs` (if hasattr(v, 'shapes')) 
+            or scalar attributes `attr` of all `values` v, optionally filtering out
+            None. Appends the appropriate number of None if `attr` or `attrs` does not
+            exist on the object.
+            '''
+            result = []
+            for v in self:
+                if hasattr(v, 'shapes'):
+                    if not hasattr(v, attrs) or getattr(v, attrs) is None:
+                        result.extend((None,)*len(v.shapes))
+                    else:
+                        result.extend(getattr(v, attrs))
+                else:
+                    result.append(getattr(v, attr, None))
+            if filter:
+                result = [a for a in result if a is not None]
+            return result
+
+        def names(self):
+            return self.collect_attr('name', 'names', False)
+
+        def values(self):
+            result = []
+            for p in self:
+                if hasattr(p, 'shapes'):
+                    result.extend(p.get())
+                else:
+                    result.append(p.get())
+            return result
 
     @staticmethod
     def make_names(shape, setpoints=None, setpoint_names=None):

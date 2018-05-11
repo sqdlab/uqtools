@@ -159,16 +159,48 @@ class TestParameterMeasurementQcodes(MeasurementTests):
         def get_raw(self):
             return np.prod(np.meshgrid(*[range(1, N+1) for N in self.shape]), 0).T
 
+    class MultiArrayRangeParameter(qc.MultiParameter):
+        def __init__(self, name, shape, **kwargs):
+            size = 2
+            names = tuple('{}.{}'.format(name, i) for i in range(size))
+            shapes = (shape,)*size
+            setpoints = (kwargs.pop('setpoints'),)*size \
+                        if 'setpoints' in kwargs else None
+            setpoint_names = (kwargs.pop('setpoint_names'),)*size \
+                             if 'setpoint_names' in kwargs else None
+            super().__init__(name, names, shapes, setpoints=setpoints, 
+                             setpoint_names=setpoint_names, **kwargs)
+        def get_raw(self):
+            return (np.prod(np.meshgrid(*[range(1, N+1) for N in shape]), 0).T
+                    for shape in self.shapes)
+
     class ArrayRangeParameterDynamic(ArrayRangeParameter):
         # qc documentation says to return setpoints in get() if they change from 
         # measurement to measurement, but there is no documentation how to return
         # them exactly and none of the bundled instrument drivers use this feature
         pass
 
-    @fixture(params=[None, (), (8,), (8,3)], 
-                     ids=['scalar', 'array-0d', 'array-1d', 'array-2d'])
-    def shape(self, request):
+    @fixture(
+        params=[
+            (ScalarBuffer, None), 
+            (ArrayRangeParameter, ()), (ArrayRangeParameter, (8,)), 
+            (ArrayRangeParameter, (8,3)), (MultiArrayRangeParameter, ()), 
+            (MultiArrayRangeParameter, (8,)), (MultiArrayRangeParameter, (8,3))
+        ], ids=[
+            'scalar', 'array-0d', 'array-1d', 'array-2d', 'multi-0d', 
+            'multi-1d', 'multi-2d'
+        ]
+    )
+    def ptype_shape(self, request):
         return request.param
+
+    @fixture
+    def ptype(self, ptype_shape):
+        return ptype_shape[0]
+
+    @fixture
+    def shape(self, ptype_shape):
+        return ptype_shape[1]
 
     @fixture(params=['auto', 'static', 'DataArray'])#, 'dynamic'])
     def setpoints(self, request):
@@ -179,40 +211,41 @@ class TestParameterMeasurementQcodes(MeasurementTests):
         if shape is None:
             return None
         if setpoints == 'auto':
-            return [np.meshgrid(*[range(0, N) for N in shape[:i+1]])[i].T
-                    for i in range(len(shape))]
+            return tuple(np.meshgrid(*[range(0, N) for N in shape[:i+1]])[i].T
+                         for i in range(len(shape)))
         else:
             # auto shifted by one
-            return [np.meshgrid(*[range(1, N+1) for N in shape[:i+1]])[i].T
-                    for i in range(len(shape))]
+            return tuple(np.meshgrid(*[range(1, N+1) for N in shape[:i+1]])[i].T
+                         for i in range(len(shape)))
 
     @fixture
     def setpoint_names(self, shape, setpoints):
         if shape is None:
             return None
         if setpoints == 'auto':
-            return ['index{}'.format(i) for i in range(len(shape))]
+            return tuple('index{}'.format(i) for i in range(len(shape)))
         else:
-            return ['level{}'.format(i) for i in range(len(shape))]
+            return tuple('level{}'.format(i) for i in range(len(shape)))
 
     @fixture
-    def parameter(self, shape, setpoints, setpoint_values, setpoint_names):
+    def parameter(self, ptype, shape, setpoints, setpoint_values, setpoint_names):
         if shape is None:
-            return self.ScalarBuffer('voltage', initial_value=1.)
+            return ptype('voltage', initial_value=1.)
         else:
             if setpoints == 'auto':
-                return self.ArrayRangeParameter(name='voltage', shape=shape)
+                return ptype(name='voltage', shape=shape)
             elif setpoints == 'static':
-                return self.ArrayRangeParameter(name='voltage', shape=shape, 
-                                                setpoints=setpoint_values, 
-                                                setpoint_names=setpoint_names)
+                return ptype(name='voltage', shape=shape, 
+                             setpoints=setpoint_values, 
+                             setpoint_names=setpoint_names)
             elif setpoints == 'DataArray':
-                setpoint_arrs = [self.qc.DataArray(name=sp_name, preset_data=sp_val, is_setpoint=True)
-                                 for sp_name, sp_val in zip(setpoint_names, setpoint_values)]
-                return self.ArrayRangeParameter(name='voltage', shape=shape,
-                                                setpoints=setpoint_arrs)
+                setpoint_arrs = tuple(
+                    self.qc.DataArray(name=sp_name, preset_data=sp_val, is_setpoint=True)
+                    for sp_name, sp_val in zip(setpoint_names, setpoint_values)
+                )
+                return ptype(name='voltage', shape=shape, setpoints=setpoint_arrs)
             elif setpoints == 'dynamic':
-                return self.ArrayRangeParameterDynamic(name='voltage', shape=shape)
+                return ptype(name='voltage', shape=shape)
 
     @fixture
     def measurement(self, parameter):
@@ -221,15 +254,17 @@ class TestParameterMeasurementQcodes(MeasurementTests):
     def test_return_data(self, measurement, parameter, shape, setpoint_names, setpoint_values):
         frame = measurement(output_data=True)
         print(frame)
-        assert list(frame.columns) == [parameter.name]
+        assert tuple(frame.columns) == getattr(parameter, 'names', (parameter.name,))
         if shape is not None:
-            assert list(frame.index.names) == setpoint_names if len(shape) else [None]
+            assert tuple(frame.index.names) == setpoint_names if len(shape) else (None,)
             for level in range(len(shape)):
                 frame_indices = frame.index.get_level_values(level)
                 setpoint_indices = np.repeat(np.ravel(setpoint_values[level]), 
                                             np.prod(shape[level+1:]))
                 assert np.all(frame_indices == setpoint_indices)
-            assert np.all(frame.values[:,0] == parameter.get().ravel())
+            values = parameter.get() if hasattr(parameter, 'names') else (parameter.get(),)
+            for frame_values, get_values in zip(frame.values.T, values):
+                assert np.all(frame_values == get_values.ravel())
         else:
             assert frame.values[0][0] == parameter.get()
 
@@ -239,7 +274,8 @@ class TestParameterMeasurementQcodes(MeasurementTests):
         p2.name = 'voltage2'
         pm = ParameterMeasurement(p1, p2)
         frame = pm(output_data=True)
-        assert list(frame.columns) == [p1.name, p2.name]
+        assert tuple(frame.columns) == (getattr(p1, 'names', (p1.name,)) + 
+                                        getattr(p2, 'names', (p2.name,)))
         assert len(frame) == np.prod(shape) if shape is not None else 1
 
     def test_incompatible_shapes(self):

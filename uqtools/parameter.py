@@ -501,9 +501,8 @@ class TypedList(MutableSequence):
 
 class ParameterList(TypedList):
     """A :class:`TypedList` containing :class:`Parameter` elements."""
-    def __init__(self, iterable=(), gettable=True, settable=True):
-        is_compatible_func = lambda obj: Parameter.is_compatible(obj, gettable, settable)
-        super(ParameterList, self).__init__(is_compatible_func, iterable)
+    def __init__(self, iterable=()):
+        super(ParameterList, self).__init__(Parameter.is_compatible, iterable)
         
     def __copy__(self):
         return type(self)(self.data)
