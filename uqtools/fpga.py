@@ -14,6 +14,16 @@ import pandas as pd
 
 from . import Parameter, Measurement, Integrate, RevertInstrument
 
+def fix_dict(d):
+    """Cast bytestring keys and some values to str."""
+    result = {}
+    for k, v in d.items():
+        k = k.decode('ascii')
+        if k in ['name', 'unit']:
+            v = v.decode('ascii')
+        result[k] = v
+    return result
+
 class FPGAMeasurement(Measurement):
     """
     A generic measurement with an ETH_FPGA instrument.
@@ -62,6 +72,7 @@ class FPGAMeasurement(Measurement):
         with self.context:
             self._check_mode()
             dims = self._fpga.get_data_dimensions()
+            dims = [fix_dict(dim) for dim in dims]
             dims = [Parameter(**dim) if isinstance(dim, dict) else dim 
                     for dim in dims]
             self.coordinates = dims[:-1]
@@ -114,6 +125,7 @@ class FPGAMeasurement(Measurement):
         # retrieve measured data
         if not self.buffering or self._index is None:
             dims = self._fpga.get_data_dimensions()
+            dims = [fix_dict(dim) for dim in dims]
             self._index = pd.MultiIndex.from_product(
                 [dim['value'] for dim in dims[:-1]], 
                 names=[dim['name'] for dim in dims[:-1]]
