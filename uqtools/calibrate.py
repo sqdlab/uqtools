@@ -20,7 +20,7 @@ from . import (Parameter, ParameterDict, Measurement, Flow,
                Sweep, MeasurementArray, MemoryStore,
                ContinueIteration, BreakIteration, Figure)
 from .store import MeasurementStore
-from .helpers import resolve_name, round
+from .helpers import resolve_name, round, tuple_iterator
 
 
 class Plotting(Measurement):
@@ -421,7 +421,7 @@ class Fit(Plotting):
             # only if the fit was successful
             if p_test:
                 # save data to popts_out values
-                for p, k in self.popt_out.items():
+                for p, k in tuple_iterator(self.popt_out):
                     p.set(rframe.get(k)[idx])
                 # run nested measurements
                 if len(self.measurements):
@@ -746,7 +746,7 @@ class Minimize(Plotting):
         # save fit to: user-provided parameters
         popt_keys = ['c0', 'c1', 'min', 'fit_ok']
         popt_dict = dict(zip(popt_keys, results))
-        for parameter, key in self.popt_out.items():
+        for parameter, key in tuple_iterator(self.popt_out):
             parameter.set(popt_dict[key])
         # save fit to: file
         items = [(k, [v]) for k, v in zip(self.values.names(), results)]

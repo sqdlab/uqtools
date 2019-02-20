@@ -518,7 +518,7 @@ class ProgramAWGSweep(ProgramAWG):
         host_file = lambda idx: '{0}{1}'.format(self.name, idx)
         # evaluate ranges, update segment map, evaluate pulse_kwargs
         ranges = self.ranges
-        range_len = np.prod([len(range_) for range_ in ranges])
+        range_len = int(np.prod([len(range_) for range_ in ranges]))
         if len(ranges) > 1:
             idxss = np.mgrid[tuple(slice(len(r)) for r in ranges)]
             range_prod = [np.array(arr)[idxs].ravel() for arr, idxs in 

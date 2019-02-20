@@ -22,6 +22,12 @@ def make_iterable(obj):
     else:
         return (obj,)
 
+def tuple_iterator(list_or_dict):
+    """Iterate over a list of 2-tuples or the key, value pairs of a dict."""
+    if hasattr(list_or_dict, 'items'):
+        return list_or_dict.items()
+    return iter(list_or_dict)
+        
 def round(x, xlim, precision=3):
     """
     Round `x` so that at least `precision` digits vary in window `xlim`.
@@ -229,7 +235,7 @@ def resolve_value(value, default=None):
     `default`."""
     if value is None:
         return default
-    elif (type(value).__name__ == 'Parameter') and hasattr(value, 'get'):
+    elif (hasattr(value, 'get')):
         return value.get()
     return value
 

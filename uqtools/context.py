@@ -67,8 +67,7 @@ class nested:
     def __exit__(self, *exc):
         mgr = self.stack.pop()
         mgr.__exit__(*exc)
-    
-
+     
 @six.add_metaclass(ABCMeta)
 class SetRevertBase(object):
     """Abstract base class of :class:`Set` and :class:`Revert`."""
@@ -147,7 +146,7 @@ class Revert(SetRevertBase):
 
     def __enter__(self):
         """Store current and set requested parameter values."""
-        self._revert_stack.append({})
+        self._revert_stack.append([])
         for key, value in self._parameters:
             # set new value
             old_value = self._update_value(key, value)
@@ -155,15 +154,15 @@ class Revert(SetRevertBase):
                               key=key, value=value, old_value=old_value)
             # store old value
             if old_value is not None:
-                self._revert_stack[-1][key] = old_value
+                self._revert_stack[-1].append((key, old_value))
             else:
                 logging.warning((__name__+': Value of {0} was None. This ' +
                                 'parameter will not be reverted.').format(key))
 
     def __exit__(self, exc_type, exc_value, traceback):
         """Reset parameters to their initial values."""
-        revert_dict = self._revert_stack.pop()
-        for key, value in revert_dict.items():
+        revert_list = self._revert_stack.pop()
+        for key, value in revert_list:
             old_value = self._update_value(key, value)
             self._debug_print('Reverted {key} to {value}, was {old_value}.', 
                               key=key, value=value, old_value=old_value)
@@ -265,11 +264,23 @@ class InstrumentHandler(object):
             logging.warning(__name__ + ': Instrument does not support ' + 
                             'parameter {0}'.format(key))
     
+    def get_submodule(self, key, ins=None):
+        if ins is None:
+            ins = self._ins
+        if '.' not in key:
+            return ins, key
+        else:
+            key_parts = key.split('.')
+            return self.get_submodule('.'.join(key_parts[1:]), 
+                                      ins.submodules[key_parts[0]])
+    
     def _update_value(self, key, value):
-        old_value = self._ins.get(key)
+        ins, key = self.get_submodule(key)
+        old_value = ins.get(key)
         new_value = resolve_value(value)
         if (old_value is None) or (old_value != new_value):
-            self._ins.set(key, new_value)
+            #self._ins.set(key, new_value)
+            ins.set(key, new_value)
         return old_value    
 
     

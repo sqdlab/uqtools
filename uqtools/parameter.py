@@ -323,6 +323,16 @@ class Parameter(ParameterBase):
                 self.value = value
         self.set = set
         self.value = value
+        
+    @staticmethod
+    def wrap(obj):
+        '''Return a new Parameter that delegates `get` and `set` to `obj`.'''
+        if hasattr(obj, 'get') and hasattr(obj, 'set'):
+            return Parameter(obj.name, set_func=obj.set, get_func=obj.get)
+        elif hasattr(obj, 'get'):
+            return Parameter(obj.name, set_func=None, get_func=obj.get)
+        else:
+            return Parameter(obj.name, set_func=None, get_func=None)
     
 
 def OffsetParameter(name, parameter, offset):
