@@ -1,0 +1,11 @@
+numpy
+scipy
+pandas!=0.21,!=0.22.0,>=0.16
+matplotlib
+IPython>=3.0
+six
+ipywidgets>=6.0.0
+
+[notebook]
+jupyter
+ipywidgets

@@ -1,0 +1,15 @@
+Metadata-Version: 1.2
+Name: uqtools
+Version: 20190819
+Summary: A python toolbox for agile experimentation.
+Home-page: http://sqd.equs.org/
+Author: Markus Jerger
+Author-email: m.jerger@uq.edu.au
+License: UNKNOWN
+Description-Content-Type: UNKNOWN
+Description: UNKNOWN
+Keywords: measurement,data acquisition,interactive,notebook
+Platform: UNKNOWN
+Requires-Python: 
+        >=2.7
+    

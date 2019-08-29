@@ -220,6 +220,7 @@ def AveragedTvModeMeasurement(fpga, **kwargs):
     A convenience function combining :class:`TvModeMeasurement` with an
     :class:`~uqtools.apply.Integrate` over all samples with `average=True`.
     """
+    tv_kwargs={}
     for k in kwargs.keys() :
         if k in ['overlapped', 'blocking', 'buffering']:
             tv_kwargs[k] = kwargs[k]
