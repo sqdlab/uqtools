@@ -997,7 +997,7 @@ class MeasurementStore(StoreView):
             # build index arrays for inherited parameters
             inherited_index = pd.MultiIndex(
                 levels = [[v] for v in self.coordinates.values()],
-                labels = [np.zeros(value.index.shape, np.int)] * len(self.coordinates),
+                codes = [np.zeros(value.index.shape, np.int)] * len(self.coordinates),
                 names = self.coordinates.names())
             value = value.copy(deep=False)
             value.index = index_concat(inherited_index, value.index)

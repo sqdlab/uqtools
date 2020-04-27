@@ -21,11 +21,11 @@ def mkindex(dim):
         return pd.Float64Index([1., 2., 3.], name='X')
     elif dim == '1dm':
         return pd.MultiIndex(levels = ([1., 2., 3.],),
-                             labels = ([0, 1, 2],),
+                             codes = ([0, 1, 2],),
                              names = ['X'])
     elif dim == '2d':
         return pd.MultiIndex(levels = ([0, 1], ['A', 'B']),
-                             labels = ([1, 0, 1], [0, 1, 1]),
+                             codes = ([1, 0, 1], [0, 1, 1]),
                              names = ['#', '@'])
 
 @mark.parametrize('n1, n2',
@@ -65,9 +65,9 @@ def test_index_squeeze_nop(n):
     assert np.all(index.names == squeezed.names)
     
 def test_index_squeeze_unclean():
-    # index has excess labels in singleton dimension
+    # index has excess codes in singleton dimension
     index = pd.MultiIndex(levels=[range(5), range(5)],
-                          labels=[range(5), [1]*5],
+                          codes=[range(5), [1]*5],
                           names=range(2))
     squeezed = index_squeeze(index)
     assert squeezed.nlevels == 1
@@ -137,7 +137,7 @@ def test_dataframe_from_csds(shape):
     if shape == 'vector':
         # work-around for pandas failing to compare RangeIndex and MultiIndex
         ref_frame.index = pd.MultiIndex(levels=[ref_frame.index.values], 
-                                        labels=[range(len(ref_frame))], 
+                                        codes=[range(len(ref_frame))], 
                                         names=[ref_frame.index.name])
     ref_index = ref_frame.index
     frame = dataframe_from_csds(cs, ds)

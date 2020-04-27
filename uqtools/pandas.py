@@ -120,25 +120,25 @@ def index_concat(left, right):
         if isinstance(index, pd.MultiIndex): #index.nlevels > 1:
             # input is a MultiIndex
             levels = index.levels
-            labels = index.labels
+            codes = index.codes
             names = index.names
         elif (index.names == [None]) and (index.size == 1):
             # input is a dummy/scalar
             levels = []
-            labels = []
+            codes = []
             names = []
         else:
             # input is a vector
-            levels, labels = np.unique(index.values, return_inverse=True)
+            levels, codes = np.unique(index.values, return_inverse=True)
             levels = [levels]
-            labels = [labels]
+            codes = [codes]
             names = index.names
-        return levels, labels, names
+        return levels, codes, names
    
-    left_levels, left_labels, left_names = index_dissect(left)
-    right_levels, right_labels, right_names = index_dissect(right)
+    left_levels, left_codes, left_names = index_dissect(left)
+    right_levels, right_codes, right_names = index_dissect(right)
     return pd.MultiIndex(levels = left_levels + right_levels,
-                         labels = left_labels + right_labels,
+                         codes = left_codes + right_codes,
                          names = left_names + right_names)
 
 def index_squeeze(index):
