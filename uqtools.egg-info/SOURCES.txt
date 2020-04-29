@@ -1,5 +1,6 @@
 README.md
 setup.cfg
+setup.py
 uqtools/__init__.py
 uqtools/apply.py
 uqtools/awg.py
