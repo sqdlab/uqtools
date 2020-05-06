@@ -47,8 +47,8 @@ def unpack_complex(frame, inplace=False):
     for idx in reversed(complex_columns):
         name = frame.columns[idx]
         data = frame.pop(name)
-        frame.insert(idx, 'imag({0})'.format(name), data.imag)
-        frame.insert(idx, 'real({0})'.format(name), data.real)
+        frame.insert(idx, 'imag({0})'.format(name), data.apply(np.imag))
+        frame.insert(idx, 'real({0})'.format(name), data.apply(np.real))
     return frame
 
 def unpack_complex_decorator(function):

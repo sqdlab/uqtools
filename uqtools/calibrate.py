@@ -404,7 +404,7 @@ class Fit(Plotting):
                         for key, value in zip(self.fitter.PARAMETERS, p_std)]
             ritems += [('fit_ok', [1 if p_test else 0])]
             ritems += [('plot', self._plot_idx)]
-            rframe = pd.DataFrame.from_items(ritems)
+            rframe = pd.DataFrame.from_dict(OrderedDict(ritems))
             if len(self.coordinates):
                 rframe.index = pd.Index([idx], name=self.coordinates[0].name)
             
@@ -750,7 +750,7 @@ class Minimize(Plotting):
             parameter.set(popt_dict[key])
         # save fit to: file
         items = [(k, [v]) for k, v in zip(self.values.names(), results)]
-        result = pd.DataFrame.from_items(items)
+        result = pd.DataFrame.from_dict(OrderedDict(items))
         self.store.append(result)
         return result
 

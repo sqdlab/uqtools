@@ -409,7 +409,7 @@ class Reshape(Measurement):
         # run source measurement
         frame = self.measurements[0](nested=True, output_data=True, **kwargs)
         index_levels = []
-        index_labels = []
+        index_codes = []
         index_names = []
         # copy original index levels
         level_idx = self._level_index(self.level, frame.index.names)
@@ -420,27 +420,27 @@ class Reshape(Measurement):
             if hasattr(frame.index, 'levels'):
                 # MultiIndex
                 out_levels = frame.index.levels[idx]
-                out_labels = frame.index.labels[idx]
+                out_codes = frame.index.codes[idx]
             else:
                 # Index
-                out_levels, out_labels = np.unique(frame.index.values,
+                out_levels, out_codes = np.unique(frame.index.values,
                                                    return_inverse=True)
             index_levels.append(out_levels)
-            index_labels.append(out_labels)
+            index_codes.append(out_codes)
             index_names.append(out_name)
         # calculate new index levels and insert it before level
-        in_labels = frame.index.get_level_values(self.level).values
+        in_codes = frame.index.get_level_values(self.level).values
         for out_name, out_map in reversed(self.out_maps.items()):
             try:
-                out_labels = out_map[in_labels]
+                out_codes = out_map[in_codes]
             except TypeError:
-                out_labels = [out_map[in_label] for in_label in in_labels]
-            out_levels, out_labels = np.unique(out_labels, return_inverse=True)
+                out_codes = [out_map[in_label] for in_label in in_codes]
+            out_levels, out_codes = np.unique(out_codes, return_inverse=True)
             index_levels.insert(level_idx, out_levels)
-            index_labels.insert(level_idx, out_labels)
+            index_codes.insert(level_idx, out_codes)
             index_names.insert(level_idx, out_name)
         # create copy of frame with new index
-        index = pd.MultiIndex(index_levels, index_labels, names=index_names)
+        index = pd.MultiIndex(index_levels, index_codes, names=index_names)
         frame = frame.copy(deep=False)
         frame.index = index
         # save and return data
