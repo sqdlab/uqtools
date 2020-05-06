@@ -346,6 +346,7 @@ class MemoryStore(Store):
         self._attrs = {}
         # concatenation queues
         self.blocks = {}
+        self.title = title
 
     def directory(self, key=None):
         return None

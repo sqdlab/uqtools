@@ -14,6 +14,7 @@ except ImportError:
     pass
 
 from .lib import MeasurementTests, CountingMeasurement
+from collections import OrderedDict
 
 #    def __init__(self, indep=None, dep=None, test=None,
 # fail_func=ContinueIteration, popt_out=None, **kwargs):
@@ -267,7 +268,7 @@ class TestMinimize(MeasurementTests):
             # skewed parabola centered at x=2, y=-1.25
             z = (x - 2.)**2 + 2.*(y + 1.25)**2
             items = [('positive', [z]), ('negative', [-z])]
-            return pd.DataFrame.from_items(items[::-1] if reversed else items)
+            return pd.DataFrame.from_dict(OrderedDict(items[::-1] if reversed else items))
         self.px = Parameter('x')
         self.py = Parameter('y')
         self.pp = Parameter('positive')
