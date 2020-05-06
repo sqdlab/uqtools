@@ -365,7 +365,7 @@ class TestSweepDims(MeasurementTests):
         if request.param == 'scalar':
             frame = pd.DataFrame({'data': [1]})
             #ref_index = pd.Int64Index(range(4), name='iteration')
-            ref_index = pd.MultiIndex(levels=[range(4)], labels=[range(4)], names=['iteration'])
+            ref_index = pd.MultiIndex(levels=[range(4)], codes=[range(4)], names=['iteration'])
             ref_data = np.arange(4)
         elif request.param == 'vector':
             index = pd.Int64Index(range(2), name='x')
@@ -491,7 +491,7 @@ class TestAverage(MeasurementTests):
         store = measurement()
         rframe = pd.DataFrame({'count': np.arange(10, dtype=np.int64)},
                               #pd.Index(range(10), name='average')
-                              pd.MultiIndex(levels=[range(10)], labels=[range(10)], names=['average']))
+                              pd.MultiIndex(levels=[range(10)], codes=[range(10)], names=['average']))
         for key in ('/Counting', '/Counting2'):
             assert store[key + '/iterations'].equals(rframe)
             assert store[key].equals(self.mframe(0, 9))

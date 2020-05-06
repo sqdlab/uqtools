@@ -372,7 +372,7 @@ class TestProgramAWGSweep(AWGSweepTests, MeasurementTests):
             frame = sw()['/c0']
         ref_frame = pd.DataFrame({'index': list(range(3)), 'segments':[3]*3, 'kwarg':list(range(1, 4))},
                                  #pd.Index(range(1, 4), name='pkwarg'),
-                                 pd.MultiIndex(levels=[range(1, 4)], labels=[range(3)], names=['pkwarg']),
+                                 pd.MultiIndex(levels=[range(1, 4)], codes=[range(3)], names=['pkwarg']),
                                  columns=['index', 'segments', 'kwarg'])
         print(ref_frame._data)
         print(frame._data)
