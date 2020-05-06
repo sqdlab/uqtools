@@ -1142,7 +1142,7 @@ class SingleShot(Measurement):
         # take a short-cut if segment labels are a 0-based range
         if np.array_equal(index.levels[segment_lev].values, 
                           np.arange(index.levshape[segment_lev])):
-            segment_labels = index.labels[segment_lev]
+            segment_labels = index.codes[segment_lev]
         else:
             segment_labels = index.get_level_values('segment').values
         # calculate new index levels and labels
@@ -1163,9 +1163,9 @@ class SingleShot(Measurement):
                               np.arange(nreadouts),
                               segment_labels % nreadouts))
         # build new index
-        new_index = list(zip(index.names, index.levels, index.labels))
+        new_index = list(zip(index.names, index.levels, index.codes))
         new_index = new_index[:segment_lev] + add_index + new_index[1+segment_lev:]
-        new_kwargs = dict(zip(['names', 'levels', 'labels'], zip(*new_index)))
+        new_kwargs = dict(zip(['names', 'levels', 'codes'], zip(*new_index)))
         return pd.MultiIndex(**new_kwargs)
         
     def _integrate_readouts(self, frame):
