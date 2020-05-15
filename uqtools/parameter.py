@@ -46,7 +46,11 @@ class ParameterBase(object):
 
     @staticmethod
     def is_compatible(obj, gettable=True, settable=True):
-        """Test `obj` for `name`, `get()` and `set()` attributes.""" 
+        """Test `obj` for `name`, `get()` and `set()` attributes."""
+        if hasattr(obj, 'settable'):
+            settable = obj.settable
+        if hasattr(obj, 'gettable'):
+            settable = obj.gettable
         return (hasattr(obj, 'name') and
                 (not gettable or hasattr(obj, 'get') and callable(obj.get)) and 
                 (not settable or hasattr(obj, 'set') and callable(obj.set)))
