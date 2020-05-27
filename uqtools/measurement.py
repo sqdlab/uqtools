@@ -18,6 +18,7 @@ from . import config, TypedList, ParameterList, Flow, RootFlow
 from .store import StoreFactory, MeasurementStore
 from .context import nested
 from .helpers import sanitize, make_iterable
+from . import config
 
 def _call_nested_optional(func, nested, **kwargs):
     """Call `func` with `nested` keyword if supported by `func`."""

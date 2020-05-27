@@ -92,7 +92,7 @@ class ProgramAWG(Measurement):
         if not hasattr(type(self), 'sequence'):
             self.sequence = sequence
         self.awgs = awgs
-    
+        
     def _setup(self):
         """Sample and export `sequence` (once)."""
         filename = self.store.filename(self.name)
@@ -134,6 +134,18 @@ class ProgramAWG(Measurement):
                 oserror = True
         if oserror:
             logging.warning(__name__ + ': failed to delete sequence files.')
+
+    # tried manually changing store to CSVStore for programming AWGs 
+    # but it doesn't work with a MeasurementArray.
+    def __call__(self, *args, **kwargs):
+        old_store = config.store
+        old_store_kwargs = config.store_kwargs
+        config.store = 'CSVStore'
+        config.store_kwargs = {'ext': '.dat'}
+        super(ProgramAWG, self).__call__(*args, **kwargs)
+        config.store = old_store
+        config.store_kwargs = old_store_kwargs
+        
         
     def _measure(self, wait=None, **kwargs):
         """
@@ -497,6 +509,9 @@ class ProgramAWGSweep(ProgramAWG):
         return seq
 
     def _setup(self):
+        filename = self.store.filename(self.name)
+        if filename is None:
+            raise ValueError('ProgramAWG requires a file system based store.')
         # initialize sequence cache
         self._prev_lengths = []
         self._prev_rangess = []

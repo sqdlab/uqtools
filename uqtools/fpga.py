@@ -61,9 +61,15 @@ class FPGAMeasurement(Measurement):
         self.buffering = buffering
         with self.context:
             self._check_mode()
-            dims = self._fpga.get_data_dimensions()
-            dims = [Parameter(**dim) if isinstance(dim, dict) else dim 
-                    for dim in dims]
+            fpga_dims = self._fpga.get_data_dimensions()
+            dims = []
+            for dim in fpga_dims:
+                new_dim = {}
+                for k,v in dim.items():
+                    new_dim[k.decode(encoding='utf-8')] = v.decode(encoding='utf-8') if type(v)==bytes else v
+                dims.append(Parameter(**new_dim))
+            #dims = [Parameter(**dim) if isinstance(dim, dict) else dim 
+            #        for dim in dims]
             self.coordinates = dims[:-1]
             self.values.append(dims[-1])
     
@@ -113,7 +119,13 @@ class FPGAMeasurement(Measurement):
             data = self._fpga.get_data_blocking()
         # retrieve measured data
         if not self.buffering or self._index is None:
-            dims = self._fpga.get_data_dimensions()
+            fpga_dims = self._fpga.get_data_dimensions()
+            dims = []
+            for dim in fpga_dims:
+                new_dim = {}
+                for k,v in dim.items():
+                    new_dim[k.decode(encoding='utf-8')] = v.decode(encoding='utf-8') if type(v)==bytes else v
+                dims.append(new_dim)
             self._index = pd.MultiIndex.from_product(
                 [dim['value'] for dim in dims[:-1]], 
                 names=[dim['name'] for dim in dims[:-1]]
