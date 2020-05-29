@@ -34,7 +34,7 @@ from .progress import ContinueIteration, BreakIteration, Flow, RootFlow
 reimport('pandas')
 
 reimport('store')
-from .store import MemoryStore, CSVStore, HDFStore
+from .store import MeasurementStore, MemoryStore, CSVStore, HDFStore
 
 reimport('measurement')
 from .measurement import Measurement
@@ -75,19 +75,31 @@ try:
 except ImportError:
     # awg already generates a log entry
     pass
-    
+
 try:
-    reimport('qtlab')
-    from .qtlab import Instrument, instruments
+    import qcodes
+    try:
+        station = qcodes.config.current_config['user']['station']
+        Parameter.station = station
+        # write setfile
+        def write_setfile(store, key):
+            store.attrs(key)['settings'] = station.snapshot()
+        MeasurementStore.on_new_item.append(write_setfile)
+    except KeyError:
+        pass
 except ImportError:
-    logging.warn(__name__ + ': ' + 'QTLab integration is unavailable.')
-    # QTLab integration is without an alternative at this time
-    class Instruments:
-        def settings(self, key=None):
-            return {}
-    instruments = Instruments()
-    del Instruments
-    
+    try:
+        reimport('qtlab')
+        from .qtlab import Instrument, instruments
+    except ImportError:
+        logging.warn(__name__ + ': ' + 'QTLab integration is unavailable.')
+        # QTLab integration is without an alternative at this time
+        class Instruments:
+            def settings(self, key=None):
+                return {}
+        instruments = Instruments()
+        del Instruments
+
 # clean module namespace
 del reimport
 del importlib

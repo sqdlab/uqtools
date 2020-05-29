@@ -295,7 +295,6 @@ class Parameter(ParameterBase):
     array([  4.90000000e+09,   4.95000000e+09,   5.00000000e+09,
              5.05000000e+09,   5.10000000e+09])
     """
-    
     def __init__(self, name, set_func=None, get_func=None, value=None, 
                  **options):
         super(Parameter, self).__init__(name, **options)
@@ -327,7 +326,23 @@ class Parameter(ParameterBase):
                 self.value = value
         self.set = set
         self.value = value
+
+        try:
+            if Parameter.station is not None:
+                Parameter.station.add_component(self)
+        except AttributeError:
+            pass
+            
         
+    def snapshot(self, update=True):
+        if update:
+            if hasattr(self, 'get'):
+                self.get()
+        return {'name':self.name,
+                'options':self.options,
+                'value':self.value
+            }
+
     @staticmethod
     def wrap(obj):
         '''Return a new Parameter that delegates `get` and `set` to `obj`.'''
