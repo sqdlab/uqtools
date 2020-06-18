@@ -52,7 +52,8 @@ from .apply import (Apply, Add, Subtract, Multiply, Divide, Integrate, Reshape,
 reimport('fpga')
 from .fpga import (FPGAStart, FPGAStop, 
                    TvModeMeasurement, AveragedTvModeMeasurement, 
-                   CorrelatorMeasurement, HistogramMeasurement)
+                   CorrelatorMeasurement, HistogramMeasurement,
+                   DigiTvModeMeasurement)
 
 reimport('fsv') 
 from .fsv import FSVTrace, FSVMeasurement as FSVWait

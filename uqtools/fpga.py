@@ -12,7 +12,7 @@ import logging
 
 import pandas as pd
 
-from . import Parameter, Measurement, Integrate, RevertInstrument
+from . import Parameter, Measurement, Integrate, RevertInstrument, ParameterMeasurement
 
 class FPGAMeasurement(Measurement):
     """
@@ -242,3 +242,19 @@ def AveragedTvModeMeasurement(fpga, **kwargs):
     time = tv.coordinates[-1]
     name = kwargs.pop('name', 'AveragedTvMode')
     return Integrate(tv, time, average=True, name=name, **kwargs)
+
+class DigiTvModeMeasurement(ParameterMeasurement):
+    """TODO: DESCRIPTION"""
+
+    def __init__(self, m4idigi, data_save=True):
+        super().__init__(m4idigi.analog, data_save=data_save)
+        self._m4idigi = m4idigi
+        
+    
+    def _measure(self, segments=None, **kwargs):
+        # set number of segments if given
+        if segments is not None:
+            with RevertInstrument(self._m4idigi, segments=segments):
+                return super(DigiTvModeMeasurement, self)._measure(**kwargs)
+        else:
+            return super(DigiTvModeMeasurement, self)._measure(**kwargs)

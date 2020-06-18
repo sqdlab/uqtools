@@ -787,6 +787,7 @@ class MultiAWGSweep(Measurement):
         # create and imitate .measure
         if pass_segments and 'segments' not in measure_kwargs:
             measure_kwargs['segments'] = self.program.values['segments']
+        
         self.measure = MeasureAWGSweep(*args, name='measure', 
                                        **measure_kwargs)
         self.measurements.append(self.measure, inherit_local_coords=False)
@@ -798,6 +799,7 @@ class MultiAWGSweep(Measurement):
         # program waveform generator
         program(nested=True, **kwargs)
         # measure data
+        # raise Exception("TYPE: {}".format(type(rsource)))
         frame = rsource(nested=True, **kwargs)
         # return data
         return frame
