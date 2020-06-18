@@ -244,10 +244,17 @@ def AveragedTvModeMeasurement(fpga, **kwargs):
     return Integrate(tv, time, average=True, name=name, **kwargs)
 
 class DigiTvModeMeasurement(ParameterMeasurement):
-    """TODO: DESCRIPTION"""
+    """
+    Controls the digitizer, which has two modes:
+    1. normal mode
+    2. singleshot mode
+    """
 
-    def __init__(self, m4idigi, data_save=True):
-        super().__init__(m4idigi.analog, data_save=data_save)
+    def __init__(self, m4idigi, singleshot=False, data_save=True):
+        if singleshot:
+            super().__init__(m4idigi.singleshot_analog, data_save=data_save)
+        else:
+            super().__init__(m4idigi.analog, data_save=data_save)
         self._m4idigi = m4idigi
         
     
