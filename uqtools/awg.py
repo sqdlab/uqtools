@@ -911,8 +911,12 @@ class NormalizeAWG(Measurement):
         if not len(self.measurements):
             raise ValueError('source must be set before use.')
         frame = self.measurements[0](nested=True, **kwargs)
-        # shift segment index
+        # shift segment index by 2 to exclude normalization pulses
+        # normalisation pulses will now be at negative indecies 
         if frame.index.nlevels == 1:
+            # If frame is has a multiindex with just one level, collapse it first
+            if isinstance(frame.index, pd.MultiIndex):
+                frame.index = frame.index.get_level_values(0) 
             level = None
             frame.index = frame.index - 2
         else:

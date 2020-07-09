@@ -22,7 +22,7 @@ from . import config
 
 def _call_nested_optional(func, nested, **kwargs):
     """Call `func` with `nested` keyword if supported by `func`."""
-    if 'nested' in inspect.getargspec(func)[0]:
+    if 'nested' in inspect.getfullargspec(func)[0]:
         return func(nested=nested, **kwargs)
     else:
         return func(**kwargs)
