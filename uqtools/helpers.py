@@ -14,6 +14,7 @@ import six
 import numpy as np
 
 from . import ParameterDict
+from . import Parameter
 
 def make_iterable(obj):
     """Wrap `obj` in a `tuple` if it is not a `tuple` or `list`."""
@@ -235,7 +236,9 @@ def resolve_value(value, default=None):
     `default`."""
     if value is None:
         return default
-    elif (hasattr(value, 'get')):
+    elif (hasattr(value, 'get') and isinstance(value, Parameter)): 
+        # there are non-parameter types with attr get that might be passed in
+        # so check explicitly for type parameter
         return value.get()
     return value
 
