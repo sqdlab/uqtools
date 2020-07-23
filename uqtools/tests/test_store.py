@@ -25,7 +25,6 @@ from uqtools.parameter import Parameter, ParameterList, ParameterDict
 # Global fixtures
 #
 #
-@yield_fixture
 def tempdir():
     directory = tempfile.mkdtemp()
     try:
@@ -148,7 +147,7 @@ class StoreTests:
         store.put(key, frame)
         store.remove(key)
         assert key not in store
-    
+        
     @mark.parametrize('query', ('(x < 2) & (y == 0)',))
     def test_select_where(self, store, frame, query):
         key = '/data'
@@ -364,8 +363,7 @@ class TestCSVStore(StoreTests):
                        for subdir in os.listdir(str(tmpdir)))
 
 
-
-@mark_class(mark.skipif(tables is None, reason='HDFStore requires pytables'))
+@mark.skipif(tables is None, reason='HDFStore requires pytables')
 class TestHDFStore(StoreTests):
     @yield_fixture
     def store(self):

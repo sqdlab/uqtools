@@ -1,5 +1,5 @@
 from __future__ import print_function
-from pytest import fixture, mark, skip, xfail, raises
+from pytest import fixture, mark, skip, xfail, raises, param
 import os
 import math
 import re
@@ -370,6 +370,8 @@ class TestProgramAWGSweep(AWGSweepTests, MeasurementTests):
             frame = sw(output_data=True)
         else:
             frame = sw()['/c0']
+            frame.index = pd.MultiIndex(levels=[frame.index], codes=[range(len(frame.index))], names=['pkwarg'])
+
         ref_frame = pd.DataFrame({'index': list(range(3)), 'segments':[3]*3, 'kwarg':list(range(1, 4))},
                                  #pd.Index(range(1, 4), name='pkwarg'),
                                  pd.MultiIndex(levels=[range(1, 4)], codes=[range(3)], names=['pkwarg']),
@@ -485,7 +487,7 @@ class TestMultiAWGSweep():
 
 
 class TestNormalize(MeasurementTests):
-    @fixture(params=[(False, False), (True, False), (False, True), mark.xfail((True, True))],
+    @fixture(params=[(False, False), (True, False), (False, True), param((True, True), marks=mark.xfail())],
              ids=['X', '_X', 'X_', '_X_'])
     def source(self, request):
         # one to three index levels with the segment level in different positions
@@ -498,6 +500,8 @@ class TestNormalize(MeasurementTests):
             levels.append(('y', list(range(3))))
         names, levels = zip(*levels)
         index = pd.MultiIndex.from_product(levels, names=names)
+        if index.nlevels == 1:
+                index = index.get_level_values(0) 
         segment_labels = index.get_level_values('segment').values
         data = np.concatenate(([-1, 1], np.linspace(-1, 1, 8)))[segment_labels]
         frame = pd.DataFrame({'data': data}, index)

@@ -1,4 +1,4 @@
-from pytest import fixture, raises, mark, skip, xfail
+from pytest import fixture, raises, mark, skip, xfail, param
 from collections import OrderedDict
 
 import pandas as pd
@@ -130,7 +130,7 @@ class TestApply(MeasurementTests):
                                         ('3darray', 'vector'),
                                         ('3darray_transpose', 'vector'),
                                         ('matrix', 'matrix_singleton'),
-                                        mark.xfail(('3darray', 'matrix'))])
+                                        param('3darray', 'matrix', marks=mark.xfail())])
     def test_broadcast(self, shape0, shape1):
         arg0 = frame_factory(shape0)
         arg1 = frame_factory(shape1)

@@ -281,11 +281,11 @@ class TestParameterMeasurementQcodes(MeasurementTests):
     def test_incompatible_shapes(self):
         ps = [
             self.ScalarBuffer('scalar'),
-            self.ArrayRangeParameter('vector-0d', ()),
-            self.ArrayRangeParameter('vector-1d1', (1,)),
-            self.ArrayRangeParameter('vector-1d2', (2,)),
-            self.ArrayRangeParameter('vector-2d1', (2,3)),
-            self.ArrayRangeParameter('vector-2d2', (3,2))
+            self.ArrayRangeParameter('vector_0d', ()),
+            self.ArrayRangeParameter('vector_1d1', (1,)),
+            self.ArrayRangeParameter('vector_1d2', (2,)),
+            self.ArrayRangeParameter('vector_2d1', (2,3)),
+            self.ArrayRangeParameter('vector_2d2', (3,2))
         ]
         for p1 in ps:
             for p2 in ps:

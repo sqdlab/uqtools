@@ -1,4 +1,4 @@
-from pytest import fixture, raises, mark, skip
+from pytest import fixture, raises, mark, skip, param
 import os
 import numpy as np
 import pandas as pd
@@ -62,7 +62,7 @@ class TestFittingMeasurement(MeasurementTests):
         self.npeaks = 1 if np.isscalar(self.f0s) else len(self.f0s)
         return Constant(frame)
 
-    @fixture(params=('1d', '2d>1d', mark.xfail('2d'), '1d/3pk'))    
+    @fixture(params=('1d', '2d>1d', param('2d', marks=mark.xfail()), '1d/3pk'))    
     def source(self, request):
         ''' return a Constant measurement returning Lorentzian curves '''
         return self._source(request.param)
@@ -80,8 +80,8 @@ class TestFittingMeasurement(MeasurementTests):
         ''' return different fitters '''
         return self._fitter(request.param)
     
-    @fixture(params=['1d-Lorentzian', '2d>1d-Lorentzian', mark.xfail('2d-Lorentzian'),
-                     '1d-PeakFind', '2d>1d-PeakFind', mark.xfail('2d-PeakFind'),
+    @fixture(params=['1d-Lorentzian', '2d>1d-Lorentzian', param('2d-Lorentzian', marks=mark.xfail()),
+                     '1d-PeakFind', '2d>1d-PeakFind', param('2d-PeakFind', marks=mark.xfail()),
                      '1d/3pk-PeakFind'])
     def measurement(self, request):
         source, fitter = request.param.split('-')
