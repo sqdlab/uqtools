@@ -656,12 +656,32 @@ class CSVStore(Store):
         if not len(index_cols):
             index_cols = False
         compression = 'gzip' if path.endswith('.gz') else None
+
+        # Check the format of the file, how many blank lines, if any, between data
+        # time performance?
+        # can't do this with compression
+        if compression is None:
+            with open(path, "r") as f:
+                i = 0
+                empty_lines = 0
+                while i < header_lines+1:
+                    line = f.readline()
+                    i+=1
+                # line = f.readline()
+                line = "\n"
+                # while not line.strip(): # if line is empty except for whitespace
+                while line == "\n": # this may not work if the file doesn't use linux format
+                    line = f.readline()
+                    empty_lines += 1
+        else:
+            empty_lines = 1
+
         if start is not None:
-            kwargs['skiprows'] = header_lines + start
+            kwargs['skiprows'] = header_lines + start*empty_lines
         if stop is not None:
             kwargs['nrows'] = stop if start is None else (stop - start)
         frame = pd.read_csv(path, sep='\t', comment='#', header=None,
-                            compression=compression, skip_blank_lines=True, 
+                            compression=compression, skip_blank_lines=True, na_filter=False,
                             names=names, index_col=index_cols, **kwargs)
         # convert pairs of real columns to complex columns
         if self.unpack_complex:
