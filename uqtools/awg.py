@@ -142,9 +142,10 @@ class ProgramAWG(Measurement):
         old_store_kwargs = config.store_kwargs
         config.store = 'CSVStore'
         config.store_kwargs = {'ext': '.dat'}
-        super(ProgramAWG, self).__call__(*args, **kwargs)
+        result = super(ProgramAWG, self).__call__(*args, **kwargs)
         config.store = old_store
         config.store_kwargs = old_store_kwargs
+        return result
         
         
     def _measure(self, wait=None, **kwargs):
@@ -914,9 +915,8 @@ class NormalizeAWG(Measurement):
         # shift segment index by 2 to exclude normalization pulses
         # normalisation pulses will now be at negative indecies 
         if frame.index.nlevels == 1:
-            # If frame is has a multiindex with just one level, collapse it first
-            if isinstance(frame.index, pd.MultiIndex):
-                frame.index = frame.index.get_level_values(0) 
+            # If frame is has a multiindex with just one level, subtraction will fail
+            assert not isinstance(frame.index, pd.MultiIndex), "Frame has a multiindex with one level"
             level = None
             frame.index = frame.index - 2
         else:
