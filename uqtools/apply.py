@@ -14,7 +14,7 @@ import pandas as pd
 import numpy as np
 
 from . import Parameter, Measurement
-from .helpers import checked_property, parameter_value, resolve_value, make_iterable
+from .helpers import checked_property, parameter_value, resolve_value, make_iterable, inthread
 
 class Integrate(Measurement):
     """
@@ -79,6 +79,7 @@ class Integrate(Measurement):
         self._coordinate = coord.name if hasattr(coord, 'name') else coord
         self.coordinates.pop(self.coordinates.index(self._coordinate))
 
+    @inthread
     def _measure(self, output_data=True, **kwargs):
         source, = self.measurements
         frame = source(nested=True, output_data=True, **kwargs)
@@ -185,7 +186,7 @@ class Apply(Measurement):
             return obj.get()
         else:
             return obj
-
+    @inthread
     def _measure(self, output_data=True, **kwargs):
         # resolve all args and call function
         args = [self._resolve_value(arg, kwargs)
@@ -405,6 +406,7 @@ class Reshape(Measurement):
         self._out_maps = out_maps
         self._update_coordinates()
     
+    @inthread
     def _measure(self, output_data=True, **kwargs):
         # run source measurement
         frame = self.measurements[0](nested=True, output_data=True, **kwargs)
@@ -472,6 +474,7 @@ class Expectation(Measurement):
                             if c not in self.integrate]
         self.values = [Parameter(expr) for expr in expressions]
 
+    @inthread
     def _measure(self, output_data=True, **kwargs):
         frame = self.measurements[0](nested=True, output_data=True, **kwargs)
         # unstack all measurements, TODO: unstack on-demand and cache results

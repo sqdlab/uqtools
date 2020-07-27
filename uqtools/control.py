@@ -18,7 +18,7 @@ from . import Parameter, ParameterList, Measurement, Flow, BreakIteration, Conti
 from . import config
 from .store import MemoryStore, MeasurementStore
 from .measurement import MeasurementList
-from .helpers import checked_property, parameter_value, resolve_value
+from .helpers import checked_property, parameter_value, resolve_value, inthread
 
 class Delay(Measurement):
     """
@@ -42,6 +42,7 @@ class Delay(Measurement):
         super(Delay, self).__init__(**kwargs)
         self.delay = delay
     
+    @inthread
     def _measure(self, **kwargs):
         if self.delay >= 50e-3:
             self.flow.sleep(self.delay)
@@ -87,6 +88,7 @@ class MeasurementArray(Measurement):
         else:
             self.flow = Flow()
 
+    @inthread
     def _measure(self, **kwargs):
         for measurement in self.measurements:
             self.flow.sleep()
@@ -175,6 +177,7 @@ class Sweep(Measurement):
     def range(self, value):
         self._range = value
 
+    @inthread
     def _measure(self, **kwargs):
         '''
         Set coordinate to each value in range in turn and execute nested 
@@ -434,6 +437,7 @@ class Average(Measurement):
         # empty buffers
         self._update_buffers()
         
+    @inthread
     def _measure(self, output_data=True, **kwargs):
         sum_frames = {}
         sum_counts = {}

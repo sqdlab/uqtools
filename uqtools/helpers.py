@@ -16,6 +16,9 @@ import numpy as np
 from . import ParameterDict
 from . import Parameter
 
+from queue import Queue
+import threading
+
 def make_iterable(obj):
     """Wrap `obj` in a `tuple` if it is not a `tuple` or `list`."""
     if isinstance(obj, list) or isinstance(obj, tuple):
@@ -323,6 +326,20 @@ def sanitize(name):
     name = ''.join([c for c in name if c in whitelist])
     return name
 
+def inthread(fn):
+    """Decorated function will be run in it's own thread, returns the thread object"""
+    def inside(*args, **kwargs):
+        thread = threading.Thread(target=lambda q: q.put(fn(*args, **kwargs)), args=(que, ))
+        # when main exits, this immediately exits even if not done
+        # potentially make this optional
+        thread.daemon = True 
+        thread.start()
+        result = None
+        while que.empty(): # wait untill result is available, but can be interrupted
+            pass
+        result = que.get()
+        return result 
+    return fn
 
 class Singleton(type):
     """Singleton metaclass"""
