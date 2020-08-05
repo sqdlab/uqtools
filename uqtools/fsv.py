@@ -41,7 +41,7 @@ class FSVMeasurement(Measurement):
             self.coordinates = m.coordinates
             self.values = m.values
         
-    @inthread
+    
     def _measure(self, **kwargs):
         self._start()
         self._wait()
@@ -87,7 +87,7 @@ class FSVTrace(FSVMeasurement):
             self.coordinates.append(Parameter('frequency'))
             self.values.append(Parameter('data', unit=fsv.get('unit')))
 
-    @inthread
+    
     def _measure(self, **kwargs):
         # start a new measurement
         self._start()

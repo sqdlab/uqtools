@@ -34,3 +34,6 @@ enable_widgets = True
 
 #. `bool`, enable multithreading
 threads = False
+
+#. `bool`, run measurements on threads
+measurement_threads = True

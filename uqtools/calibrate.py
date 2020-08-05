@@ -359,7 +359,7 @@ class Fit(Plotting):
         else:
             self.flow = Flow()
     
-    @inthread
+    
     def _measure(self, output_data=False, **kwargs):
         if len(self.measurements):
             self.flow.iterations = 2
@@ -698,7 +698,7 @@ class Minimize(Plotting):
                              .format(result.message))
         return tuple(result.x) + (result.fun,)
     
-    @inthread
+    
     def _measure(self, output_data=True, **kwargs):
         # acquire data
         frame = self.measurements[0](nested=True, output_data=True, **kwargs)
@@ -930,7 +930,7 @@ class Interpolate(Measurement):
         else:
             raise ValueError('cal_file must be specified.')
     
-    @inthread
+    
     def _measure(self, **kwargs):
         # determine values of independent variables
         indep_dict = ParameterDict(zip(self.coordinates, self.coordinates.values()))

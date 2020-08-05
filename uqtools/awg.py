@@ -147,7 +147,7 @@ class ProgramAWG(Measurement):
         config.store_kwargs = old_store_kwargs
         return result
         
-    @inthread    
+        
     def _measure(self, wait=None, **kwargs):
         """
         Upload sequence to the AWGs.
@@ -319,7 +319,7 @@ class ProgramAWGParametric(ProgramAWG):
         self._prev_seq_kwargss = []
         self._prev_seq_lengths = []
 
-    @inthread
+    
     def _measure(self, wait=None, **kwargs):
         """
         Generate, export and upload sequence to the AWGs.
@@ -519,7 +519,7 @@ class ProgramAWGSweep(ProgramAWG):
         self._prev_rangess = []
         self._prev_kwargss = []
 
-    @inthread
+    
     def _measure(self, wait=None, **measure_kwargs):
         """
         Generate, export and upload sequence to the AWGs.
@@ -676,7 +676,7 @@ class MeasureAWGSweep(Reshape):
         args[1::2] = [map_factory(args[1::2], idx) for idx in range(len(args)//2)]
         super(MeasureAWGSweep, self).__init__(source, 'segment', *args, **kwargs)
 
-    @inthread    
+        
     def _measure(self, segments=None, **kwargs):
         if segments is None:
             segments = self.segments
@@ -798,7 +798,7 @@ class MultiAWGSweep(Measurement):
         self.coordinates = self.measure.coordinates
         self.values = self.measure.values
     
-    @inthread    
+        
     def _measure(self, **kwargs):
         program, rsource = self.measurements
         # program waveform generator
@@ -911,7 +911,7 @@ class NormalizeAWG(Measurement):
         marker_func(seq, 1, **kwargs)
         return seq    
 
-    @inthread
+    
     def _measure(self, **kwargs):
         # measure segmented data
         if not len(self.measurements):
@@ -1263,7 +1263,7 @@ class SingleShot(Measurement):
                            keys=['ground', 'excited'], names=['state'], axis=1).T
         return frame, cframe
 
-    @inthread
+    
     def _measure(self, output_data=True, **kwargs):
         # acquire data
         sframe = self.measurements[0](nested=True, output_data=True, **kwargs)

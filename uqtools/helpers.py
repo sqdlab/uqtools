@@ -15,9 +15,12 @@ import numpy as np
 
 from . import ParameterDict
 from . import Parameter
+from . import config
 
 from queue import Queue
 import threading
+import asyncio
+import ctypes 
 
 def make_iterable(obj):
     """Wrap `obj` in a `tuple` if it is not a `tuple` or `list`."""
@@ -328,18 +331,50 @@ def sanitize(name):
 
 def inthread(fn):
     """Decorated function will be run in it's own thread, returns the thread object"""
+    def target(q, loop, *args, **kwargs):
+        asyncio.set_event_loop(loop)
+        q.put(fn(*args, **kwargs))
+        return q
     def inside(*args, **kwargs):
-        thread = threading.Thread(target=lambda q: q.put(fn(*args, **kwargs)), args=(que, ))
+        que = Queue()
+        thread = threading.Thread(target=target, args=(que, asyncio.get_event_loop(), *args), name="MeasureThread")
         # when main exits, this immediately exits even if not done
         # potentially make this optional
         thread.daemon = True 
         thread.start()
         result = None
-        while que.empty(): # wait untill result is available, but can be interrupted
-            pass
+        try:
+            while que.empty(): # wait untill result is available, but can be interrupted
+                pass
+            thread.join()
+        except KeyboardInterrupt:
+            # Kill spawned thread before exiting
+            thread_id = thread.ident
+            interrupt_thread(thread_id)
+            raise KeyboardInterrupt("Keyboard interrupt, killed thread {}".format(thread_id))
         result = que.get()
-        return result 
-    return fn
+        return result
+
+    if (config.measurement_threads):
+        return inside
+    else: 
+        return fn
+
+def interrupt_thread(id):
+    """
+    Kills thread by raising an exception in it
+    
+    Returns the number of thread states modified (1 if successful)    
+    """
+    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(id), 
+              ctypes.py_object(SystemExit)) 
+    if res == 0:
+        raise ValueError("Thread id {} not found".format(id))
+    elif res > 1:
+        # If exc is NULL, the pending exception (if any) for the thread is cleared.
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(id, None)
+        raise SystemError("PyThreadState_SetAsyncExc failed")
+    return res
 
 class Singleton(type):
     """Singleton metaclass"""

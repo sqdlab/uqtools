@@ -17,7 +17,7 @@ import six
 from . import config, TypedList, ParameterList, Flow, RootFlow
 from .store import StoreFactory, MeasurementStore
 from .context import nested
-from .helpers import sanitize, make_iterable
+from .helpers import sanitize, make_iterable, inthread
 from . import config
 
 def _call_nested_optional(func, nested, **kwargs):
@@ -442,7 +442,12 @@ class Measurement(object):
                 with self._local_log_ctx(nested), \
                      self._root_flow_ctx(nested), \
                      self._start_stop_ctx(nested):
-                    result = _call_nested_optional(self._measure, nested, 
+                    if(nested):
+                        result = _call_nested_optional(self._measure, nested, 
+                                                   output_data=output_data, 
+                                                   **kwargs)
+                    else:
+                        result = inthread(_call_nested_optional)(self._measure, nested, 
                                                    output_data=output_data, 
                                                    **kwargs)
                 if nested or output_data:

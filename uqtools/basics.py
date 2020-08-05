@@ -68,7 +68,7 @@ class Constant(Measurement):
                             if name is not None]
         self.values = [Parameter(name) for name in data.columns]
         
-    @inthread 
+     
     def _measure(self, **kwargs):
         if self.copy:
             return self.data.copy()
@@ -119,7 +119,7 @@ class Function(Measurement):
         self.coordinates = coordinates
         self.values = values
     
-    @inthread
+    
     def _measure(self, **kwargs):
         args = [resolve_value(arg) for arg in self.args]
         kwargs = dict((key, resolve_value(arg))
@@ -207,7 +207,7 @@ class BufferWriter(Measurement):
         self.coordinates = source.coordinates
         self.values = source.values
          
-    @inthread   
+       
     def _measure(self, output_data=True, **kwargs):
         ''' Measure data and store it in self.buffer '''
         # measure
@@ -239,7 +239,7 @@ class BufferReader(Measurement):
         self.coordinates = source.coordinates
         self.values = source.values
     
-    @inthread
+    
     def _measure(self, **kwargs):
         ''' return buffered data '''
         if (self.buf.data is None):
@@ -301,7 +301,7 @@ class ParameterMeasurement(Measurement):
             print(shapes, levels)
             self.coordinates = [Parameter(l) for l in levels]
         
-    @inthread
+    
     def _measure(self, **kwargs):
         # collect all parameter names and values, setpoint names and values
         names = self.values.collect_attr('name', 'names', False)

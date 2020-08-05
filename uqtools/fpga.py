@@ -101,7 +101,7 @@ class FPGAMeasurement(Measurement):
         self._fpga.stop()
         super(FPGAMeasurement, self)._setup()
         
-    @inthread
+    
     def _measure(self, **kwargs):
         # in non-overlapped mode, we always start a new measurement before
         # retrieving data. in overlapped mode, we assume that the current
@@ -149,7 +149,7 @@ class FPGAStart(Measurement):
         super(FPGAStart, self).__init__(**kwargs)
         self._fpga = fpga
         
-    @inthread
+    
     def _measure(self, **kwargs):
         self._fpga.start()
         
@@ -166,7 +166,7 @@ class FPGAStop(Measurement):
         super(FPGAStop, self).__init__(**kwargs)
         self._fpga = fpga
         
-    @inthread
+    
     def _measure(self, **kwargs):
         self._fpga.stop()
         
@@ -186,7 +186,7 @@ class TvModeMeasurement(FPGAMeasurement):
         if(self._fpga.tv_segments.get() == 524288):
             logging.warning('auto segments may not be properly supported.')
 
-    @inthread
+    
     def _measure(self, segments=None, **kwargs):
         self._check_mode()
         # set number of segments if given
@@ -207,7 +207,7 @@ class HistogramMeasurement(FPGAMeasurement):
         if not self._fpga.app.get().startswith('HIST'):
             raise EnvironmentError('FPGA device must be in a HISTOGRAM mode.')
         
-    @inthread
+    
     def _measure(self, **kwargs):
         self._check_mode()
         return super(HistogramMeasurement, self)._measure(**kwargs)
@@ -221,7 +221,7 @@ class CorrelatorMeasurement(FPGAMeasurement):
         if not self._fpga.app.get().startswith('CORRELATOR'):
             raise EnvironmentError('FPGA device must be in a CORRELATOR mode.')
         
-    @inthread
+    
     def _measure(self, segments=None, **kwargs):
         self._check_mode()
         # set number of segments if given
@@ -265,7 +265,7 @@ class DigiTvModeMeasurement(ParameterMeasurement):
         self._m4idigi = m4idigi
         
     
-    @inthread
+    
     def _measure(self, segments=None, **kwargs):
         # set number of segments if given
         if segments is not None:
