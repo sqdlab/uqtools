@@ -337,7 +337,7 @@ def inthread(fn):
         return q
     def inside(*args, **kwargs):
         que = Queue()
-        thread = threading.Thread(target=target, args=(que, asyncio.get_event_loop(), *args), name="MeasureThread")
+        thread = threading.Thread(target=target, args=(que, asyncio.get_event_loop(), *args), kwargs=kwargs, name="MeasureThread")
         # when main exits, this immediately exits even if not done
         # potentially make this optional
         thread.daemon = True 
